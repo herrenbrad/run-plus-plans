@@ -252,15 +252,8 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   const [showingOptions, setShowingOptions] = useState({});
   const [selectedOptions, setSelectedOptions] = useState({}); // Track selected but not yet confirmed options
   const [workoutCompletions, setWorkoutCompletions] = useState({}); // Track workout completions for instant UI updates
+  const [showBetaSetup, setShowBetaSetup] = useState(false); // Show beta code setup modal
 
-  // TEST: Add a debugging button to force a selection for testing
-  const forceTestSelection = () => {
-    const testKey = `${currentWeek}-Wednesday`;
-    const testOption = { id: 'test', shortName: 'Test Option', name: 'Test Workout' };
-    setSelectedOptions({ [testKey]: testOption });
-    console.log('🧪 FORCED test selection:', testKey, testOption);
-  };
-  
   // Load modified workouts from localStorage on component mount
   useEffect(() => {
     try {
@@ -910,13 +903,47 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
 
   const handleCancelSelection = (workout) => {
     const workoutKey = `${currentWeek}-${workout.day}`;
-    
+
     // Clear the selection
     setSelectedOptions(prev => {
       const updated = { ...prev };
       delete updated[workoutKey];
       return updated;
     });
+  };
+
+  // Beta code setup handler
+  const handleSetupBetaCodes = async () => {
+    const BETA_CODES = [
+      'VVVFRS', 'SVTQHH', 'EN88AQ', 'H8RXZ6', '69JUVC',
+      'XJXHZM', '2EHTS9', 'ZWNVSS', 'KFCHAK', '8E685H'
+    ];
+
+    try {
+      let successCount = 0;
+      const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('../firebase/config');
+
+      for (const code of BETA_CODES) {
+        const docRef = doc(db, 'betaCodes', code);
+        await setDoc(docRef, {
+          code: code,
+          used: false,
+          usedBy: null,
+          usedAt: null,
+          createdAt: serverTimestamp(),
+          createdFor: '',
+          notes: ''
+        });
+        successCount++;
+      }
+
+      alert(`✅ Success!\n\nAll ${successCount} beta codes added to Firestore!\n\nYou can now:\n1. Check Firebase Console → Firestore → betaCodes\n2. Update Firestore security rules (see FIRESTORE_RULES.md)\n3. Start sending codes to beta testers!`);
+      setShowBetaSetup(false);
+    } catch (error) {
+      console.error('Error adding beta codes:', error);
+      alert(`❌ Error adding beta codes:\n\n${error.message}\n\nMake sure Firestore security rules allow writes for authenticated users.`);
+    }
   };
 
   // Function to get workout (modified or original)
@@ -1050,20 +1077,26 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
               >
                 🔄 Refresh Plan
               </button>
-              <button
-                onClick={forceTestSelection}
-                style={{ 
-                  background: 'rgba(168, 85, 247, 0.1)', 
-                  color: '#a855f7', 
-                  border: '1px solid rgba(168, 85, 247, 0.3)',
-                  marginLeft: '12px',
-                  fontSize: '0.8rem',
-                  padding: '6px 12px',
-                  borderRadius: '4px'
-                }}
-              >
-                🧪 Test Selection
-              </button>
+
+              {/* Beta Code Setup Button - Only show for admin (your email) */}
+              {auth.currentUser?.email === 'herrenbrad@gmail.com' && (
+                <button
+                  onClick={() => setShowBetaSetup(true)}
+                  style={{
+                    background: 'rgba(0, 212, 255, 0.1)',
+                    color: '#00D4FF',
+                    border: '1px solid rgba(0, 212, 255, 0.3)',
+                    marginLeft: '12px',
+                    fontSize: '0.8rem',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🎫 Setup Beta Codes
+                </button>
+              )}
+
               <button
                 onClick={() => {
                   if (window.confirm('Clear all data and start over? This will reset your profile and training plan.')) {
@@ -1711,6 +1744,112 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
         onWorkoutSelect={handleWorkoutReplacement}
         weather={null} // TODO: Add weather API integration
       />
+
+      {/* Beta Code Setup Modal - Admin Only */}
+      {showBetaSetup && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)',
+            borderRadius: '12px',
+            padding: '40px',
+            maxWidth: '600px',
+            width: '100%',
+            border: '2px solid rgba(0, 212, 255, 0.3)',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <h2 style={{ color: '#00D4FF', marginTop: 0 }}>🎫 Setup Beta Codes</h2>
+            <p style={{ color: '#AAAAAA', marginBottom: '20px' }}>
+              This will add 10 unique single-use beta codes to Firestore.
+            </p>
+
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.3)',
+              padding: '20px',
+              borderRadius: '8px',
+              marginBottom: '30px',
+              fontFamily: 'monospace',
+              fontSize: '14px'
+            }}>
+              <strong style={{ color: '#00D4FF' }}>Your 10 Beta Codes:</strong>
+              <div style={{ marginTop: '10px' }}>
+                <div>1. VVVFRS</div>
+                <div>2. SVTQHH</div>
+                <div>3. EN88AQ</div>
+                <div>4. H8RXZ6</div>
+                <div>5. 69JUVC</div>
+                <div>6. XJXHZM</div>
+                <div>7. 2EHTS9</div>
+                <div>8. ZWNVSS</div>
+                <div>9. KFCHAK</div>
+                <div>10. 8E685H</div>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'rgba(255, 184, 0, 0.1)',
+              border: '1px solid rgba(255, 184, 0, 0.3)',
+              borderRadius: '8px',
+              padding: '16px',
+              marginBottom: '20px',
+              color: '#FFB800'
+            }}>
+              <strong>⚠️ Before clicking:</strong>
+              <ol style={{ margin: '10px 0 0 0', paddingLeft: '20px' }}>
+                <li>Make sure Firestore security rules are updated</li>
+                <li>This only needs to be done once</li>
+                <li>Each code can only be used once</li>
+              </ol>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleSetupBetaCodes}
+                style={{
+                  flex: 1,
+                  padding: '15px',
+                  background: '#00D4FF',
+                  color: '#000000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                🚀 Add Codes to Firestore
+              </button>
+              <button
+                onClick={() => setShowBetaSetup(false)}
+                style={{
+                  padding: '15px 30px',
+                  background: 'rgba(156, 163, 175, 0.1)',
+                  color: '#9CA3AF',
+                  border: '1px solid rgba(156, 163, 175, 0.3)',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </>
   );
