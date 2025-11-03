@@ -862,7 +862,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
       <div style={{ color: '#AAAAAA', padding: '20px 0' }}>
         <div className="container">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div>
+            <div style={{ flex: 1 }}>
               <h1 style={{ margin: '0 0 8px 0' }}>
                 {currentWeekData.weekDates && currentWeekData.weekDates.displayText !== `Week ${currentWeek}` 
                   ? `Week ${currentWeek} (${currentWeekData.weekDates.displayText})` 

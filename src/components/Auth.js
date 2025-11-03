@@ -180,6 +180,7 @@ function Auth() {
                       type="text"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
+                      autoComplete="name"
                       placeholder="Your name"
                       style={{
                         width: '100%',
@@ -230,6 +231,7 @@ function Auth() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  autoComplete="email"
                   placeholder="you@example.com"
                   style={{
                     width: '100%',
@@ -252,6 +254,7 @@ function Auth() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  autoComplete={isLogin ? "current-password" : "new-password"}
                   placeholder="At least 6 characters"
                   style={{
                     width: '100%',
