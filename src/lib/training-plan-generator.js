@@ -238,10 +238,30 @@ export class TrainingPlanGenerator {
             const finalWeek = weeklyPlans[weeklyPlans.length - 1];
             const longRunDayName = weeklyStructure.longRunDay || 'Saturday';
 
+            console.log('🏁 Race Day Feature:');
+            console.log('  Race Date:', raceDate);
+            console.log('  Final Week Workouts:', finalWeek.workouts.map(w => ({ day: w.day, type: w.type, distance: w.distance })));
+
             // Find the long run workout in the final week
-            const longRunIndex = finalWeek.workouts.findIndex(w =>
-                w.day === longRunDayName || w.type === 'longRun'
-            );
+            // Try multiple strategies:
+            // 1. Find by type 'longRun'
+            let longRunIndex = finalWeek.workouts.findIndex(w => w.type === 'longRun');
+
+            // 2. If not found, find by day name
+            if (longRunIndex === -1) {
+                longRunIndex = finalWeek.workouts.findIndex(w => w.day === longRunDayName);
+            }
+
+            // 3. If still not found, find the workout with the longest distance
+            if (longRunIndex === -1) {
+                let maxDistance = 0;
+                finalWeek.workouts.forEach((w, idx) => {
+                    if (w.type !== 'rest' && w.distance > maxDistance) {
+                        maxDistance = w.distance;
+                        longRunIndex = idx;
+                    }
+                });
+            }
 
             if (longRunIndex !== -1) {
                 // Generate the Race Day workout
@@ -254,6 +274,8 @@ export class TrainingPlanGenerator {
                 };
 
                 console.log(`🏁 Race Day workout added to final week on ${finalWeek.workouts[longRunIndex].day}`);
+            } else {
+                console.warn('⚠️ Could not find suitable workout to replace with Race Day in final week');
             }
         }
 
