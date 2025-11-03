@@ -102,11 +102,13 @@
             <div>10. 8E685H</div>
         </div>
 
-        <button id="setupBtn" onclick="setupBetaCodes()">
-            🚀 Add All Codes to Firestore
+        <button id="setupBtn" onclick="setupBetaCodes()" disabled>
+            ⏳ Loading...
         </button>
 
-        <div id="status"></div>
+        <div id="status">
+            <div class="status">Checking login status...</div>
+        </div>
     </div>
 
     <!-- Firebase SDK -->
@@ -132,8 +134,12 @@
 
         // Check auth state
         let currentUser = null;
+        let authInitialized = false;
+
         onAuthStateChanged(auth, (user) => {
+            console.log('🔐 Auth state changed:', user ? `Logged in as ${user.email}` : 'Not logged in');
             currentUser = user;
+            authInitialized = true;
             updateUI();
         });
 
@@ -141,13 +147,26 @@
             const btn = document.getElementById('setupBtn');
             const statusDiv = document.getElementById('status');
 
+            if (!authInitialized) {
+                // Still loading
+                btn.disabled = true;
+                btn.textContent = '⏳ Loading...';
+                statusDiv.innerHTML = '<div class="status">Checking login status...</div>';
+                return;
+            }
+
             if (!currentUser) {
                 btn.disabled = true;
                 btn.textContent = '🔒 Login Required';
                 statusDiv.innerHTML = `
                     <div class="error">
                         <strong>⚠️ Not Logged In</strong><br>
-                        Please <a href="/" style="color: #00D4FF;">login to your account</a> first, then come back to this page.
+                        You need to be logged in to add beta codes.<br><br>
+                        <strong>Steps:</strong><br>
+                        1. Open a new tab and go to <a href="/" style="color: #00D4FF; text-decoration: underline;">runplusplans.com</a><br>
+                        2. Login to your account<br>
+                        3. Come back to this tab and refresh the page<br><br>
+                        Or you can <a href="/" style="color: #00D4FF; text-decoration: underline;">click here to login</a> (you'll need to come back here after).
                     </div>
                 `;
             } else {
