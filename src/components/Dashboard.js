@@ -994,14 +994,21 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
         <div className="container">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ flex: 1 }}>
-              <h1 style={{ margin: '0 0 8px 0' }}>
-                {(() => {
-                  const dateRange = getWeekDateRange(currentWeek);
-                  return dateRange
-                    ? `Week ${currentWeek} (Week of ${dateRange})`
-                    : `Week ${currentWeek} Training`;
-                })()}
+              <h1 style={{ margin: '0', lineHeight: '1.2' }}>
+                Week {currentWeek}
               </h1>
+              {(() => {
+                const dateRange = getWeekDateRange(currentWeek);
+                return dateRange ? (
+                  <div style={{
+                    fontSize: '0.9rem',
+                    color: '#AAAAAA',
+                    marginTop: '4px'
+                  }}>
+                    Week of {dateRange}
+                  </div>
+                ) : null;
+              })()}
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginTop: '8px' }}>
                 {(() => {
                   const mileageBreakdown = calculateMileageBreakdown(currentWeekData);
