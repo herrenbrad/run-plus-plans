@@ -7,11 +7,20 @@ import {
 } from 'firebase/auth';
 import { auth } from '../firebase/config';
 
+// BETA ACCESS CODES - Add new codes here for beta testers
+const VALID_BETA_CODES = [
+  'ELLIPTIGO2025',
+  'CYCLETE2025',
+  'RUNPLUS2025',
+  'BETA2025'
+];
+
 function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [betaCode, setBetaCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [resetEmailSent, setResetEmailSent] = useState(false);
@@ -27,7 +36,13 @@ function Auth() {
         await signInWithEmailAndPassword(auth, email, password);
         console.log('✅ Logged in successfully');
       } else {
-        // Sign up
+        // Sign up - VALIDATE BETA CODE FIRST
+        if (!betaCode || !VALID_BETA_CODES.includes(betaCode.toUpperCase())) {
+          setError('Invalid beta access code. Please contact support for access.');
+          setLoading(false);
+          return;
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
 
         // Update profile with display name
@@ -156,26 +171,54 @@ function Auth() {
           <>
             <form onSubmit={handleSubmit}>
               {!isLogin && (
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', color: '#CCCCCC', marginBottom: '8px' }}>
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Your name"
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '6px',
-                      color: '#FFFFFF',
-                      fontSize: '1rem'
-                    }}
-                  />
-                </div>
+                <>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', color: '#CCCCCC', marginBottom: '8px' }}>
+                      Name
+                    </label>
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="Your name"
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        color: '#FFFFFF',
+                        fontSize: '1rem'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', color: '#CCCCCC', marginBottom: '8px' }}>
+                      Beta Access Code <span style={{ color: '#FF6B6B' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={betaCode}
+                      onChange={(e) => setBetaCode(e.target.value)}
+                      required
+                      placeholder="Enter your beta code"
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        color: '#FFFFFF',
+                        fontSize: '1rem',
+                        textTransform: 'uppercase'
+                      }}
+                    />
+                    <p style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', marginBottom: 0 }}>
+                      Beta access code required for signup
+                    </p>
+                  </div>
+                </>
               )}
 
               <div style={{ marginBottom: '16px' }}>
