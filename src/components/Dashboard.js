@@ -1210,15 +1210,24 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h2 style={{ margin: 0 }}>Week Progress</h2>
             <span className="badge badge-info">
-              {currentWeekData.workouts.filter(w => w.completed).length}/{currentWeekData.workouts.filter(w => w.type !== 'rest').length} completed
+              {(() => {
+                // Use getWorkout() to get completion status from both Firestore AND local state
+                const completedCount = currentWeekData.workouts.filter(w => getWorkout(w).completed).length;
+                const totalCount = currentWeekData.workouts.filter(w => w.type !== 'rest').length;
+                return `${completedCount}/${totalCount} completed`;
+              })()}
             </span>
           </div>
-          
+
           <div className="progress-bar">
-            <div 
-              className="progress-fill" 
-              style={{ 
-                width: `${(currentWeekData.workouts.filter(w => w.completed).length / currentWeekData.workouts.filter(w => w.type !== 'rest').length) * 100}%` 
+            <div
+              className="progress-fill"
+              style={{
+                width: `${(() => {
+                  const completedCount = currentWeekData.workouts.filter(w => getWorkout(w).completed).length;
+                  const totalCount = currentWeekData.workouts.filter(w => w.type !== 'rest').length;
+                  return (completedCount / totalCount) * 100;
+                })()}%`
               }}
             ></div>
           </div>
