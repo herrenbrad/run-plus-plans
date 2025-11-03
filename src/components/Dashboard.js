@@ -251,7 +251,8 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   const [workoutOptions, setWorkoutOptions] = useState({});
   const [showingOptions, setShowingOptions] = useState({});
   const [selectedOptions, setSelectedOptions] = useState({}); // Track selected but not yet confirmed options
-  
+  const [workoutCompletions, setWorkoutCompletions] = useState({}); // Track workout completions for instant UI updates
+
   // TEST: Add a debugging button to force a selection for testing
   const forceTestSelection = () => {
     const testKey = `${currentWeek}-Wednesday`;
@@ -311,7 +312,27 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
       }
     }
   }, [modifiedWorkouts, hasLoaded]);
-  
+
+  // Load workout completion status from training plan on mount
+  useEffect(() => {
+    if (!trainingPlan?.weeks) return;
+
+    const completions = {};
+    trainingPlan.weeks.forEach(week => {
+      week.workouts?.forEach(workout => {
+        if (workout.completed !== undefined) {
+          const workoutKey = `${week.week}-${workout.day}`;
+          completions[workoutKey] = {
+            completed: workout.completed,
+            completedAt: workout.completedAt
+          };
+        }
+      });
+    });
+
+    setWorkoutCompletions(completions);
+  }, [trainingPlan]);
+
   // Initialize workout libraries
   const tempoLibrary = new TempoWorkoutLibrary();
   const intervalLibrary = new IntervalWorkoutLibrary();
@@ -665,22 +686,45 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     }
 
     const newCompletedStatus = !workout.completed;
+    const workoutKey = `${currentWeek}-${workout.day}`;
 
-    // Update Firestore
-    const result = await FirestoreService.markWorkoutComplete(
-      auth.currentUser.uid,
-      currentWeek,
-      workout.day,
-      newCompletedStatus
-    );
+    // INSTANT UI UPDATE: Update local state immediately for smooth UX
+    setWorkoutCompletions(prev => ({
+      ...prev,
+      [workoutKey]: {
+        completed: newCompletedStatus,
+        completedAt: newCompletedStatus ? new Date().toISOString() : null
+      }
+    }));
 
-    if (result.success) {
-      // Force a page reload to refresh the training plan from Firestore
-      // This ensures the completion status is immediately visible
-      window.location.reload();
-    } else {
-      console.error('Failed to mark workout complete');
-      alert('Failed to save completion status. Please try again.');
+    // BACKGROUND SAVE: Update Firestore without blocking UI
+    try {
+      const result = await FirestoreService.markWorkoutComplete(
+        auth.currentUser.uid,
+        currentWeek,
+        workout.day,
+        newCompletedStatus
+      );
+
+      if (!result.success) {
+        // Rollback on failure
+        console.error('Failed to save completion status');
+        setWorkoutCompletions(prev => {
+          const updated = { ...prev };
+          delete updated[workoutKey];
+          return updated;
+        });
+        alert('Failed to save. Please try again.');
+      }
+    } catch (error) {
+      // Rollback on error
+      console.error('Error saving completion:', error);
+      setWorkoutCompletions(prev => {
+        const updated = { ...prev };
+        delete updated[workoutKey];
+        return updated;
+      });
+      alert('Failed to save. Please try again.');
     }
   };
 
@@ -878,7 +922,21 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   // Function to get workout (modified or original)
   const getWorkout = (originalWorkout) => {
     const workoutKey = `${currentWeek}-${originalWorkout.day}`;
-    return modifiedWorkouts[workoutKey] || originalWorkout;
+
+    // Start with modified workout if it exists, otherwise original
+    const baseWorkout = modifiedWorkouts[workoutKey] || originalWorkout;
+
+    // Merge completion status from local state (for instant UI updates)
+    const completionData = workoutCompletions[workoutKey];
+    if (completionData) {
+      return {
+        ...baseWorkout,
+        completed: completionData.completed,
+        completedAt: completionData.completedAt
+      };
+    }
+
+    return baseWorkout;
   };
 
   return (
