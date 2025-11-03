@@ -658,6 +658,32 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     });
   };
 
+  const handleMarkComplete = async (workout) => {
+    if (!auth.currentUser) {
+      console.error('No user logged in');
+      return;
+    }
+
+    const newCompletedStatus = !workout.completed;
+
+    // Update Firestore
+    const result = await FirestoreService.markWorkoutComplete(
+      auth.currentUser.uid,
+      currentWeek,
+      workout.day,
+      newCompletedStatus
+    );
+
+    if (result.success) {
+      // Force a page reload to refresh the training plan from Firestore
+      // This ensures the completion status is immediately visible
+      window.location.reload();
+    } else {
+      console.error('Failed to mark workout complete');
+      alert('Failed to save completion status. Please try again.');
+    }
+  };
+
   const handleWorkoutReplacement = (newWorkout) => {
     // Store the modified workout
     const workoutKey = `${currentWeek}-${newWorkout.day}`;
@@ -1204,11 +1230,31 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                   {workout.type === 'rest' ? (
                     // Rest day specific buttons
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '16px' }}>
-                      <button 
+                      {/* Mark Complete Button for Rest Days */}
+                      <button
                         className="btn"
-                        style={{ 
-                          fontSize: '0.8rem', 
-                          padding: '8px 16px', 
+                        style={{
+                          fontSize: '0.85rem',
+                          padding: '10px 16px',
+                          whiteSpace: 'nowrap',
+                          fontWeight: '600',
+                          background: workout.completed ? 'rgba(156, 163, 175, 0.1)' : 'rgba(0, 255, 136, 0.1)',
+                          color: workout.completed ? '#9ca3af' : '#00FF88',
+                          border: workout.completed ? '1px solid rgba(156, 163, 175, 0.3)' : '1px solid rgba(0, 255, 136, 0.3)'
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkComplete(workout);
+                        }}
+                      >
+                        {workout.completed ? '⏪ Undo Rest' : '✅ Rested'}
+                      </button>
+
+                      <button
+                        className="btn"
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '8px 16px',
                           whiteSpace: 'nowrap',
                           background: 'rgba(34, 197, 94, 0.1)',
                           color: '#22c55e',
@@ -1225,6 +1271,26 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                     </div>
                   ) : workout.type !== 'rest' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '16px' }}>
+                      {/* Mark Complete Button */}
+                      <button
+                        className="btn"
+                        style={{
+                          fontSize: '0.85rem',
+                          padding: '10px 16px',
+                          whiteSpace: 'nowrap',
+                          fontWeight: '600',
+                          background: workout.completed ? 'rgba(156, 163, 175, 0.1)' : 'rgba(0, 255, 136, 0.1)',
+                          color: workout.completed ? '#9ca3af' : '#00FF88',
+                          border: workout.completed ? '1px solid rgba(156, 163, 175, 0.3)' : '1px solid rgba(0, 255, 136, 0.3)'
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkComplete(workout);
+                        }}
+                      >
+                        {workout.completed ? '⏪ Undo Complete' : '✅ Mark Complete'}
+                      </button>
+
                       {/* Show adventure options for adventure/flexible users */}
                       {(userProfile?.trainingStyle === 'adventure' || 
                         (userProfile?.trainingStyle === 'flexible' && ['tempo', 'intervals', 'longRun', 'hills'].includes(workout.type))) && 
