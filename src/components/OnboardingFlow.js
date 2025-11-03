@@ -1247,7 +1247,7 @@ function OnboardingFlow({ onComplete }) {
         return (
           <div>
             <h2 style={{ color: '#FFFFFF', fontWeight: '700', fontSize: '1.75rem', marginBottom: '16px' }}>Equipment & Training Preferences</h2>
-            <p><strong>🚀 Unique to RunEQ!</strong> We're the only app with equipment-specific training.</p>
+            <p><strong>🚀 Unique to Run+ Plans!</strong> We're the only app with equipment-specific training.</p>
 
             {/* Stand-up Bike Equipment */}
             <div style={{ marginBottom: '32px' }}>
@@ -1451,7 +1451,7 @@ function OnboardingFlow({ onComplete }) {
             {/* Training Philosophy */}
             <div>
               <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.5rem', marginBottom: '12px' }}>Choose Your Training System</h3>
-              <p style={{ color: '#E5E7EB', fontSize: '1rem' }}><strong style={{ color: '#F8F9FA' }}>🎯 RunEQ Advantage:</strong> Multiple proven methodologies coming soon!</p>
+              <p style={{ color: '#E5E7EB', fontSize: '1rem' }}><strong style={{ color: '#F8F9FA' }}>🎯 Run+ Plans Advantage:</strong> Multiple proven methodologies coming soon!</p>
               <div style={{ display: 'grid', gap: '16px' }}>
                 {[
                   {
@@ -1637,7 +1637,7 @@ function OnboardingFlow({ onComplete }) {
             <p>Based on your preferences, here's what makes your plan unique:</p>
             
             <div className="card" style={{ background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)' }}>
-              <h3>Your RunEQ Profile</h3>
+              <h3>Your Run+ Plans Profile</h3>
               <div style={{ display: 'grid', gap: '12px', textAlign: 'left' }}>
                 <div><strong>Goal:</strong> {formData.raceDistance} race training</div>
                 {formData.raceElevationProfile && (

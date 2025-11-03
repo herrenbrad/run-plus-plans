@@ -112,7 +112,7 @@ function Auth() {
           marginBottom: '8px',
           fontSize: '2rem'
         }}>
-          RunEQ
+          Run+ Plans
         </h1>
         <p style={{
           textAlign: 'center',

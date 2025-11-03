@@ -19,10 +19,10 @@ function LandingPage() {
         <div className="container">
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
             <h1 style={{ fontSize: '2.5rem', marginBottom: '16px' }}>
-              RunEQ
+              Run+ Plans
             </h1>
             <p style={{ fontSize: '1.25rem', color: '#AAAAAA', marginBottom: '32px', maxWidth: '600px', margin: '0 auto 32px' }}>
-              The intelligent training app that adapts to your equipment, climate, and life. 
+              The intelligent training app that adapts to your equipment, climate, and life.
               Built for runners, cyclists, and stand-up bike athletes.
             </p>
             
@@ -58,7 +58,7 @@ function LandingPage() {
 
             {/* Competitive Advantages */}
             <div className="card" style={{ marginBottom: '32px', textAlign: 'left' }}>
-              <h3 style={{ textAlign: 'center', marginBottom: '20px' }}>Why RunEQ vs Others?</h3>
+              <h3 style={{ textAlign: 'center', marginBottom: '20px' }}>Why Run+ Plans vs Others?</h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span style={{ color: '#00FF88', fontSize: '1.2rem' }}>✓</span>
