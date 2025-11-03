@@ -45,13 +45,17 @@ function App() {
 
         if (result.success && result.data) {
           console.log('📦 Loaded user data from Firestore');
+          console.log('DEBUG: Has profile?', !!result.data.profile);
+          console.log('DEBUG: Has trainingPlan?', !!result.data.trainingPlan);
 
           if (result.data.profile) {
             setUserProfile(result.data.profile);
+            console.log('✅ Profile loaded');
           }
 
           if (result.data.trainingPlan) {
             setTrainingPlan(result.data.trainingPlan);
+            console.log('✅ Training plan loaded');
           }
         } else {
           console.log('ℹ️ No saved data found - new user');
