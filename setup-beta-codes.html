@@ -113,6 +113,7 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
         // Your Firebase config (same as in src/firebase/config.js)
         const firebaseConfig = {
@@ -127,6 +128,39 @@
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Check auth state
+        let currentUser = null;
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            updateUI();
+        });
+
+        function updateUI() {
+            const btn = document.getElementById('setupBtn');
+            const statusDiv = document.getElementById('status');
+
+            if (!currentUser) {
+                btn.disabled = true;
+                btn.textContent = '🔒 Login Required';
+                statusDiv.innerHTML = `
+                    <div class="error">
+                        <strong>⚠️ Not Logged In</strong><br>
+                        Please <a href="/" style="color: #00D4FF;">login to your account</a> first, then come back to this page.
+                    </div>
+                `;
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🚀 Add All Codes to Firestore';
+                statusDiv.innerHTML = `
+                    <div class="success">
+                        ✅ Logged in as ${currentUser.email}<br>
+                        Ready to add beta codes!
+                    </div>
+                `;
+            }
+        }
 
         // Beta codes to add
         const BETA_CODES = [
@@ -145,6 +179,17 @@
         window.setupBetaCodes = async function() {
             const btn = document.getElementById('setupBtn');
             const statusDiv = document.getElementById('status');
+
+            // Check if user is logged in
+            if (!currentUser) {
+                statusDiv.innerHTML = `
+                    <div class="error">
+                        <strong>⚠️ Not Logged In</strong><br>
+                        Please <a href="/" style="color: #00D4FF;">login to your account</a> first, then come back to this page.
+                    </div>
+                `;
+                return;
+            }
 
             btn.disabled = true;
             btn.textContent = '⏳ Adding codes...';
