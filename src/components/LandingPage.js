@@ -18,12 +18,18 @@ function LandingPage() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
         <div className="container">
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
-            <h1 style={{ fontSize: '2.5rem', marginBottom: '16px' }}>
-              Run+ Plans
-            </h1>
-            <p style={{ fontSize: '1.25rem', color: '#AAAAAA', marginBottom: '32px', maxWidth: '600px', margin: '0 auto 32px' }}>
-              The intelligent training app that adapts to your equipment, climate, and life.
-              Built for runners, cyclists, and stand-up bike athletes.
+            <img
+              src="/logo.png"
+              alt="Run+ Plans"
+              style={{
+                maxWidth: '300px',
+                height: 'auto',
+                marginBottom: '24px'
+              }}
+            />
+            <p style={{ fontSize: '1.35rem', color: '#AAAAAA', marginBottom: '32px', maxWidth: '700px', margin: '0 auto 32px', lineHeight: '1.6' }}>
+              Smart training that adapts to injuries, equipment, and real life.<br />
+              Built for runners who refuse to stop, even when the plan needs to change.
             </p>
             
             {/* Key Differentiators */}

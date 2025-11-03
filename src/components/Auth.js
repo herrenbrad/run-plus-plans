@@ -106,22 +106,24 @@ function Auth() {
         width: '100%',
         border: '1px solid rgba(255, 255, 255, 0.1)'
       }}>
-        <h1 style={{
-          textAlign: 'center',
-          color: '#00D4FF',
-          marginBottom: '8px',
-          fontSize: '2rem'
-        }}>
-          Run+ Plans
-        </h1>
-        <p style={{
-          textAlign: 'center',
-          color: '#AAAAAA',
-          marginBottom: '32px',
-          fontSize: '0.9rem'
-        }}>
-          Stand-up bike + running training plans
-        </p>
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <img
+            src="/logo.png"
+            alt="Run+ Plans"
+            style={{
+              maxWidth: '200px',
+              height: 'auto',
+              marginBottom: '16px'
+            }}
+          />
+          <p style={{
+            color: '#AAAAAA',
+            fontSize: '0.95rem',
+            lineHeight: '1.4'
+          }}>
+            Smart training that adapts to injuries, equipment, and real life
+          </p>
+        </div>
 
         {resetEmailSent ? (
           <div style={{
