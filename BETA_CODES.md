@@ -33,11 +33,12 @@ This prevents one person from sharing the code with 6,300 people in a Facebook g
 
 ### **ONE-CLICK SETUP (EASIEST!):**
 
-1. **Go to:** https://runplusplans.com/setup-beta-codes.html
-2. **Click:** "Add All Codes to Firestore"
-3. **Done!** All 10 codes added in seconds
+1. **Login first:** Go to https://runplusplans.com and login with your account
+2. **Then go to:** https://runplusplans.com/setup-beta-codes.html
+3. **Click:** "Add All Codes to Firestore"
+4. **Done!** All 10 codes added in seconds
 
-That's it! No manual work needed.
+⚠️ **Important:** You must be logged in first for this to work!
 
 ---
 
