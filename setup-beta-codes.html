@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Beta Codes - Run+ Plans</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            color: #FFFFFF;
+            padding: 40px 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            max-width: 600px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        h1 {
+            color: #00D4FF;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #AAAAAA;
+            margin-bottom: 30px;
+        }
+        .code-list {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .code-list div {
+            padding: 5px 0;
+        }
+        button {
+            background: #00D4FF;
+            color: #000000;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #00B8E6;
+        }
+        button:disabled {
+            background: #666666;
+            cursor: not-allowed;
+        }
+        .success {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            color: #00FF88;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .error {
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+            color: #FF6B6B;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .status {
+            color: #AAAAAA;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎫 Setup Beta Codes</h1>
+        <p class="subtitle">Add all 10 beta codes to Firestore with one click</p>
+
+        <div class="code-list">
+            <strong>Your 10 Beta Codes:</strong>
+            <div>1. VVVFRS</div>
+            <div>2. SVTQHH</div>
+            <div>3. EN88AQ</div>
+            <div>4. H8RXZ6</div>
+            <div>5. 69JUVC</div>
+            <div>6. XJXHZM</div>
+            <div>7. 2EHTS9</div>
+            <div>8. ZWNVSS</div>
+            <div>9. KFCHAK</div>
+            <div>10. 8E685H</div>
+        </div>
+
+        <button id="setupBtn" onclick="setupBetaCodes()">
+            🚀 Add All Codes to Firestore
+        </button>
+
+        <div id="status"></div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        // Your Firebase config (same as in src/firebase/config.js)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDMkQdhqJGBvRhWx-KdvgVL2_hs76HxzgU",
+            authDomain: "run-plus-plans.firebaseapp.com",
+            projectId: "run-plus-plans",
+            storageBucket: "run-plus-plans.firebasestorage.app",
+            messagingSenderId: "1005371555774",
+            appId: "1:1005371555774:web:db63b2fe8eb99dcac89a4f"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Beta codes to add
+        const BETA_CODES = [
+            'VVVFRS',
+            'SVTQHH',
+            'EN88AQ',
+            'H8RXZ6',
+            '69JUVC',
+            'XJXHZM',
+            '2EHTS9',
+            'ZWNVSS',
+            'KFCHAK',
+            '8E685H'
+        ];
+
+        window.setupBetaCodes = async function() {
+            const btn = document.getElementById('setupBtn');
+            const statusDiv = document.getElementById('status');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Adding codes...';
+            statusDiv.innerHTML = '<div class="status">Please wait...</div>';
+
+            try {
+                let successCount = 0;
+                let errorCount = 0;
+                const errors = [];
+
+                for (const code of BETA_CODES) {
+                    try {
+                        const docRef = doc(db, 'betaCodes', code);
+                        await setDoc(docRef, {
+                            code: code,
+                            used: false,
+                            usedBy: null,
+                            usedAt: null,
+                            createdAt: serverTimestamp(),
+                            createdFor: '',
+                            notes: ''
+                        });
+                        successCount++;
+                        statusDiv.innerHTML = `<div class="status">Added ${successCount}/${BETA_CODES.length} codes...</div>`;
+                    } catch (error) {
+                        errorCount++;
+                        errors.push(`${code}: ${error.message}`);
+                    }
+                }
+
+                if (errorCount === 0) {
+                    statusDiv.innerHTML = `
+                        <div class="success">
+                            <strong>✅ Success!</strong><br>
+                            All ${successCount} beta codes added to Firestore!<br><br>
+                            <strong>Next steps:</strong><br>
+                            1. Go to Firebase Console → Firestore<br>
+                            2. Verify the "betaCodes" collection exists<br>
+                            3. Update Firestore security rules (see FIRESTORE_RULES.md)<br>
+                            4. Start sending codes to beta testers!
+                        </div>
+                    `;
+                    btn.textContent = '✅ Done!';
+                } else {
+                    statusDiv.innerHTML = `
+                        <div class="error">
+                            <strong>⚠️ Partial Success</strong><br>
+                            ${successCount} codes added, ${errorCount} failed.<br><br>
+                            Errors:<br>
+                            ${errors.join('<br>')}
+                        </div>
+                    `;
+                    btn.textContent = '❌ Some Failed';
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="error">
+                        <strong>❌ Error</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+                btn.textContent = '🚀 Try Again';
+                btn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
