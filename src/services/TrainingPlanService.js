@@ -63,6 +63,7 @@ class TrainingPlanService {
             raceDistance: formData.raceDistance, // Goal race distance (e.g., "Half")
             currentRaceDistance: distance,        // Current fitness distance (e.g., "10K")
             raceTime: time,                       // Goal race time (e.g., "2:00:00")
+            raceDate: formData.raceDate,          // Race date for final week "Race Day" workout
             currentPaces: null, // Will calculate from raceTime
             runsPerWeek: formData.runsPerWeek,
             runEqPreference: runEqPreference,

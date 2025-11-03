@@ -117,6 +117,7 @@ export class TrainingPlanGenerator {
         const {
             raceDistance = "10K",
             raceTime = null,
+            raceDate = null,             // Race date for final week "Race Day" workout
             currentPaces = null,
             runsPerWeek = 4,
             runEqPreference = 0,
@@ -230,6 +231,30 @@ export class TrainingPlanGenerator {
                 runningStatus
             );
             weeklyPlans.push(weekPlan);
+        }
+
+        // 🏁 RACE DAY FEATURE: Replace final long run with Race Day workout if user has a race date
+        if (raceDate && weeklyPlans.length > 0) {
+            const finalWeek = weeklyPlans[weeklyPlans.length - 1];
+            const longRunDayName = weeklyStructure.longRunDay || 'Saturday';
+
+            // Find the long run workout in the final week
+            const longRunIndex = finalWeek.workouts.findIndex(w =>
+                w.day === longRunDayName || w.type === 'longRun'
+            );
+
+            if (longRunIndex !== -1) {
+                // Generate the Race Day workout
+                const raceDayWorkout = this.generateRaceDayWorkout(raceDistance, raceDate);
+
+                // Replace the long run with Race Day workout
+                finalWeek.workouts[longRunIndex] = {
+                    day: finalWeek.workouts[longRunIndex].day,
+                    ...raceDayWorkout
+                };
+
+                console.log(`🏁 Race Day workout added to final week on ${finalWeek.workouts[longRunIndex].day}`);
+            }
         }
 
         return {
@@ -1026,5 +1051,81 @@ export class TrainingPlanGenerator {
             standUpBikeType,
             { targetDistance }  // Pass targetDistance for RunEQ conversion
         );
+    }
+
+    /**
+     * Generate Race Day workout with coaching advice
+     */
+    generateRaceDayWorkout(raceDistance, raceDate) {
+        // Distance conversions
+        const distanceMap = {
+            '5K': { miles: 3.1, name: '5K' },
+            '10K': { miles: 6.2, name: '10K' },
+            'Half': { miles: 13.1, name: 'Half Marathon' },
+            'Marathon': { miles: 26.2, name: 'Marathon' }
+        };
+
+        const distance = distanceMap[raceDistance] || { miles: parseFloat(raceDistance) || 13.1, name: raceDistance };
+
+        // Race-specific coaching advice
+        const coachingAdvice = {
+            '5K': [
+                '🎯 Race Strategy: Start controlled, hit race pace by mile 1, build through mile 2, empty the tank in the final 800m',
+                '⏱️ Pacing: This is a fast race - don\'t go out too hard, but don\'t be afraid to hurt',
+                '💪 Mental Game: Pain is temporary, your PR time is forever',
+                '🔥 The last mile is where races are won - stay strong and finish fast!'
+            ],
+            '10K': [
+                '🎯 Race Strategy: First 5K controlled at goal pace, second 5K at effort (pace will feel harder but stay consistent)',
+                '⏱️ Pacing: Even splits are your friend - negative splits are magic',
+                '💪 Mental Game: The middle miles (2-4) are where mental toughness counts',
+                '🏁 Final kilometer: Give everything you\'ve got left!'
+            ],
+            'Half': [
+                '🎯 Race Strategy: Miles 1-6 feel easy, 7-10 at goal pace, 11-13 dig deep',
+                '⏱️ Pacing: First half should feel controlled - if you\'re working hard before mile 8, you went too fast',
+                '💪 Mental Game: Mile 10 is the real start of the race - this is where your training pays off',
+                '🔥 The final 5K is all guts - trust your training and push through',
+                '💧 Hydration: Take water at every aid station, even if just a sip'
+            ],
+            'Marathon': [
+                '🎯 Race Strategy: Miles 1-16 should feel easy and controlled, 17-20 maintain focus, 21-26 is the real race',
+                '⏱️ Pacing: The first 20 miles are the warmup for the last 6 miles',
+                '💪 Mental Game: "The wall" at mile 20 is real - but your training prepared you for this',
+                '🔥 When it gets hard around mile 20, remember: this is why you trained',
+                '💧 Hydration & Fuel: Take water/electrolytes at every station, fuel every 45min starting at mile 6',
+                '🧠 Break it down: Focus on one mile at a time, not the distance remaining',
+                '✨ You\'ve got this - you\'ve already done the hard work in training!'
+            ]
+        };
+
+        const advice = coachingAdvice[raceDistance] || [
+            '🎯 Race Strategy: Start controlled, settle into your pace, finish strong',
+            '⏱️ Pacing: Even effort throughout, trust your training',
+            '💪 Mental Game: Stay present, stay strong, stay focused',
+            '🔥 This is your day - go get it!'
+        ];
+
+        // Format race date
+        const raceDateFormatted = raceDate
+            ? new Date(raceDate + 'T00:00:00').toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })
+            : 'Race Day';
+
+        return {
+            name: `🏁 RACE DAY - ${distance.name}`,
+            type: 'race',
+            distance: distance.miles,
+            structure: `Your ${distance.name} race - ${distance.miles} miles`,
+            description: advice.join('\n\n'),
+            about: `Today is what you've been training for! Trust your preparation, execute your race plan, and leave it all out there. You're ready for this.`,
+            focus: 'Race Performance',
+            notes: `Race Date: ${raceDateFormatted}`,
+            equipment: 'running'
+        };
     }
 }
