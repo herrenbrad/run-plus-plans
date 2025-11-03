@@ -6,14 +6,7 @@ import {
   updateProfile
 } from 'firebase/auth';
 import { auth } from '../firebase/config';
-
-// BETA ACCESS CODES - Add new codes here for beta testers
-const VALID_BETA_CODES = [
-  'ELLIPTIGO2025',
-  'CYCLETE2025',
-  'RUNPLUS2025',
-  'BETA2025'
-];
+import BetaCodeService from '../services/BetaCodeService';
 
 function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -37,12 +30,22 @@ function Auth() {
         console.log('✅ Logged in successfully');
       } else {
         // Sign up - VALIDATE BETA CODE FIRST
-        if (!betaCode || !VALID_BETA_CODES.includes(betaCode.toUpperCase())) {
-          setError('Invalid beta access code. Please contact support for access.');
+        if (!betaCode) {
+          setError('Beta access code is required.');
           setLoading(false);
           return;
         }
 
+        // Validate code with Firestore (checks if valid AND unused)
+        const validation = await BetaCodeService.validateCode(betaCode);
+
+        if (!validation.valid) {
+          setError(validation.error);
+          setLoading(false);
+          return;
+        }
+
+        // Create user account
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
 
         // Update profile with display name
@@ -51,6 +54,9 @@ function Auth() {
             displayName: displayName
           });
         }
+
+        // Mark beta code as used
+        await BetaCodeService.markCodeAsUsed(validation.code, email);
 
         console.log('✅ Account created successfully');
       }
