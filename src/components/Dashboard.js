@@ -20,19 +20,39 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     if (!trainingPlan?.planOverview?.startDate) {
       return 1; // Default to week 1 if no start date
     }
-    
+
     const today = new Date();
     const startDate = new Date(trainingPlan.planOverview.startDate);
-    
+
     // If we're before the start date, return 1 (show first week)
     if (today < startDate) {
       return 1;
     }
-    
+
     // Calculate weeks since start
     const msPerWeek = 7 * 24 * 60 * 60 * 1000;
     const weeksSinceStart = Math.floor((today - startDate) / msPerWeek);
     return Math.min(weeksSinceStart + 1, trainingPlan?.planOverview?.totalWeeks || 12);
+  };
+
+  // Calculate week date range for display
+  const getWeekDateRange = (weekNumber) => {
+    if (!trainingPlan?.planOverview?.startDate) {
+      return null;
+    }
+
+    const startDate = new Date(trainingPlan.planOverview.startDate);
+    const msPerDay = 24 * 60 * 60 * 1000;
+
+    // Calculate the Monday of this training week
+    const weekStartDate = new Date(startDate.getTime() + ((weekNumber - 1) * 7 * msPerDay));
+    const weekEndDate = new Date(weekStartDate.getTime() + (6 * msPerDay));
+
+    const options = { month: 'short', day: 'numeric' };
+    const startStr = weekStartDate.toLocaleDateString('en-US', options);
+    const endStr = weekEndDate.toLocaleDateString('en-US', options);
+
+    return `${startStr} - ${endStr}`;
   };
 
   // Format workout type names for display
@@ -975,10 +995,12 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ flex: 1 }}>
               <h1 style={{ margin: '0 0 8px 0' }}>
-                {currentWeekData.weekDates && currentWeekData.weekDates.displayText !== `Week ${currentWeek}` 
-                  ? `Week ${currentWeek} (${currentWeekData.weekDates.displayText})` 
-                  : `Week ${currentWeek} Training`
-                }
+                {(() => {
+                  const dateRange = getWeekDateRange(currentWeek);
+                  return dateRange
+                    ? `Week ${currentWeek} (Week of ${dateRange})`
+                    : `Week ${currentWeek} Training`;
+                })()}
               </h1>
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginTop: '8px' }}>
                 {(() => {
