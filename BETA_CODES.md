@@ -31,40 +31,13 @@ This prevents one person from sharing the code with 6,300 people in a Facebook g
 
 ## 🔧 How to Add Codes to Firestore
 
-### **Option 1: Firebase Console (Easiest)**
+### **ONE-CLICK SETUP (EASIEST!):**
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select your project
-3. Click **Firestore Database** (left sidebar)
-4. Click **+ Start collection**
-5. Collection ID: `betaCodes`
-6. Click **Next**
+1. **Go to:** https://runplusplans.com/setup-beta-codes.html
+2. **Click:** "Add All Codes to Firestore"
+3. **Done!** All 10 codes added in seconds
 
-For EACH code above, add a document:
-
-**Document ID:** `VVVFRS` (the code itself)
-
-**Fields:**
-```
-code: "VVVFRS" (string)
-used: false (boolean)
-usedBy: null (null)
-usedAt: null (null)
-createdAt: [current timestamp] (timestamp)
-createdFor: "" (string) - You can add recipient name later
-notes: "" (string)
-```
-
-**Repeat for all 10 codes.**
-
-### **Option 2: Using the Generator Script**
-
-```bash
-cd run-plus-plans
-node generateBetaCodes.js
-```
-
-This will automatically add codes to Firestore.
+That's it! No manual work needed.
 
 ---
 
