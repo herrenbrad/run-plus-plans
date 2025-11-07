@@ -1,6 +1,6 @@
 # Firestore Security Rules
 
-## Required Rules for Beta Code System
+## Required Rules for Approval System
 
 Go to Firebase Console → Firestore Database → Rules
 
@@ -11,19 +11,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Beta codes - read-only for validation during signup
-    match /betaCodes/{code} {
-      // Allow anyone to READ codes (to check if valid/unused)
-      allow read: if true;
-
-      // Only allow WRITE if authenticated (for marking as used)
-      // This happens after account creation
-      allow write: if request.auth != null;
-    }
-
-    // User data - only owner can read/write
+    // User profiles - approval system
     match /users/{userId} {
+      // Users can read and write their own profile
       allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Admin emails can read all users (for approval page)
+      // TODO: Replace with your actual admin email
+      allow read: if request.auth != null && request.auth.token.email in ['herrenbrad@gmail.com'];
+
+      // Admin emails can update approval status
+      allow update: if request.auth != null &&
+                      request.auth.token.email in ['herrenbrad@gmail.com'] &&
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['approvalStatus', 'approvedAt', 'approvedBy', 'deniedAt', 'deniedBy']);
     }
   }
 }
@@ -31,12 +32,11 @@ service cloud.firestore {
 
 ## Why These Rules?
 
-**betaCodes:**
-- `allow read: if true` - Anyone can check if a code is valid (needed during signup BEFORE account exists)
-- `allow write: if request.auth != null` - Only authenticated users can mark codes as used (prevents abuse)
-
-**users:**
-- Standard user data protection - only you can access your own data
+**users collection:**
+- Users can read/write their own profile data
+- Admin can read all user profiles (needed for approval page)
+- Admin can only update approval-related fields (can't modify user data)
+- The `affectedKeys().hasOnly()` ensures admins can only change approval status
 
 ## How to Update Rules
 
@@ -45,6 +45,15 @@ service cloud.firestore {
 3. Click **Firestore Database** (left sidebar)
 4. Click **Rules** tab (top)
 5. **Replace** existing rules with the rules above
-6. Click **Publish**
+6. **IMPORTANT:** Replace `'your-email@example.com'` with your actual admin email (in 2 places)
+7. Click **Publish**
 
-⚠️ **Important:** Make sure you update these rules BEFORE deploying the beta code system!
+⚠️ **Critical:** Make sure to replace the admin email BEFORE publishing!
+
+## Adding More Admins
+
+To add more admin emails, use an array:
+
+```javascript
+request.auth.token.email in ['admin1@example.com', 'admin2@example.com', 'admin3@example.com']
+```

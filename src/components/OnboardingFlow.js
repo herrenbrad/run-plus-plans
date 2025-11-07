@@ -66,6 +66,8 @@ function TrainingDial({ value, onChange, maxValue, unit, zones }) {
   const handleMove = React.useCallback((e) => {
     if (!isDragging || !dialRef.current) return;
 
+    e.preventDefault(); // Prevent scrolling on mobile
+
     const rect = dialRef.current.getBoundingClientRect();
     const clientX = e.clientX || (e.touches && e.touches[0].clientX);
     const clientY = e.clientY || (e.touches && e.touches[0].clientY);
@@ -102,7 +104,7 @@ function TrainingDial({ value, onChange, maxValue, unit, zones }) {
     if (isDragging) {
       document.addEventListener('mousemove', handleMove);
       document.addEventListener('mouseup', handleEnd);
-      document.addEventListener('touchmove', handleMove);
+      document.addEventListener('touchmove', handleMove, { passive: false }); // passive: false allows preventDefault
       document.addEventListener('touchend', handleEnd);
 
       return () => {
@@ -129,7 +131,8 @@ function TrainingDial({ value, onChange, maxValue, unit, zones }) {
           position: 'relative',
           width: '300px',
           height: '300px',
-          cursor: isDragging ? 'grabbing' : 'grab'
+          cursor: isDragging ? 'grabbing' : 'grab',
+          touchAction: 'none' // Prevent browser touch gestures
         }}
         onMouseDown={handleStart}
         onTouchStart={handleStart}
@@ -274,7 +277,8 @@ function OnboardingFlow({ onComplete }) {
     location: '',
     climate: '',
     trainingStyle: 'adventure', // Always use adventure mode - our core differentiator!
-    trainingPhilosophy: ''
+    trainingPhilosophy: '',
+    hasGarmin: null // true, false, or null (not answered yet)
   });
 
   const totalSteps = 7;
@@ -365,12 +369,65 @@ function OnboardingFlow({ onComplete }) {
     return goalTime;
   };
 
+  // Helper function to adjust start date to next available training day if needed
+  const adjustStartDateIfNeeded = (startDate, availableDays) => {
+    if (!startDate || !availableDays || availableDays.length === 0) {
+      return { adjustedDate: startDate, wasAdjusted: false };
+    }
+
+    const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const date = new Date(startDate + 'T00:00:00');
+    const originalDate = new Date(date);
+    let daysChecked = 0;
+    const maxDaysToCheck = 7;
+
+    while (daysChecked < maxDaysToCheck) {
+      const dayOfWeek = daysOfWeek[date.getDay()];
+
+      if (availableDays.includes(dayOfWeek)) {
+        // Found an available training day
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const adjustedDate = `${year}-${month}-${day}`;
+
+        const wasAdjusted = date.getTime() !== originalDate.getTime();
+
+        if (wasAdjusted) {
+          console.log(`📅 Start date adjusted from ${startDate} (${daysOfWeek[originalDate.getDay()]}) to ${adjustedDate} (${dayOfWeek}) - original date was a rest day`);
+        }
+
+        return { adjustedDate, wasAdjusted, originalDayName: daysOfWeek[originalDate.getDay()], newDayName: dayOfWeek };
+      }
+
+      // Move to next day
+      date.setDate(date.getDate() + 1);
+      daysChecked++;
+    }
+
+    // Shouldn't happen unless availableDays is empty
+    return { adjustedDate: startDate, wasAdjusted: false };
+  };
+
   const handleComplete = async () => {
     try {
       // Validate required fields first - safety check!
       if (!formData.currentRaceTime) {
         alert('Goal race time is required to calculate your training paces. Please select your target race time.');
         return;
+      }
+
+      // Adjust start date if it falls on a rest day
+      const dateAdjustment = adjustStartDateIfNeeded(formData.startDate, formData.availableDays);
+
+      if (dateAdjustment.wasAdjusted) {
+        // Update formData with adjusted date
+        formData.startDate = dateAdjustment.adjustedDate;
+
+        // Notify user about the adjustment
+        const message = `Your start date has been automatically adjusted from ${dateAdjustment.originalDayName} to ${dateAdjustment.newDayName} because ${dateAdjustment.originalDayName} is marked as a rest day in your schedule.`;
+        console.log(`⚠️ ${message}`);
+        alert(message);
       }
 
       // Generate training plan using TrainingPlanService
@@ -401,21 +458,21 @@ function OnboardingFlow({ onComplete }) {
 
       if (planResult && planResult.plan) {
         console.log('Generated training plan:', planResult);
-        onComplete(formData, planResult.plan);
+        await onComplete(formData, planResult.plan);
+        console.log('✅ Plan saved successfully, navigating to dashboard...');
         navigate('/dashboard');
       } else {
         console.error('Failed to generate plan');
         // Fall back to the mock plan
         const mockPlan = generateMockPlan(formData);
-        onComplete(formData, mockPlan);
+        await onComplete(formData, mockPlan);
+        console.log('✅ Mock plan saved successfully, navigating to dashboard...');
         navigate('/dashboard');
       }
     } catch (error) {
-      console.error('Error in plan generation:', error);
-      // Fall back to the mock plan
-      const mockPlan = generateMockPlan(formData);
-      onComplete(formData, mockPlan);
-      navigate('/dashboard');
+      console.error('Error in plan generation or saving:', error);
+      alert('There was a problem creating or saving your plan. Please try again. Error: ' + error.message);
+      // Don't navigate if there was an error - let user retry
     }
   };
 
@@ -1248,6 +1305,78 @@ function OnboardingFlow({ onComplete }) {
           <div>
             <h2 style={{ color: '#FFFFFF', fontWeight: '700', fontSize: '1.75rem', marginBottom: '16px' }}>Equipment & Training Preferences</h2>
             <p><strong>🚀 Unique to Run+ Plans!</strong> We're the only app with equipment-specific training.</p>
+
+            {/* Garmin Device Question */}
+            <div style={{ marginBottom: '32px' }}>
+              <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>Do you have a Garmin device?</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxWidth: '400px', margin: '0 auto' }}>
+                <div
+                  className={`card ${formData.hasGarmin === true ? 'selected' : ''}`}
+                  onClick={() => updateFormData('hasGarmin', true)}
+                  style={{ cursor: 'pointer', textAlign: 'center', padding: '24px' }}
+                >
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '1.2rem' }}>Yes</h4>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#D1D5DB' }}>I have a Garmin</p>
+                </div>
+                <div
+                  className={`card ${formData.hasGarmin === false ? 'selected' : ''}`}
+                  onClick={() => updateFormData('hasGarmin', false)}
+                  style={{ cursor: 'pointer', textAlign: 'center', padding: '24px' }}
+                >
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '1.2rem' }}>No</h4>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#D1D5DB' }}>I don't have one</p>
+                </div>
+              </div>
+
+              {/* Show RunEQ Data Field info if they have a Garmin */}
+              {formData.hasGarmin === true && (
+                <div className="card" style={{ background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)', marginTop: '16px' }}>
+                  <h4 style={{ margin: '0 0 12px 0', color: '#FFFFFF', fontWeight: '600', fontSize: '1.1rem' }}>
+                    Download the RunEQ Data Field
+                  </h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '0.95rem', color: '#E5E7EB' }}>
+                    Track your bike workouts with RunEQ miles on your Garmin device.
+                  </p>
+                  <a
+                    href="https://apps.garmin.com/apps/2327f1b2-a481-4c9e-b529-852e9989cf55"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-block',
+                      padding: '12px 24px',
+                      background: 'rgba(0, 212, 255, 0.2)',
+                      border: '2px solid #00D4FF',
+                      borderRadius: '8px',
+                      color: '#00D4FF',
+                      textDecoration: 'none',
+                      fontWeight: '600',
+                      fontSize: '1rem',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.background = 'rgba(0, 212, 255, 0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.background = 'rgba(0, 212, 255, 0.2)';
+                    }}
+                  >
+                    Get RunEQ Data Field
+                  </a>
+                  <p style={{ margin: '12px 0 0 0', fontSize: '0.85rem', color: '#D1D5DB' }}>
+                    Your bike workouts will show RunEQ miles in the training plan
+                  </p>
+                </div>
+              )}
+
+              {/* Show info for non-Garmin users */}
+              {formData.hasGarmin === false && (
+                <div className="card" style={{ background: 'rgba(0, 255, 136, 0.1)', border: '1px solid rgba(0, 255, 136, 0.3)', marginTop: '16px' }}>
+                  <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                    <strong>No problem!</strong> Your bike workouts will show time and distance instead.
+                  </p>
+                </div>
+              )}
+            </div>
 
             {/* Stand-up Bike Equipment */}
             <div style={{ marginBottom: '32px' }}>

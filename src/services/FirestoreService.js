@@ -2,6 +2,33 @@ import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firest
 import { db } from '../firebase/config';
 
 /**
+ * Helper function to remove undefined values from objects
+ * Firestore doesn't accept undefined - convert to null or remove
+ */
+function cleanUndefinedValues(obj) {
+  if (obj === null || obj === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanUndefinedValues(item));
+  }
+
+  if (typeof obj === 'object') {
+    const cleaned = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanUndefinedValues(value);
+      }
+      // Skip undefined values - don't include them in the object
+    }
+    return cleaned;
+  }
+
+  return obj;
+}
+
+/**
  * Firestore Service
  * Handles all database operations for user data and training plans
  */
@@ -13,9 +40,12 @@ class FirestoreService {
     try {
       const userRef = doc(db, 'users', userId);
 
+      // Clean undefined values before saving
+      const cleanedProfile = cleanUndefinedValues(profileData);
+
       await setDoc(userRef, {
         profile: {
-          ...profileData,
+          ...cleanedProfile,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         }
@@ -36,9 +66,13 @@ class FirestoreService {
     try {
       const userRef = doc(db, 'users', userId);
 
+      // Clean undefined values before saving - Firestore doesn't accept undefined
+      const cleanedPlan = cleanUndefinedValues(trainingPlan);
+      console.log('🧹 Cleaned training plan (removed undefined values)');
+
       await setDoc(userRef, {
         trainingPlan: {
-          ...trainingPlan,
+          ...cleanedPlan,
           savedAt: serverTimestamp()
         },
         updatedAt: serverTimestamp()

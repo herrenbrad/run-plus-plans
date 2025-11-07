@@ -136,11 +136,14 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     let runEqMiles = 0; // RunEQ miles are already equivalent - don't convert again!
 
     weekData.workouts.forEach(workout => {
-      const workoutKey = `${weekData.week}-${workout.day}`;
-      const modifiedWorkout = modifiedWorkouts[workoutKey];
-      const currentWorkout = modifiedWorkout || workout;
-      
-      console.log(`🏃 ${workout.day}: ${currentWorkout.workout?.name} (type: ${currentWorkout.type})`);
+      // Get ALL workouts for this day (including two-a-days)
+      const allWorkoutsForDay = getWorkouts(workout);
+
+      console.log(`🏃 ${workout.day}: ${allWorkoutsForDay.length} workout(s)`);
+
+      // Calculate mileage for each workout on this day
+      allWorkoutsForDay.forEach((currentWorkout, idx) => {
+      console.log(`   Workout ${idx + 1}: ${currentWorkout.workout?.name} (type: ${currentWorkout.type})`);
 
       if (currentWorkout.type === 'brick') {
         // For brick workouts, we need to extract both run and bike components
@@ -203,7 +206,8 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
           runMiles += defaultMiles;
         }
       }
-    });
+      }); // End inner loop (all workouts for this day)
+    }); // End outer loop (all days)
 
     // Calculate equivalent miles (bike at 3:1 ratio, elliptical at 2:1 ratio)
     // RunEQ miles are already equivalent, so add them directly
@@ -273,6 +277,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   const [selectedOptions, setSelectedOptions] = useState({}); // Track selected but not yet confirmed options
   const [workoutCompletions, setWorkoutCompletions] = useState({}); // Track workout completions for instant UI updates
   const [showBetaSetup, setShowBetaSetup] = useState(false); // Show beta code setup modal
+  const [showBrickOptions, setShowBrickOptions] = useState({}); // Track which workouts are showing brick split options
 
   // Load modified workouts from localStorage on component mount
   useEffect(() => {
@@ -678,11 +683,56 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     });
   };
 
-  const handleSomethingElse = (workout) => {
+  const handleSomethingElse = (workout, mode = 'replace') => {
     setSomethingElseModal({
       isOpen: true,
-      workout: workout
+      workout: workout,
+      mode: mode // 'replace' or 'add'
     });
+  };
+
+  const handleAddWorkout = (originalWorkout) => {
+    // Open Something Else modal in "add" mode
+    handleSomethingElse(originalWorkout, 'add');
+  };
+
+  const handleRemoveWorkout = (originalWorkout, workoutIndex) => {
+    if (workoutIndex === 0) {
+      alert("Cannot remove the primary workout. Use 'Something Else' to replace it instead.");
+      return;
+    }
+
+    const workoutKey = `${currentWeek}-${originalWorkout.day}-${workoutIndex}`;
+
+    // Remove the workout from modifiedWorkouts
+    const updatedWorkouts = { ...modifiedWorkouts };
+    delete updatedWorkouts[workoutKey];
+
+    // Reindex remaining workouts (shift down)
+    const dayKey = `${currentWeek}-${originalWorkout.day}`;
+    const workoutsToReindex = [];
+
+    // Collect all workouts for this day with higher indices
+    Object.keys(updatedWorkouts).forEach(key => {
+      if (key.startsWith(dayKey)) {
+        const keyIndex = parseInt(key.split('-').pop());
+        if (keyIndex > workoutIndex) {
+          workoutsToReindex.push({ key, index: keyIndex, workout: updatedWorkouts[key] });
+          delete updatedWorkouts[key];
+        }
+      }
+    });
+
+    // Reindex them
+    workoutsToReindex.sort((a, b) => a.index - b.index).forEach((item, newIndex) => {
+      const newKey = `${dayKey}-${workoutIndex + newIndex}`;
+      updatedWorkouts[newKey] = item.workout;
+    });
+
+    setModifiedWorkouts(updatedWorkouts);
+
+    // Save to localStorage
+    localStorage.setItem('runeq_modifiedWorkouts', JSON.stringify(updatedWorkouts));
   };
 
   const handleCloseSomethingElse = () => {
@@ -699,7 +749,8 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     }
 
     const newCompletedStatus = !workout.completed;
-    const workoutKey = `${currentWeek}-${workout.day}`;
+    const workoutIndex = workout.workoutIndex || 0;
+    const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
 
     // INSTANT UI UPDATE: Update local state immediately for smooth UX
     setWorkoutCompletions(prev => ({
@@ -742,56 +793,125 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   };
 
   const handleWorkoutReplacement = (newWorkout) => {
-    // Store the modified workout
-    const workoutKey = `${currentWeek}-${newWorkout.day}`;
-    const updatedWorkouts = {
-      ...modifiedWorkouts,
-      [workoutKey]: newWorkout
-    };
-    
-    setModifiedWorkouts(updatedWorkouts);
+    const mode = somethingElseModal.mode || 'replace';
+    const dayKey = `${currentWeek}-${newWorkout.day}`;
 
-    // Save to localStorage immediately
-    try {
+    if (mode === 'add') {
+      // Find the next available index for this day
+      let nextIndex = 0;
+      while (modifiedWorkouts[`${dayKey}-${nextIndex}`]) {
+        nextIndex++;
+      }
+
+      // If nextIndex is 0 and we already have an original workout, start at 1
+      if (nextIndex === 0) {
+        nextIndex = 1;
+      }
+
+      const workoutKey = `${dayKey}-${nextIndex}`;
+      const updatedWorkouts = {
+        ...modifiedWorkouts,
+        [workoutKey]: newWorkout
+      };
+
+      setModifiedWorkouts(updatedWorkouts);
       localStorage.setItem('runeq_modifiedWorkouts', JSON.stringify(updatedWorkouts));
-      console.log('💾 Saved workout replacement:', workoutKey, newWorkout.workout?.name);
-    } catch (error) {
-      console.error('Error saving modified workouts:', error);
+      console.log('💾 Added second workout:', workoutKey, newWorkout.workout?.name);
+    } else {
+      // Replace mode - use index 0
+      const workoutKey = `${dayKey}-0`;
+      const updatedWorkouts = {
+        ...modifiedWorkouts,
+        [workoutKey]: newWorkout
+      };
+
+      setModifiedWorkouts(updatedWorkouts);
+      localStorage.setItem('runeq_modifiedWorkouts', JSON.stringify(updatedWorkouts));
+      console.log('💾 Replaced workout:', workoutKey, newWorkout.workout?.name);
     }
 
     // Close the modal
     handleCloseSomethingElse();
   };
 
-  const handleMakeBrick = (workout) => {
+  const handleShowBrickOptions = (workout) => {
+    const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+    setShowBrickOptions(prev => ({
+      ...prev,
+      [workoutKey]: true
+    }));
+  };
+
+  const handleHideBrickOptions = (workout) => {
+    const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+    setShowBrickOptions(prev => ({
+      ...prev,
+      [workoutKey]: false
+    }));
+  };
+
+  const handleMakeBrick = (workout, split = 'balanced') => {
     // Convert the long run to a brick workout
     const originalDistance = parseFloat(workout.workout?.name?.match(/\d+/)?.[0]) || 8;
-    const runDistance = Math.round(originalDistance * 0.6);
-    const bikeDistance = Math.round(originalDistance * 0.4 * 2.5);
+
+    // Different split ratios (all equal the same total training load)
+    let runDistance, bikeRunEqDistance, splitLabel;
+
+    switch(split) {
+      case 'heavy-run':
+        runDistance = Math.round(originalDistance * 0.8);
+        bikeRunEqDistance = Math.round(originalDistance * 0.2);
+        splitLabel = 'Heavy Run';
+        break;
+      case 'balanced':
+        runDistance = Math.round(originalDistance * 0.6);
+        bikeRunEqDistance = Math.round(originalDistance * 0.4);
+        splitLabel = 'Balanced';
+        break;
+      case 'heavy-bike':
+        runDistance = Math.round(originalDistance * 0.4);
+        bikeRunEqDistance = Math.round(originalDistance * 0.6);
+        splitLabel = 'Heavy Bike';
+        break;
+      case 'light-run':
+        runDistance = Math.round(originalDistance * 0.2);
+        bikeRunEqDistance = Math.round(originalDistance * 0.8);
+        splitLabel = 'Light Run';
+        break;
+      default:
+        runDistance = Math.round(originalDistance * 0.6);
+        bikeRunEqDistance = Math.round(originalDistance * 0.4);
+        splitLabel = 'Balanced';
+    }
 
     const brickWorkout = {
       ...workout,
       type: 'brickLongRun',
       workout: {
-        name: `Brick Long Run (${runDistance}mi run + ${bikeDistance}mi ${formatEquipmentName(userProfile?.standUpBikeType)})`,
-        description: `${runDistance} mile run + ${bikeDistance} mile ${formatEquipmentName(userProfile?.standUpBikeType)} ride`
+        name: `Brick Long Run (${runDistance}mi run + ${bikeRunEqDistance} RunEQ Miles ${formatEquipmentName(userProfile?.standUpBikeType)})`,
+        description: `${splitLabel} brick: ${runDistance} mile run + ${bikeRunEqDistance} RunEQ miles on ${formatEquipmentName(userProfile?.standUpBikeType)}`
       },
       focus: 'Brick Endurance',
       equipmentSpecific: true,
-      replacementReason: 'Converted to brick workout'
+      replacementReason: `Converted to ${splitLabel.toLowerCase()} brick workout`
     };
 
-    // Store the modified workout
-    const workoutKey = `${currentWeek}-${workout.day}`;
+    // Store the modified workout using indexed key format
+    const workoutIndex = workout.workoutIndex || 0;
+    const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
     setModifiedWorkouts(prev => ({
       ...prev,
       [workoutKey]: brickWorkout
     }));
+
+    // Hide the options after selection
+    handleHideBrickOptions(workout);
   };
 
   const handleMakeRegularRun = (workout) => {
     // Remove the modified workout to revert to original
-    const workoutKey = `${currentWeek}-${workout.day}`;
+    const workoutIndex = workout.workoutIndex || 0;
+    const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
     setModifiedWorkouts(prev => {
       const updated = { ...prev };
       delete updated[workoutKey];
@@ -966,25 +1086,104 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     }
   };
 
-  // Function to get workout (modified or original)
-  const getWorkout = (originalWorkout) => {
-    const workoutKey = `${currentWeek}-${originalWorkout.day}`;
+  // Function to get workouts for a day (supports multiple workouts per day)
+  const getWorkouts = (originalWorkout) => {
+    const workouts = [];
+    const dayKey = `${currentWeek}-${originalWorkout.day}`;
 
-    // Start with modified workout if it exists, otherwise original
-    const baseWorkout = modifiedWorkouts[workoutKey] || originalWorkout;
+    // Check for multiple workouts (indexed: 0, 1, 2, ...)
+    let index = 0;
+    let foundWorkout = true;
 
-    // Merge completion status from local state (for instant UI updates)
-    const completionData = workoutCompletions[workoutKey];
-    if (completionData) {
-      return {
-        ...baseWorkout,
-        completed: completionData.completed,
-        completedAt: completionData.completedAt
-      };
+    while (foundWorkout) {
+      const workoutKey = `${dayKey}-${index}`;
+      const modifiedWorkout = modifiedWorkouts[workoutKey];
+
+      if (modifiedWorkout) {
+        // Found a modified workout at this index
+        const completionData = workoutCompletions[workoutKey];
+        workouts.push({
+          ...modifiedWorkout,
+          completed: completionData?.completed || false,
+          completedAt: completionData?.completedAt || null,
+          workoutIndex: index
+        });
+        index++;
+      } else if (index === 0) {
+        // No modified workout at index 0, use original
+        const completionData = workoutCompletions[dayKey];
+        workouts.push({
+          ...originalWorkout,
+          completed: completionData?.completed || false,
+          completedAt: completionData?.completedAt || null,
+          workoutIndex: 0
+        });
+        foundWorkout = false;
+      } else {
+        // No more workouts found
+        foundWorkout = false;
+      }
     }
 
-    return baseWorkout;
+    return workouts;
   };
+
+  // Legacy function for backward compatibility (returns first workout only)
+  const getWorkout = (originalWorkout) => {
+    const workouts = getWorkouts(originalWorkout);
+    return workouts[0] || originalWorkout;
+  };
+
+  // Check if user account is pending approval
+  if (userProfile?.approvalStatus === 'pending') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)',
+        padding: '20px'
+      }}>
+        <div style={{
+          maxWidth: '500px',
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '12px',
+          padding: '40px',
+          textAlign: 'center',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <div style={{ fontSize: '4rem', marginBottom: '20px' }}>⏳</div>
+          <h1 style={{ color: '#00D4FF', marginBottom: '16px' }}>Account Pending Approval</h1>
+          <p style={{ color: '#AAAAAA', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '24px' }}>
+            Thank you for signing up! Your account is currently pending approval.
+          </p>
+          <p style={{ color: '#AAAAAA', fontSize: '0.95rem', lineHeight: '1.6' }}>
+            You'll receive an email at <strong style={{ color: '#FFFFFF' }}>{userProfile?.email}</strong> once your account has been approved.
+            This usually takes less than 24 hours.
+          </p>
+          <button
+            onClick={async () => {
+              await signOut(auth);
+              navigate('/');
+            }}
+            style={{
+              marginTop: '32px',
+              padding: '12px 24px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              color: '#FFFFFF',
+              cursor: 'pointer',
+              fontSize: '1rem'
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -1267,26 +1466,50 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
           
           <div style={{ display: 'grid', gap: '16px' }}>
             {currentWeekData.workouts.map((originalWorkout) => {
-              const workout = getWorkout(originalWorkout);
+              const workouts = getWorkouts(originalWorkout);
               return (
-              <div 
-                key={originalWorkout.day}
+              <div key={originalWorkout.day} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {workouts.map((workout, workoutIdx) => (
+              <div
+                key={`${originalWorkout.day}-${workoutIdx}`}
                 className="card"
-                style={{ 
+                style={{
                   background: workout.type === 'rest' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.05)',
                   border: `2px solid ${getWorkoutTypeColor(workout.type)}20`,
                   borderLeft: `4px solid ${getWorkoutTypeColor(workout.type)}`,
                   opacity: workout.type === 'rest' ? 0.7 : 1,
-                  cursor: workout.type === 'rest' ? 'default' : 'pointer'
+                  cursor: workout.type === 'rest' ? 'default' : 'pointer',
+                  position: 'relative'
                 }}
                 onClick={() => handleWorkoutClick(workout)}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                  <div style={{ flex: 1 }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  marginBottom: '12px',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ flex: '1 1 auto', minWidth: '200px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                       <div>
                         <h3 style={{ margin: 0, color: '#EEEEEE', fontSize: '1.1rem', fontWeight: '600' }}>
                           {workout.day}
+                          {workouts.length > 1 && (
+                            <span style={{
+                              fontSize: '0.75rem',
+                              marginLeft: '8px',
+                              background: 'rgba(0, 212, 255, 0.2)',
+                              color: '#00D4FF',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontWeight: '700',
+                              border: '1px solid rgba(0, 212, 255, 0.4)'
+                            }}>
+                              Workout {workoutIdx + 1}/{workouts.length}
+                            </span>
+                          )}
                           {workout.date && workout.date !== workout.day && (
                             <span style={{ fontSize: '0.8rem', marginLeft: '8px', color: '#AAAAAA' }}>
                               ({workout.date})
@@ -1358,18 +1581,24 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                   
                   {workout.type === 'rest' ? (
                     // Rest day specific buttons
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '16px' }}>
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      minWidth: '140px',
+                      flexShrink: 0
+                    }}>
                       {/* Mark Complete Button for Rest Days */}
                       <button
                         className="btn"
                         style={{
                           fontSize: '0.85rem',
-                          padding: '10px 16px',
-                          whiteSpace: 'nowrap',
+                          padding: '10px 12px',
                           fontWeight: '600',
                           background: workout.completed ? 'rgba(156, 163, 175, 0.1)' : 'rgba(0, 255, 136, 0.1)',
                           color: workout.completed ? '#9ca3af' : '#00FF88',
-                          border: workout.completed ? '1px solid rgba(156, 163, 175, 0.3)' : '1px solid rgba(0, 255, 136, 0.3)'
+                          border: workout.completed ? '1px solid rgba(156, 163, 175, 0.3)' : '1px solid rgba(0, 255, 136, 0.3)',
+                          textAlign: 'center'
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1383,50 +1612,56 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                         className="btn"
                         style={{
                           fontSize: '0.8rem',
-                          padding: '8px 16px',
-                          whiteSpace: 'nowrap',
+                          padding: '8px 12px',
                           background: 'rgba(34, 197, 94, 0.1)',
                           color: '#22c55e',
                           border: '1px solid rgba(34, 197, 94, 0.3)',
-                          fontWeight: '600'
+                          fontWeight: '600',
+                          textAlign: 'center'
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleSomethingElse(workout);
                         }}
                       >
-                        🌟 Feeling Great? Add Workout
+                        🌟 Add Workout
                       </button>
                     </div>
                   ) : workout.type !== 'rest' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '16px' }}>
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      minWidth: '140px',
+                      flexShrink: 0
+                    }}>
                       {/* Mark Complete Button */}
                       <button
                         className="btn"
                         style={{
                           fontSize: '0.85rem',
-                          padding: '10px 16px',
-                          whiteSpace: 'nowrap',
+                          padding: '10px 12px',
                           fontWeight: '600',
                           background: workout.completed ? 'rgba(156, 163, 175, 0.1)' : 'rgba(0, 255, 136, 0.1)',
                           color: workout.completed ? '#9ca3af' : '#00FF88',
-                          border: workout.completed ? '1px solid rgba(156, 163, 175, 0.3)' : '1px solid rgba(0, 255, 136, 0.3)'
+                          border: workout.completed ? '1px solid rgba(156, 163, 175, 0.3)' : '1px solid rgba(0, 255, 136, 0.3)',
+                          textAlign: 'center'
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleMarkComplete(workout);
                         }}
                       >
-                        {workout.completed ? '⏪ Undo Complete' : '✅ Mark Complete'}
+                        {workout.completed ? '⏪ Undo' : '✅ Complete'}
                       </button>
 
                       {/* Show adventure options for adventure/flexible users */}
-                      {(userProfile?.trainingStyle === 'adventure' || 
-                        (userProfile?.trainingStyle === 'flexible' && ['tempo', 'intervals', 'longRun', 'hills'].includes(workout.type))) && 
+                      {(userProfile?.trainingStyle === 'adventure' ||
+                        (userProfile?.trainingStyle === 'flexible' && ['tempo', 'intervals', 'longRun', 'hills'].includes(workout.type))) &&
                        ['tempo', 'intervals', 'longRun', 'hills', 'easy'].includes(workout.type) && (
-                        <button 
+                        <button
                           className="btn btn-primary"
-                          style={{ fontSize: '0.8rem', padding: '8px 12px', whiteSpace: 'nowrap', background: '#4299e1', border: '1px solid #4299e1' }}
+                          style={{ fontSize: '0.8rem', padding: '8px 12px', background: '#4299e1', border: '1px solid #4299e1', textAlign: 'center' }}
                           onClick={(e) => {
                             e.stopPropagation();
                             const workoutKey = `${currentWeek}-${workout.day}`;
@@ -1439,57 +1674,76 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                         >
                           {(() => {
                             const workoutKey = `${currentWeek}-${workout.day}`;
-                            return showingOptions[workoutKey] ? '📋 Hide Options' : '🎲 Choose Adventure';
+                            return showingOptions[workoutKey] ? '📋 Hide' : '🎲 Choose';
                           })()}
                         </button>
                       )}
                       
                       {/* Show brick option prominently for Sunday long runs when user has equipment */}
                       {(workout.type === 'longRun' || workout.type === 'brickLongRun') && userProfile?.standUpBikeType && workout.day === 'Sunday' && (
-                        <button 
+                        <button
                           className="btn"
-                          style={{ 
-                            fontSize: '0.8rem', 
-                            padding: '8px 16px', 
-                            whiteSpace: 'nowrap',
+                          style={{
+                            fontSize: '0.8rem',
+                            padding: '8px 12px',
                             fontWeight: '600',
                             background: workout.type === 'brickLongRun' ? '#48bb78' : '#ed8936',
                             color: 'white',
                             border: `1px solid ${workout.type === 'brickLongRun' ? '#48bb78' : '#ed8936'}`,
-                            marginRight: '8px'
+                            textAlign: 'center'
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            workout.type === 'brickLongRun' ? handleMakeRegularRun(workout) : handleMakeBrick(workout);
+                            if (workout.type === 'brickLongRun') {
+                              handleMakeRegularRun(workout);
+                            } else {
+                              const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+                              if (showBrickOptions[workoutKey]) {
+                                handleHideBrickOptions(workout);
+                              } else {
+                                handleShowBrickOptions(workout);
+                              }
+                            }
                           }}
                         >
-                          {workout.type === 'brickLongRun' ? '🏃 Back to Run Only' : '🚴‍♂️ Make Brick Workout'}
+                          {workout.type === 'brickLongRun' ? '🏃 Run Only' : '🧱 Make Brick'}
                         </button>
                       )}
                       
                       {/* Show standard brick option for non-Sunday long runs */}
                       {(workout.type === 'longRun' || workout.type === 'brickLongRun') && userProfile?.standUpBikeType && workout.day !== 'Sunday' && (
-                        <button 
+                        <button
                           className="btn btn-success"
-                          style={{ 
-                            fontSize: '0.8rem', 
-                            padding: '8px 12px', 
-                            whiteSpace: 'nowrap', 
-                            background: workout.type === 'brickLongRun' ? '#805ad5' : '#ff6b6b', 
-                            border: `1px solid ${workout.type === 'brickLongRun' ? '#805ad5' : '#ff6b6b'}`
+                          style={{
+                            fontSize: '0.8rem',
+                            padding: '8px 12px',
+                            fontWeight: '600',
+                            background: workout.type === 'brickLongRun' ? '#805ad5' : '#ff6b6b',
+                            color: 'white',
+                            border: `1px solid ${workout.type === 'brickLongRun' ? '#805ad5' : '#ff6b6b'}`,
+                            textAlign: 'center'
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            workout.type === 'brickLongRun' ? handleMakeRegularRun(workout) : handleMakeBrick(workout);
+                            if (workout.type === 'brickLongRun') {
+                              handleMakeRegularRun(workout);
+                            } else {
+                              const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+                              if (showBrickOptions[workoutKey]) {
+                                handleHideBrickOptions(workout);
+                              } else {
+                                handleShowBrickOptions(workout);
+                              }
+                            }
                           }}
                         >
-                          {workout.type === 'brickLongRun' ? '🏃 Make Regular Run' : '🧱 Make Brick Instead'}
+                          {workout.type === 'brickLongRun' ? '🏃 Run Only' : '🧱 Make Brick'}
                         </button>
                       )}
                       
-                      <button 
+                      <button
                         className="btn btn-secondary"
-                        style={{ fontSize: '0.8rem', padding: '6px 12px', whiteSpace: 'nowrap' }}
+                        style={{ fontSize: '0.8rem', padding: '6px 12px', textAlign: 'center' }}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleSomethingElse(workout);
@@ -1497,10 +1751,159 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                       >
                         More Options
                       </button>
+
+                      {/* Remove button for secondary workouts */}
+                      {workoutIdx > 0 && (
+                        <button
+                          className="btn"
+                          style={{
+                            fontSize: '0.8rem',
+                            padding: '6px 12px',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            color: '#ef4444',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            fontWeight: '600',
+                            textAlign: 'center'
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm('Remove this workout?')) {
+                              handleRemoveWorkout(originalWorkout, workoutIdx);
+                            }
+                          }}
+                        >
+                          🗑️ Remove
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
-                
+
+                {/* Brick Workout Split Options */}
+                {(() => {
+                  const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+                  const isShowingBrickOptions = showBrickOptions[workoutKey];
+                  const originalDistance = parseFloat(workout.workout?.name?.match(/\d+/)?.[0]) || 10;
+
+                  if (!isShowingBrickOptions || workout.type !== 'longRun') return null;
+
+                  const splitOptions = [
+                    {
+                      key: 'heavy-run',
+                      emoji: '🏃‍♂️',
+                      label: 'Heavy Run',
+                      runMiles: Math.round(originalDistance * 0.8),
+                      bikeMiles: Math.round(originalDistance * 0.2),
+                      description: 'Feeling strong - mostly running',
+                      color: '#4299e1'
+                    },
+                    {
+                      key: 'balanced',
+                      emoji: '⚖️',
+                      label: 'Balanced',
+                      runMiles: Math.round(originalDistance * 0.6),
+                      bikeMiles: Math.round(originalDistance * 0.4),
+                      description: 'Standard brick workout',
+                      color: '#ed8936'
+                    },
+                    {
+                      key: 'heavy-bike',
+                      emoji: '🚴',
+                      label: 'Heavy Bike',
+                      runMiles: Math.round(originalDistance * 0.4),
+                      bikeMiles: Math.round(originalDistance * 0.6),
+                      description: 'Legs need a break - more biking',
+                      color: '#9f7aea'
+                    },
+                    {
+                      key: 'light-run',
+                      emoji: '🚴‍♂️',
+                      label: 'Light Run',
+                      runMiles: Math.round(originalDistance * 0.2),
+                      bikeMiles: Math.round(originalDistance * 0.8),
+                      description: 'Recovery mode - minimal running',
+                      color: '#48bb78'
+                    }
+                  ];
+
+                  return (
+                    <div style={{ marginTop: '12px' }}>
+                      <div className="card" style={{
+                        background: 'rgba(237, 137, 54, 0.15)',
+                        border: '1px solid rgba(237, 137, 54, 0.4)',
+                        backdropFilter: 'blur(5px)'
+                      }}>
+                        <h4 style={{ margin: '0 0 16px 0', color: '#ed8936', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          🧱 Choose Your Brick Workout Split
+                        </h4>
+                        <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#888' }}>
+                          All options = {originalDistance} miles total training load. Pick based on how your legs feel today:
+                        </p>
+                        <div style={{ display: 'grid', gap: '12px' }}>
+                          {splitOptions.map((option) => (
+                            <div
+                              key={option.key}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '2px solid rgba(255, 255, 255, 0.1)',
+                                borderRadius: '8px',
+                                padding: '16px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMakeBrick(workout, option.key);
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = option.color;
+                                e.currentTarget.style.background = `${option.color}15`;
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '1.5rem' }}>{option.emoji}</span>
+                                  <strong style={{ color: option.color, fontSize: '1.1rem' }}>{option.label}</strong>
+                                </div>
+                                <span style={{ fontSize: '0.9rem', color: '#00D4FF', fontWeight: 'bold' }}>
+                                  {option.runMiles}mi + {option.bikeMiles} RunEQ
+                                </span>
+                              </div>
+                              <p style={{ margin: 0, fontSize: '0.9rem', color: '#aaa' }}>
+                                {option.description}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleHideBrickOptions(workout);
+                          }}
+                          style={{
+                            marginTop: '16px',
+                            padding: '8px 16px',
+                            background: 'rgba(156, 163, 175, 0.1)',
+                            color: '#9ca3af',
+                            border: '1px solid rgba(156, 163, 175, 0.3)',
+                            borderRadius: '6px',
+                            fontSize: '0.85rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            width: '100%'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Workout Options Display */}
                 {(() => {
                 const workoutKey = `${currentWeek}-${workout.day}`;
@@ -1737,6 +2140,29 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                 );
                 })()}
               </div>
+              ))}
+
+              {/* Add Workout Button */}
+              <button
+                className="btn"
+                style={{
+                  width: '100%',
+                  fontSize: '0.9rem',
+                  padding: '12px',
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  color: '#22c55e',
+                  border: '2px dashed rgba(34, 197, 94, 0.3)',
+                  fontWeight: '600',
+                  marginTop: workouts.length > 1 ? '0' : '8px'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleAddWorkout(originalWorkout);
+                }}
+              >
+                ➕ Add Second Workout (Two-a-Day)
+              </button>
+              </div>
               );
             })}
           </div>
@@ -1781,6 +2207,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
         trainingPlan={trainingPlan}
         onWorkoutSelect={handleWorkoutReplacement}
         weather={null} // TODO: Add weather API integration
+        mode={somethingElseModal.mode || 'replace'} // Pass mode to modal
       />
 
       {/* Beta Code Setup Modal - Admin Only */}

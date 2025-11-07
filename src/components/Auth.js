@@ -5,15 +5,14 @@ import {
   sendPasswordResetEmail,
   updateProfile
 } from 'firebase/auth';
-import { auth } from '../firebase/config';
-import BetaCodeService from '../services/BetaCodeService';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../firebase/config';
 
 function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [betaCode, setBetaCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [resetEmailSent, setResetEmailSent] = useState(false);
@@ -29,23 +28,7 @@ function Auth() {
         await signInWithEmailAndPassword(auth, email, password);
         console.log('✅ Logged in successfully');
       } else {
-        // Sign up - VALIDATE BETA CODE FIRST
-        if (!betaCode) {
-          setError('Beta access code is required.');
-          setLoading(false);
-          return;
-        }
-
-        // Validate code with Firestore (checks if valid AND unused)
-        const validation = await BetaCodeService.validateCode(betaCode);
-
-        if (!validation.valid) {
-          setError(validation.error);
-          setLoading(false);
-          return;
-        }
-
-        // Create user account
+        // Sign up - Create account with pending approval
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
 
         // Update profile with display name
@@ -55,10 +38,17 @@ function Auth() {
           });
         }
 
-        // Mark beta code as used
-        await BetaCodeService.markCodeAsUsed(validation.code, email);
+        // Create user profile with approval status
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          email: email,
+          displayName: displayName || '',
+          approvalStatus: 'pending',
+          createdAt: serverTimestamp(),
+          approvedAt: null,
+          approvedBy: null
+        });
 
-        console.log('✅ Account created successfully');
+        console.log('✅ Account created successfully - pending approval');
       }
     } catch (err) {
       console.error('❌ Auth error:', err);
@@ -69,7 +59,7 @@ function Auth() {
           setError('This email is already registered. Please login instead.');
           break;
         case 'auth/weak-password':
-          setError('Password should be at least 6 characters.');
+          setError('Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 special character.');
           break;
         case 'auth/invalid-email':
           setError('Please enter a valid email address.');
@@ -82,7 +72,12 @@ function Auth() {
           setError('Too many failed attempts. Please try again later.');
           break;
         default:
-          setError('An error occurred. Please try again.');
+          // Show the actual error message for better debugging
+          if (err.message) {
+            setError(err.message);
+          } else {
+            setError('An error occurred. Please try again.');
+          }
       }
     } finally {
       setLoading(false);
@@ -177,55 +172,27 @@ function Auth() {
           <>
             <form onSubmit={handleSubmit}>
               {!isLogin && (
-                <>
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', color: '#CCCCCC', marginBottom: '8px' }}>
-                      Name
-                    </label>
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      autoComplete="name"
-                      placeholder="Your name"
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '6px',
-                        color: '#FFFFFF',
-                        fontSize: '1rem'
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', color: '#CCCCCC', marginBottom: '8px' }}>
-                      Beta Access Code <span style={{ color: '#FF6B6B' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={betaCode}
-                      onChange={(e) => setBetaCode(e.target.value)}
-                      required
-                      placeholder="Enter your beta code"
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '6px',
-                        color: '#FFFFFF',
-                        fontSize: '1rem',
-                        textTransform: 'uppercase'
-                      }}
-                    />
-                    <p style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', marginBottom: 0 }}>
-                      Beta access code required for signup
-                    </p>
-                  </div>
-                </>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', color: '#CCCCCC', marginBottom: '8px' }}>
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    autoComplete="name"
+                    placeholder="Your name"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '6px',
+                      color: '#FFFFFF',
+                      fontSize: '1rem'
+                    }}
+                  />
+                </div>
               )}
 
               <div style={{ marginBottom: '16px' }}>
@@ -261,7 +228,7 @@ function Auth() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete={isLogin ? "current-password" : "new-password"}
-                  placeholder="At least 6 characters"
+                  placeholder={isLogin ? "Enter your password" : "Create a strong password"}
                   style={{
                     width: '100%',
                     padding: '12px',
@@ -272,6 +239,11 @@ function Auth() {
                     fontSize: '1rem'
                   }}
                 />
+                {!isLogin && (
+                  <p style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', marginBottom: 0 }}>
+                    At least 8 characters with 1 uppercase, 1 lowercase, and 1 special character
+                  </p>
+                )}
               </div>
 
               {error && (

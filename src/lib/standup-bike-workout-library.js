@@ -721,7 +721,7 @@ export class StandUpBikeWorkoutLibrary {
      * Get workout prescription for specific equipment
      */
     prescribeStandUpBikeWorkout(workoutName, equipment, options = {}) {
-        const { duration = null, experience = "intermediate", targetDistance = null } = options;
+        const { duration = null, experience = "intermediate", targetDistance = null, hasGarmin = true } = options;
 
         // Find the workout
         let workout = null;
@@ -747,20 +747,26 @@ export class StandUpBikeWorkoutLibrary {
         // Get equipment-specific details
         const equipmentSpec = this.equipmentSpecs[equipment];
 
-        // Prescribe distance in RunEQ miles (measured by companion Garmin Data Field)
-        // Users ride until their Garmin shows the prescribed RunEQ miles
-        // The actual bike distance will vary based on their riding intensity
+        // Prescribe distance - format depends on whether user has Garmin
         let updatedName = workout.name;
         let updatedDescription = workout.description;
         let prescribedRunEqMiles = null;
 
         if (targetDistance) {
-            // Target distance IS the RunEQ miles (not actual bike miles)
             prescribedRunEqMiles = targetDistance;
 
-            // Inject RunEQ miles into workout name and description
-            updatedName = `${prescribedRunEqMiles} RunEQ Miles - ${workout.name}`;
-            updatedDescription = `Ride until your Garmin shows ${prescribedRunEqMiles} RunEQ miles - ${workout.description}`;
+            if (hasGarmin) {
+                // Garmin users see RunEQ miles
+                updatedName = `${prescribedRunEqMiles} RunEQ Miles - ${workout.name}`;
+                updatedDescription = `Ride until your Garmin shows ${prescribedRunEqMiles} RunEQ miles - ${workout.description}`;
+            } else {
+                // Non-Garmin users see estimated time and distance
+                // Estimate: ~3:1 ratio (bike miles to run equivalent)
+                const estimatedBikeMiles = Math.round(prescribedRunEqMiles * 3);
+                const estimatedMinutes = Math.round(prescribedRunEqMiles * 9); // Assuming ~9 min/RunEQ mile average
+                updatedName = `${estimatedMinutes} min / ~${estimatedBikeMiles} mi - ${workout.name}`;
+                updatedDescription = `Ride for approximately ${estimatedMinutes} minutes or ${estimatedBikeMiles} miles - ${workout.description}`;
+            }
         }
 
         return {

@@ -126,6 +126,7 @@ export class TrainingPlanGenerator {
             standUpBikeType = null, // "cyclete", "elliptigo", or null for running-only
             runningStatus = 'active', // 'active', 'bikeOnly', or 'transitioning'
             currentWeeklyMileage = null, // Current weekly mileage for Week 1 starting point
+            hasGarmin = true, // Whether user has Garmin device for RunEQ data field
             // USER SCHEDULE INPUTS - from onboarding
             availableDays = null,        // e.g., ['Monday', 'Wednesday', 'Friday', 'Saturday']
             hardSessionDays = null,      // e.g., ['Wednesday', 'Friday']
@@ -228,7 +229,8 @@ export class TrainingPlanGenerator {
                 runEqPreference,
                 experienceLevel,
                 standUpBikeType,
-                runningStatus
+                runningStatus,
+                hasGarmin
             );
             weeklyPlans.push(weekPlan);
         }
@@ -240,16 +242,24 @@ export class TrainingPlanGenerator {
 
             console.log('🏁 Race Day Feature:');
             console.log('  Race Date:', raceDate);
-            console.log('  Final Week Workouts:', finalWeek.workouts.map(w => ({ day: w.day, type: w.type, distance: w.distance })));
+            console.log('  Long Run Day Name:', longRunDayName);
+            console.log('  Final Week Workouts:', finalWeek.workouts.map(w => ({
+                day: w.day,
+                type: w.type,
+                distance: w.distance,
+                workoutName: w.workout?.name
+            })));
 
             // Find the long run workout in the final week
             // Try multiple strategies:
             // 1. Find by type 'longRun'
             let longRunIndex = finalWeek.workouts.findIndex(w => w.type === 'longRun');
+            console.log('  Strategy 1 (type=longRun): index =', longRunIndex);
 
             // 2. If not found, find by day name
             if (longRunIndex === -1) {
                 longRunIndex = finalWeek.workouts.findIndex(w => w.day === longRunDayName);
+                console.log('  Strategy 2 (day=' + longRunDayName + '): index =', longRunIndex);
             }
 
             // 3. If still not found, find the workout with the longest distance
@@ -261,11 +271,15 @@ export class TrainingPlanGenerator {
                         longRunIndex = idx;
                     }
                 });
+                console.log('  Strategy 3 (longest distance): index =', longRunIndex);
             }
 
             if (longRunIndex !== -1) {
                 // Generate the Race Day workout
                 const raceDayWorkout = this.generateRaceDayWorkout(raceDistance, raceDate);
+
+                console.log('  Replacing workout at index', longRunIndex, 'with Race Day');
+                console.log('  Old workout:', finalWeek.workouts[longRunIndex]);
 
                 // Replace the long run with Race Day workout
                 finalWeek.workouts[longRunIndex] = {
@@ -273,9 +287,15 @@ export class TrainingPlanGenerator {
                     ...raceDayWorkout
                 };
 
-                console.log(`🏁 Race Day workout added to final week on ${finalWeek.workouts[longRunIndex].day}`);
+                console.log('  New workout:', finalWeek.workouts[longRunIndex]);
+                console.log(`✅ Race Day workout added to final week on ${finalWeek.workouts[longRunIndex].day}`);
             } else {
-                console.warn('⚠️ Could not find suitable workout to replace with Race Day in final week');
+                console.error('❌ Could not find suitable workout to replace with Race Day in final week!');
+                console.error('   This is a bug - please report this issue');
+            }
+        } else {
+            if (!raceDate) {
+                console.log('ℹ️ No race date provided - skipping Race Day feature');
             }
         }
 
@@ -419,7 +439,7 @@ export class TrainingPlanGenerator {
      * Generate individual week plan
      * FIXED: Now uses progressive pace blending
      */
-    generateWeekPlan(weekNumber, totalWeeks, template, structure, periodization, paces, runEqPreference, experienceLevel, standUpBikeType, runningStatus = 'active') {
+    generateWeekPlan(weekNumber, totalWeeks, template, structure, periodization, paces, runEqPreference, experienceLevel, standUpBikeType, runningStatus = 'active', hasGarmin = true) {
         // Initialize workout history if not exists
         if (!this.workoutHistory) {
             this.workoutHistory = {
@@ -499,7 +519,8 @@ export class TrainingPlanGenerator {
             totalWeeks,
             standUpBikeType,
             structure,  // Pass the full structure with user's schedule
-            runningStatus  // Pass running status for bike-only mode
+            runningStatus,  // Pass running status for bike-only mode
+            hasGarmin  // Pass hasGarmin preference for workout formatting
         );
 
         return {
@@ -516,7 +537,7 @@ export class TrainingPlanGenerator {
     /**
      * Generate workouts for a specific week using USER schedule inputs
      */
-    generateWeekWorkouts(runsPerWeek, weeklyMileage, phase, template, paces, runEqPreference, experienceLevel, weekNumber, totalWeeks, standUpBikeType, structure, runningStatus = 'active') {
+    generateWeekWorkouts(runsPerWeek, weeklyMileage, phase, template, paces, runEqPreference, experienceLevel, weekNumber, totalWeeks, standUpBikeType, structure, runningStatus = 'active', hasGarmin = true) {
         const workouts = [];
         const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -598,7 +619,7 @@ export class TrainingPlanGenerator {
                     workouts.push({
                         day,
                         type: "bike",
-                        workout: this.selectStandUpBikeWorkout('long_endurance', phase, standUpBikeType, longRunMiles),
+                        workout: this.selectStandUpBikeWorkout('long_endurance', phase, standUpBikeType, longRunMiles, hasGarmin),
                         distance: longRunMiles, // Already in RunEQ miles for bike-only users
                         focus: "Endurance",
                         equipmentSpecific: true
@@ -623,7 +644,7 @@ export class TrainingPlanGenerator {
                 workouts.push({
                     day,
                     type: 'bike',
-                    workout: this.selectStandUpBikeWorkout(bikeWorkoutType, phase, standUpBikeType, workoutDistance),
+                    workout: this.selectStandUpBikeWorkout(bikeWorkoutType, phase, standUpBikeType, workoutDistance, hasGarmin),
                     distance: workoutDistance,
                     focus: bikeWorkoutType === 'tempo' ? 'Lactate Threshold' : 'Speed & Power',
                     equipmentSpecific: true
@@ -640,7 +661,7 @@ export class TrainingPlanGenerator {
                     workouts.push({
                         day,
                         type: 'bike',
-                        workout: this.selectStandUpBikeWorkout(bikeWorkoutType, phase, standUpBikeType, workoutDistance),
+                        workout: this.selectStandUpBikeWorkout(bikeWorkoutType, phase, standUpBikeType, workoutDistance, hasGarmin),
                         distance: workoutDistance, // Already in RunEQ miles for bike-only users
                         focus: bikeWorkoutType === 'tempo' ? 'Lactate Threshold' : 'Speed & Power',
                         equipmentSpecific: true
@@ -1015,7 +1036,7 @@ export class TrainingPlanGenerator {
     /**
      * Select specific stand-up bike workout
      */
-    selectStandUpBikeWorkout(workoutType, phase, standUpBikeType, targetDistance) {
+    selectStandUpBikeWorkout(workoutType, phase, standUpBikeType, targetDistance, hasGarmin = true) {
         // Map workout types to stand-up bike categories
         const categoryMap = {
             // New categories with full workout libraries
@@ -1044,7 +1065,7 @@ export class TrainingPlanGenerator {
                 return this.standUpBikeLibrary.prescribeStandUpBikeWorkout(
                     selectedWorkout.name,
                     standUpBikeType,
-                    { targetDistance }  // Pass targetDistance for RunEQ conversion
+                    { targetDistance, hasGarmin }  // Pass targetDistance for RunEQ conversion and hasGarmin preference
                 );
             }
         }
@@ -1062,7 +1083,7 @@ export class TrainingPlanGenerator {
                 return this.standUpBikeLibrary.prescribeStandUpBikeWorkout(
                     selectedWorkout.name,
                     standUpBikeType,
-                    { targetDistance }  // Pass targetDistance for RunEQ conversion
+                    { targetDistance, hasGarmin }  // Pass targetDistance for RunEQ conversion and hasGarmin preference
                 );
             }
         }
@@ -1071,7 +1092,7 @@ export class TrainingPlanGenerator {
         return this.standUpBikeLibrary.prescribeStandUpBikeWorkout(
             selectedWorkout.name,
             standUpBikeType,
-            { targetDistance }  // Pass targetDistance for RunEQ conversion
+            { targetDistance, hasGarmin }  // Pass targetDistance for RunEQ conversion and hasGarmin preference
         );
     }
 

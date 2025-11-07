@@ -15,7 +15,8 @@ function SomethingElseModal({
   userProfile,
   trainingPlan,
   onWorkoutSelect,
-  weather = null
+  weather = null,
+  mode = 'replace' // 'replace' or 'add'
 }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedWorkout, setSelectedWorkout] = useState(null);
@@ -977,9 +978,15 @@ function SomethingElseModal({
           marginBottom: 'var(--space-6)'
         }}>
           <div>
-            <h2 style={{ margin: 0, color: 'var(--runeq-primary)' }}>🔄 Something Else</h2>
+            <h2 style={{ margin: 0, color: 'var(--runeq-primary)' }}>
+              {mode === 'add' ? '➕ Add Second Workout' : '🔄 Something Else'}
+            </h2>
             <p style={{ margin: 'var(--space-2) 0 0 0', color: 'var(--gray-600)' }}>
-              Scheduled: <strong>{currentWorkout.workout.name}</strong> • {currentWorkout.day}
+              {mode === 'add' ? (
+                <>Add a second workout to <strong>{currentWorkout.day}</strong></>
+              ) : (
+                <>Scheduled: <strong>{currentWorkout.workout.name}</strong> • {currentWorkout.day}</>
+              )}
             </p>
           </div>
           <button 
@@ -1096,17 +1103,19 @@ function SomethingElseModal({
               }}>
                 <div>
                   <p style={{ margin: 0, fontWeight: 600 }}>
-                    Replace with: <strong>{selectedWorkout.name}</strong>
+                    {mode === 'add' ? 'Add: ' : 'Replace with: '}<strong>{selectedWorkout.name}</strong>
                   </p>
                   <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: 'var(--gray-600)' }}>
-                    This will update your {currentWorkout.day} workout and maintain your training load.
+                    {mode === 'add'
+                      ? `This will add a second workout to ${currentWorkout.day} for a two-a-day training session.`
+                      : `This will update your ${currentWorkout.day} workout and maintain your training load.`}
                   </p>
                 </div>
-                <button 
+                <button
                   onClick={handleConfirmReplacement}
                   className="btn btn-primary"
                 >
-                  🔄 Replace Workout
+                  {mode === 'add' ? '➕ Add Workout' : '🔄 Replace Workout'}
                 </button>
               </div>
             )}

@@ -14,6 +14,7 @@ import OnboardingFlow from './components/OnboardingFlow';
 import TrainingPlanPreview from './components/TrainingPlanPreview';
 import Dashboard from './components/Dashboard';
 import WorkoutDetail from './components/WorkoutDetail';
+import AdminApproval from './components/AdminApproval';
 
 // Scroll to top component
 function ScrollToTop() {
@@ -45,13 +46,24 @@ function App() {
 
         if (result.success && result.data) {
           console.log('📦 Loaded user data from Firestore');
+          console.log('📊 Data contents:', {
+            hasProfile: !!result.data.profile,
+            hasTrainingPlan: !!result.data.trainingPlan,
+            dataKeys: Object.keys(result.data)
+          });
 
           if (result.data.profile) {
+            console.log('✅ Setting user profile');
             setUserProfile(result.data.profile);
+          } else {
+            console.log('⚠️ No profile found in data');
           }
 
           if (result.data.trainingPlan) {
+            console.log('✅ Setting training plan');
             setTrainingPlan(result.data.trainingPlan);
+          } else {
+            console.log('⚠️ No training plan found in data');
           }
         } else {
           console.log('ℹ️ No saved data found - new user');
@@ -95,6 +107,12 @@ function App() {
   };
 
   const handleOnboardingComplete = async (profile, plan) => {
+    console.log('🎯 Onboarding complete - received data:', {
+      hasProfile: !!profile,
+      hasPlan: !!plan,
+      planKeys: plan ? Object.keys(plan) : []
+    });
+
     setUserProfile(profile);
     setTrainingPlan(plan);
 
@@ -103,8 +121,26 @@ function App() {
 
     // Save to Firestore
     if (user) {
-      await FirestoreService.saveUserProfile(user.uid, profile);
-      await FirestoreService.saveTrainingPlan(user.uid, plan);
+      console.log('💾 Saving profile to Firestore...', profile);
+      const profileResult = await FirestoreService.saveUserProfile(user.uid, profile);
+      if (!profileResult.success) {
+        console.error('❌ Failed to save profile:', profileResult.error);
+        alert('Warning: Failed to save your profile. Please try again or contact support.');
+        throw new Error('Profile save failed: ' + profileResult.error);
+      }
+
+      console.log('💾 Saving training plan to Firestore...', plan);
+      const planResult = await FirestoreService.saveTrainingPlan(user.uid, plan);
+      if (!planResult.success) {
+        console.error('❌ Failed to save training plan:', planResult.error);
+        alert('Warning: Failed to save your training plan. Please try again or contact support.');
+        throw new Error('Training plan save failed: ' + planResult.error);
+      }
+
+      console.log('✅ Successfully saved all data to Firestore');
+    } else {
+      console.error('❌ No user found - cannot save to Firestore');
+      throw new Error('User not authenticated');
     }
   };
 
@@ -146,6 +182,57 @@ function App() {
   // Show Auth screen if not logged in
   if (!user) {
     return <Auth />;
+  }
+
+  // Check if user account is pending approval
+  if (userProfile?.approvalStatus === 'pending') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)',
+        padding: '20px'
+      }}>
+        <div style={{
+          maxWidth: '500px',
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '12px',
+          padding: '40px',
+          textAlign: 'center',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <div style={{ fontSize: '4rem', marginBottom: '20px' }}>⏳</div>
+          <h1 style={{ color: '#00D4FF', marginBottom: '16px' }}>Account Pending Approval</h1>
+          <p style={{ color: '#AAAAAA', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '24px' }}>
+            Thank you for signing up! Your account is currently pending approval.
+          </p>
+          <p style={{ color: '#AAAAAA', fontSize: '0.95rem', lineHeight: '1.6' }}>
+            You'll receive an email at <strong style={{ color: '#FFFFFF' }}>{userProfile?.email}</strong> once your account has been approved.
+            This usually takes less than 24 hours.
+          </p>
+          <button
+            onClick={async () => {
+              await signOut(auth);
+              window.location.href = '/';
+            }}
+            style={{
+              marginTop: '32px',
+              padding: '12px 24px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              color: '#FFFFFF',
+              cursor: 'pointer',
+              fontSize: '1rem'
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -202,6 +289,10 @@ function App() {
                 trainingPlan={trainingPlan}
               />
             }
+          />
+          <Route
+            path="/admin/approvals"
+            element={<AdminApproval />}
           />
         </Routes>
       </div>
