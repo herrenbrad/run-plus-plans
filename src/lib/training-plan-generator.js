@@ -415,24 +415,31 @@ export class TrainingPlanGenerator {
      */
     createPeriodization(totalWeeks, raceDistance) {
         const phases = [];
-        
+
+        // ALWAYS ensure at least 2 weeks of taper (1 week taper + race week)
+        const taperWeeks = Math.max(2, Math.ceil(totalWeeks * 0.1));
+
         if (totalWeeks <= 8) {
-            // Short plan
-            phases.push({ phase: "base", weeks: Math.ceil(totalWeeks * 0.4) });
-            phases.push({ phase: "build", weeks: Math.ceil(totalWeeks * 0.4) });
-            phases.push({ phase: "peak", weeks: Math.floor(totalWeeks * 0.2) });
+            // Short plan - still include taper
+            const buildWeeks = totalWeeks - taperWeeks;
+            phases.push({ phase: "base", weeks: Math.ceil(buildWeeks * 0.5) });
+            phases.push({ phase: "build", weeks: Math.floor(buildWeeks * 0.35) });
+            phases.push({ phase: "peak", weeks: Math.floor(buildWeeks * 0.15) });
+            phases.push({ phase: "taper", weeks: taperWeeks });
         } else if (totalWeeks <= 12) {
             // Medium plan
-            phases.push({ phase: "base", weeks: Math.ceil(totalWeeks * 0.4) });
-            phases.push({ phase: "build", weeks: Math.ceil(totalWeeks * 0.35) });
-            phases.push({ phase: "peak", weeks: Math.ceil(totalWeeks * 0.15) });
-            phases.push({ phase: "taper", weeks: Math.floor(totalWeeks * 0.1) });
+            const buildWeeks = totalWeeks - taperWeeks;
+            phases.push({ phase: "base", weeks: Math.ceil(buildWeeks * 0.45) });
+            phases.push({ phase: "build", weeks: Math.ceil(buildWeeks * 0.35) });
+            phases.push({ phase: "peak", weeks: Math.floor(buildWeeks * 0.2) });
+            phases.push({ phase: "taper", weeks: taperWeeks });
         } else {
             // Long plan (marathon)
-            phases.push({ phase: "base", weeks: Math.ceil(totalWeeks * 0.4) });
-            phases.push({ phase: "build", weeks: Math.ceil(totalWeeks * 0.35) });
-            phases.push({ phase: "peak", weeks: Math.ceil(totalWeeks * 0.15) });
-            phases.push({ phase: "taper", weeks: Math.floor(totalWeeks * 0.1) });
+            const buildWeeks = totalWeeks - taperWeeks;
+            phases.push({ phase: "base", weeks: Math.ceil(buildWeeks * 0.4) });
+            phases.push({ phase: "build", weeks: Math.ceil(buildWeeks * 0.35) });
+            phases.push({ phase: "peak", weeks: Math.floor(buildWeeks * 0.25) });
+            phases.push({ phase: "taper", weeks: taperWeeks });
         }
 
         // Add cumulative week tracking
@@ -515,7 +522,7 @@ export class TrainingPlanGenerator {
             weeklyMileage = Math.round(startingMileage + ((structure.peakMileage - startingMileage) * (weekNumber / buildWeeks)));
         }
 
-        console.log(`📅 Week ${weekNumber}: ${weeklyMileage} miles (start: ${startingMileage}, peak: ${structure.peakMileage}, isRest: ${isRestWeek})`);
+        console.log(`📅 Week ${weekNumber}: ${weeklyMileage} miles (start: ${startingMileage}, peak: ${structure.peakMileage}, isRest: ${isRestWeek}, phase: ${currentPhase.phase})`);
 
         // Generate workouts for each day using USER schedule
         const workouts = this.generateWeekWorkouts(
