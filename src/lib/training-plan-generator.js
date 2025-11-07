@@ -282,9 +282,20 @@ export class TrainingPlanGenerator {
                 console.log('  Old workout:', finalWeek.workouts[longRunIndex]);
 
                 // Replace the long run with Race Day workout
+                // IMPORTANT: Wrap in 'workout' property to match expected structure
                 finalWeek.workouts[longRunIndex] = {
                     day: finalWeek.workouts[longRunIndex].day,
-                    ...raceDayWorkout
+                    type: raceDayWorkout.type,
+                    distance: raceDayWorkout.distance,
+                    focus: raceDayWorkout.focus,
+                    workout: {
+                        name: raceDayWorkout.name,
+                        description: raceDayWorkout.description,
+                        structure: raceDayWorkout.structure,
+                        about: raceDayWorkout.about,
+                        notes: raceDayWorkout.notes,
+                        equipment: raceDayWorkout.equipment
+                    }
                 };
 
                 console.log('  New workout:', finalWeek.workouts[longRunIndex]);

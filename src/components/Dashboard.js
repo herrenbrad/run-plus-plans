@@ -1555,9 +1555,11 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                       </div>
                     )}
 
-                    <p style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#CCCCCC', lineHeight: '1.4' }}>
-                      {workout.workout.description}
-                    </p>
+                    {(workout.workout?.description || workout.description) && (
+                      <p style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#CCCCCC', lineHeight: '1.4' }}>
+                        {workout.workout?.description || workout.description}
+                      </p>
+                    )}
                     
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <span 
