@@ -1535,7 +1535,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                     </div>
                     
                     <h4 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', color: getWorkoutTypeColor(workout.type) }}>
-                      {workout.workout.name}
+                      {workout.workout?.name || workout.name || 'Workout'}
                     </h4>
 
                     {/* Distance/Duration info badge */}
