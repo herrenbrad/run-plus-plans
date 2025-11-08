@@ -36,72 +36,13 @@ function App() {
 
   // Listen for authentication state changes
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       console.log('🔐 Auth state changed:', firebaseUser ? 'Logged in' : 'Logged out');
 
       if (firebaseUser) {
         setUser(firebaseUser);
-
-        // Load user data from Firestore
-        const result = await FirestoreService.getUserData(firebaseUser.uid);
-
-        if (result.success && result.data) {
-          console.log('📦 Loaded user data from Firestore');
-          console.log('📊 Data contents:', {
-            hasProfile: !!result.data.profile,
-            hasTrainingPlan: !!result.data.trainingPlan,
-            dataKeys: Object.keys(result.data),
-            approvalStatus: result.data.approvalStatus
-          });
-
-          // Merge root-level fields (approvalStatus, email, etc.) with profile data
-          const completeProfile = {
-            ...result.data.profile,
-            email: result.data.email,
-            displayName: result.data.displayName,
-            approvalStatus: result.data.approvalStatus,
-            createdAt: result.data.createdAt,
-            approvedAt: result.data.approvedAt,
-            approvedBy: result.data.approvedBy
-          };
-
-          if (result.data.profile || result.data.email) {
-            console.log('✅ Setting user profile with approval status:', completeProfile.approvalStatus);
-
-            // MIGRATION: Auto-approve users who already have a training plan (legacy users from before approval system)
-            if (!completeProfile.approvalStatus && result.data.trainingPlan) {
-              console.log('🔄 Migrating legacy user - auto-approving since they have a training plan');
-              completeProfile.approvalStatus = 'approved';
-
-              // Update Firestore to persist the approval
-              const userRef = doc(db, 'users', firebaseUser.uid);
-              updateDoc(userRef, {
-                approvalStatus: 'approved',
-                approvedAt: new Date(),
-                approvedBy: 'auto-migration'
-              }).catch(err => console.error('Failed to migrate user:', err));
-            }
-
-            // Default to pending if still no approvalStatus
-            if (!completeProfile.approvalStatus) {
-              console.log('⚠️ User has no approvalStatus - defaulting to pending');
-              completeProfile.approvalStatus = 'pending';
-            }
-
-            setUserProfile(completeProfile);
-          } else {
-            console.log('⚠️ No profile found in data');
-          }
-
-          if (result.data.trainingPlan) {
-            console.log('✅ Setting training plan');
-            setTrainingPlan(result.data.trainingPlan);
-          } else {
-            console.log('⚠️ No training plan found in data');
-          }
-        } else {
-          console.log('ℹ️ No saved data found - new user');
-        }
+        // Don't load data here - let the real-time listener handle it
+        console.log('✅ User authenticated, real-time listener will load data');
       } else {
         // User logged out - clear everything
         setUser(null);
@@ -117,9 +58,8 @@ function App() {
           }
         }
         keysToRemove.forEach(key => localStorage.removeItem(key));
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     // Cleanup subscription on unmount
@@ -134,12 +74,16 @@ function App() {
     const userRef = doc(db, 'users', user.uid);
 
     const unsubscribe = onSnapshot(userRef, (docSnapshot) => {
+      console.log('🔄 Snapshot received:', { exists: docSnapshot.exists() });
+
       if (docSnapshot.exists()) {
         const data = docSnapshot.data();
-        console.log('🔄 User document updated:', {
+        console.log('📦 User document data:', {
           hasProfile: !!data.profile,
           hasTrainingPlan: !!data.trainingPlan,
-          approvalStatus: data.approvalStatus
+          hasEmail: !!data.email,
+          approvalStatus: data.approvalStatus,
+          allKeys: Object.keys(data)
         });
 
         // Merge root-level fields with profile data
@@ -153,40 +97,47 @@ function App() {
           approvedBy: data.approvedBy
         };
 
-        if (data.profile || data.email) {
-          // MIGRATION: Auto-approve users who already have a training plan (legacy users)
-          if (!completeProfile.approvalStatus && data.trainingPlan) {
-            console.log('🔄 [Realtime] Migrating legacy user - auto-approving');
-            completeProfile.approvalStatus = 'approved';
+        // MIGRATION: Auto-approve users who already have a training plan (legacy users)
+        if (!completeProfile.approvalStatus && data.trainingPlan) {
+          console.log('🔄 [Realtime] Migrating legacy user - auto-approving');
+          completeProfile.approvalStatus = 'approved';
 
-            updateDoc(userRef, {
-              approvalStatus: 'approved',
-              approvedAt: new Date(),
-              approvedBy: 'auto-migration-realtime'
-            }).catch(err => console.error('Failed to migrate user:', err));
-          }
-
-          // Default to pending if still no approvalStatus
-          if (!completeProfile.approvalStatus) {
-            console.log('⚠️ [Realtime] User has no approvalStatus - defaulting to pending');
-            completeProfile.approvalStatus = 'pending';
-          }
-
-          // Check if approval status changed from pending to approved
-          if (userProfile?.approvalStatus === 'pending' && completeProfile.approvalStatus === 'approved') {
-            console.log('🎉 User approved! Showing notification...');
-            alert('Great news! Your account has been approved. Welcome to Run+ Plans!');
-          }
-
-          setUserProfile(completeProfile);
+          updateDoc(userRef, {
+            approvalStatus: 'approved',
+            approvedAt: new Date(),
+            approvedBy: 'auto-migration-realtime'
+          }).catch(err => console.error('Failed to migrate user:', err));
         }
+
+        // Default to pending if still no approvalStatus (NEW USERS)
+        if (!completeProfile.approvalStatus) {
+          console.log('⚠️ [Realtime] User has no approvalStatus - defaulting to pending');
+          completeProfile.approvalStatus = 'pending';
+        }
+
+        console.log('✅ Setting userProfile with approvalStatus:', completeProfile.approvalStatus);
+
+        // Check if approval status changed from pending to approved
+        if (userProfile?.approvalStatus === 'pending' && completeProfile.approvalStatus === 'approved') {
+          console.log('🎉 User approved! Showing notification...');
+          alert('Great news! Your account has been approved. Welcome to Run+ Plans!');
+        }
+
+        setUserProfile(completeProfile);
 
         if (data.trainingPlan) {
+          console.log('✅ Setting training plan');
           setTrainingPlan(data.trainingPlan);
         }
+      } else {
+        console.log('⚠️ User document does not exist yet - waiting for creation');
       }
+
+      // Loading complete - either found data or confirmed no document
+      setLoading(false);
     }, (error) => {
       console.error('❌ Error listening to user document:', error);
+      setLoading(false);
     });
 
     return () => {
