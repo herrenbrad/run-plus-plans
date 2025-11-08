@@ -235,7 +235,58 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     console.log('📊 Rounded result:', result);
     return result;
   };
-  
+
+  // Calculate rolling distance totals from completed workouts
+  const calculateRollingDistance = () => {
+    if (!trainingPlan?.weeks) {
+      return { last7Days: 0, last30Days: 0, allTime: 0 };
+    }
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    let last7Days = 0;
+    let last30Days = 0;
+    let allTime = 0;
+
+    trainingPlan.weeks.forEach(week => {
+      if (!week.workouts) return;
+
+      week.workouts.forEach(workout => {
+        // Get all workouts for this day (including two-a-days)
+        const allWorkoutsForDay = getWorkouts(workout);
+
+        allWorkoutsForDay.forEach(w => {
+          const workoutCompleted = w.completed || workoutCompletions[`${week.week}-${w.day}-${w.workoutIndex || 0}`]?.completed;
+          const actualDistance = w.actualDistance || workoutCompletions[`${week.week}-${w.day}-${w.workoutIndex || 0}`]?.actualDistance;
+
+          if (workoutCompleted && actualDistance) {
+            const completedAt = w.completedAt || workoutCompletions[`${week.week}-${w.day}-${w.workoutIndex || 0}`]?.completedAt;
+            const completedDate = completedAt ? new Date(completedAt) : null;
+
+            allTime += actualDistance;
+
+            if (completedDate) {
+              if (completedDate >= sevenDaysAgo) {
+                last7Days += actualDistance;
+              }
+              if (completedDate >= thirtyDaysAgo) {
+                last30Days += actualDistance;
+              }
+            }
+          }
+        });
+      });
+    });
+
+    return {
+      last7Days: Math.round(last7Days * 10) / 10,
+      last30Days: Math.round(last30Days * 10) / 10,
+      allTime: Math.round(allTime * 10) / 10
+    };
+  };
+
   // Load current week from localStorage or calculate it
   const [currentWeek, setCurrentWeek] = useState(() => {
     // ALWAYS calculate current week based on start date for new plans
@@ -278,6 +329,12 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   const [workoutCompletions, setWorkoutCompletions] = useState({}); // Track workout completions for instant UI updates
   const [showBetaSetup, setShowBetaSetup] = useState(false); // Show beta code setup modal
   const [showBrickOptions, setShowBrickOptions] = useState({}); // Track which workouts are showing brick split options
+  const [completionModal, setCompletionModal] = useState({
+    isOpen: false,
+    workout: null,
+    distance: '',
+    notes: ''
+  }); // Track completion modal for distance logging
 
   // Load modified workouts from localStorage on component mount
   useEffect(() => {
@@ -748,26 +805,117 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
       return;
     }
 
-    const newCompletedStatus = !workout.completed;
+    // If uncompleting, just toggle off immediately
+    if (workout.completed) {
+      const newCompletedStatus = false;
+      const workoutIndex = workout.workoutIndex || 0;
+      const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
+
+      // INSTANT UI UPDATE: Update local state immediately for smooth UX
+      setWorkoutCompletions(prev => ({
+        ...prev,
+        [workoutKey]: {
+          completed: newCompletedStatus,
+          completedAt: null,
+          actualDistance: null,
+          notes: null
+        }
+      }));
+
+      // BACKGROUND SAVE: Update Firestore without blocking UI
+      try {
+        const result = await FirestoreService.markWorkoutComplete(
+          auth.currentUser.uid,
+          currentWeek,
+          workout.day,
+          newCompletedStatus,
+          null, // distance
+          null  // notes
+        );
+
+        if (!result.success) {
+          console.error('Failed to save completion status');
+          setWorkoutCompletions(prev => {
+            const updated = { ...prev };
+            delete updated[workoutKey];
+            return updated;
+          });
+          alert('Failed to save. Please try again.');
+        }
+      } catch (error) {
+        console.error('Error uncompleting workout:', error);
+      }
+      return;
+    }
+
+    // For rest days, just mark complete without modal
+    if (workout.type === 'rest') {
+      const newCompletedStatus = true;
+      const workoutIndex = workout.workoutIndex || 0;
+      const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
+
+      setWorkoutCompletions(prev => ({
+        ...prev,
+        [workoutKey]: {
+          completed: newCompletedStatus,
+          completedAt: new Date().toISOString()
+        }
+      }));
+
+      try {
+        await FirestoreService.markWorkoutComplete(
+          auth.currentUser.uid,
+          currentWeek,
+          workout.day,
+          newCompletedStatus
+        );
+      } catch (error) {
+        console.error('Error completing rest day:', error);
+      }
+      return;
+    }
+
+    // For actual workouts, show completion modal with distance tracking
+    setCompletionModal({
+      isOpen: true,
+      workout: workout,
+      distance: workout.distance?.toString() || '',
+      notes: ''
+    });
+  };
+
+  // Handle saving workout completion with distance
+  const handleSaveCompletion = async () => {
+    const { workout, distance, notes } = completionModal;
+    if (!workout || !auth.currentUser) return;
+
+    const newCompletedStatus = true;
     const workoutIndex = workout.workoutIndex || 0;
     const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
 
-    // INSTANT UI UPDATE: Update local state immediately for smooth UX
+    // INSTANT UI UPDATE
     setWorkoutCompletions(prev => ({
       ...prev,
       [workoutKey]: {
         completed: newCompletedStatus,
-        completedAt: newCompletedStatus ? new Date().toISOString() : null
+        completedAt: new Date().toISOString(),
+        actualDistance: distance ? parseFloat(distance) : null,
+        notes: notes || null
       }
     }));
 
-    // BACKGROUND SAVE: Update Firestore without blocking UI
+    // Close modal
+    setCompletionModal({ isOpen: false, workout: null, distance: '', notes: '' });
+
+    // BACKGROUND SAVE
     try {
       const result = await FirestoreService.markWorkoutComplete(
         auth.currentUser.uid,
         currentWeek,
         workout.day,
-        newCompletedStatus
+        newCompletedStatus,
+        distance ? parseFloat(distance) : null,
+        notes || null
       );
 
       if (!result.success) {
@@ -1239,6 +1387,34 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                           </span>
                         </div>
                       )}
+                    </div>
+                  );
+                })()}
+                {(() => {
+                  const rollingDistance = calculateRollingDistance();
+                  const hasCompletedWorkouts = rollingDistance.allTime > 0;
+
+                  if (!hasCompletedWorkouts) return null;
+
+                  return (
+                    <div style={{
+                      background: 'rgba(34, 197, 94, 0.15)',
+                      color: '#22c55e',
+                      padding: '8px 14px',
+                      borderRadius: '10px',
+                      fontWeight: '600',
+                      fontSize: '1.1rem',
+                      border: '1px solid rgba(34, 197, 94, 0.3)'
+                    }}>
+                      🏃 {rollingDistance.last7Days} Miles (7 days)
+                      <div style={{
+                        fontSize: '0.8rem',
+                        fontWeight: '500',
+                        marginTop: '4px',
+                        color: '#4ade80'
+                      }}>
+                        {rollingDistance.last30Days}mi last 30 days • {rollingDistance.allTime}mi total
+                      </div>
                     </div>
                   );
                 })()}
@@ -2211,6 +2387,138 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
         weather={null} // TODO: Add weather API integration
         mode={somethingElseModal.mode || 'replace'} // Pass mode to modal
       />
+
+      {/* Workout Completion Modal */}
+      {completionModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)',
+            borderRadius: '12px',
+            padding: '30px',
+            maxWidth: '500px',
+            width: '100%',
+            border: '2px solid rgba(0, 212, 255, 0.3)'
+          }}>
+            <h2 style={{ color: '#00D4FF', marginTop: 0, marginBottom: '20px' }}>
+              Mark Workout Complete
+            </h2>
+
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ color: '#FFFFFF', fontSize: '16px', marginBottom: '8px' }}>
+                {completionModal.workout?.workout?.name || completionModal.workout?.name}
+              </h3>
+              <p style={{ color: '#AAAAAA', fontSize: '14px', margin: 0 }}>
+                {completionModal.workout?.type} - {completionModal.workout?.focus}
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{
+                display: 'block',
+                color: '#CCCCCC',
+                fontSize: '14px',
+                marginBottom: '8px',
+                fontWeight: '500'
+              }}>
+                Distance Completed (miles)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={completionModal.distance}
+                onChange={(e) => setCompletionModal(prev => ({ ...prev, distance: e.target.value }))}
+                placeholder="Enter distance"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: '#FFFFFF',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '30px' }}>
+              <label style={{
+                display: 'block',
+                color: '#CCCCCC',
+                fontSize: '14px',
+                marginBottom: '8px',
+                fontWeight: '500'
+              }}>
+                Notes (optional)
+              </label>
+              <textarea
+                value={completionModal.notes}
+                onChange={(e) => setCompletionModal(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="How did it feel? Any observations?"
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: '#FFFFFF',
+                  fontSize: '14px',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleSaveCompletion}
+                style={{
+                  flex: 1,
+                  padding: '15px',
+                  background: '#00D4FF',
+                  color: '#000000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setCompletionModal({ isOpen: false, workout: null, distance: '', notes: '' })}
+                style={{
+                  padding: '15px 30px',
+                  background: 'rgba(156, 163, 175, 0.1)',
+                  color: '#9CA3AF',
+                  border: '1px solid rgba(156, 163, 175, 0.3)',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Beta Code Setup Modal - Admin Only */}
       {showBetaSetup && (

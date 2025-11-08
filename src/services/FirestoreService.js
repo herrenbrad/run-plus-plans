@@ -116,7 +116,7 @@ class FirestoreService {
   /**
    * Update workout completion status
    */
-  async markWorkoutComplete(userId, weekNumber, day, completed = true) {
+  async markWorkoutComplete(userId, weekNumber, day, completed = true, distance = null, notes = null) {
     try {
       const userRef = doc(db, 'users', userId);
       const userData = await this.getUserData(userId);
@@ -134,12 +134,26 @@ class FirestoreService {
         if (workout) {
           workout.completed = completed;
           workout.completedAt = completed ? new Date().toISOString() : null;
+
+          // Store distance and notes when completing workout
+          if (completed) {
+            if (distance !== null) {
+              workout.actualDistance = distance;
+            }
+            if (notes !== null) {
+              workout.notes = notes;
+            }
+          } else {
+            // Clear distance and notes when marking incomplete
+            delete workout.actualDistance;
+            delete workout.notes;
+          }
         }
       }
 
       await this.saveTrainingPlan(userId, trainingPlan);
 
-      console.log(`✅ Workout marked as ${completed ? 'complete' : 'incomplete'}`);
+      console.log(`✅ Workout marked as ${completed ? 'complete' : 'incomplete'}${distance ? ` (${distance} miles)` : ''}`);
       return { success: true };
     } catch (error) {
       console.error('❌ Error updating workout:', error);
