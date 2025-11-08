@@ -29,6 +29,10 @@ function ScrollToTop() {
 }
 
 function App() {
+  const APP_VERSION = 'v2.0-approval-fix-' + new Date().toISOString();
+  console.log('🚀 APP VERSION:', APP_VERSION);
+  console.log('📅 Build timestamp:', new Date().toISOString());
+
   const [user, setUser] = useState(null); // Firebase user
   const [userProfile, setUserProfile] = useState(null);
   const [trainingPlan, setTrainingPlan] = useState(null);
