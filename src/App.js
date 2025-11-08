@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
 import './App.css';
 
 // Firebase
-import { auth } from './firebase/config';
+import { auth, db } from './firebase/config';
 import FirestoreService from './services/FirestoreService';
 
 // Components
@@ -49,12 +50,24 @@ function App() {
           console.log('📊 Data contents:', {
             hasProfile: !!result.data.profile,
             hasTrainingPlan: !!result.data.trainingPlan,
-            dataKeys: Object.keys(result.data)
+            dataKeys: Object.keys(result.data),
+            approvalStatus: result.data.approvalStatus
           });
 
-          if (result.data.profile) {
-            console.log('✅ Setting user profile');
-            setUserProfile(result.data.profile);
+          // Merge root-level fields (approvalStatus, email, etc.) with profile data
+          const completeProfile = {
+            ...result.data.profile,
+            email: result.data.email,
+            displayName: result.data.displayName,
+            approvalStatus: result.data.approvalStatus,
+            createdAt: result.data.createdAt,
+            approvedAt: result.data.approvedAt,
+            approvedBy: result.data.approvedBy
+          };
+
+          if (result.data.profile || result.data.email) {
+            console.log('✅ Setting user profile with approval status:', completeProfile.approvalStatus);
+            setUserProfile(completeProfile);
           } else {
             console.log('⚠️ No profile found in data');
           }
@@ -91,6 +104,57 @@ function App() {
     // Cleanup subscription on unmount
     return () => unsubscribe();
   }, []);
+
+  // Real-time listener for user data changes (especially approval status)
+  useEffect(() => {
+    if (!user) return;
+
+    console.log('👂 Setting up real-time listener for user:', user.uid);
+    const userRef = doc(db, 'users', user.uid);
+
+    const unsubscribe = onSnapshot(userRef, (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const data = docSnapshot.data();
+        console.log('🔄 User document updated:', {
+          hasProfile: !!data.profile,
+          hasTrainingPlan: !!data.trainingPlan,
+          approvalStatus: data.approvalStatus
+        });
+
+        // Merge root-level fields with profile data
+        const completeProfile = {
+          ...data.profile,
+          email: data.email,
+          displayName: data.displayName,
+          approvalStatus: data.approvalStatus,
+          createdAt: data.createdAt,
+          approvedAt: data.approvedAt,
+          approvedBy: data.approvedBy
+        };
+
+        if (data.profile || data.email) {
+          // Check if approval status changed from pending to approved
+          if (userProfile?.approvalStatus === 'pending' && data.approvalStatus === 'approved') {
+            console.log('🎉 User approved! Showing notification...');
+            alert('Great news! Your account has been approved. Welcome to Run+ Plans!');
+          }
+
+          setUserProfile(completeProfile);
+        }
+
+        if (data.trainingPlan) {
+          setTrainingPlan(data.trainingPlan);
+        }
+      }
+    }, (error) => {
+      console.error('❌ Error listening to user document:', error);
+    });
+
+    return () => {
+      console.log('🔇 Cleaning up real-time listener');
+      unsubscribe();
+    };
+  }, [user, userProfile?.approvalStatus]);
 
   // Helper function to clear all localStorage items
   const clearLocalStorage = () => {
