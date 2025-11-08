@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import './App.css';
 
 // Firebase
@@ -67,6 +67,27 @@ function App() {
 
           if (result.data.profile || result.data.email) {
             console.log('✅ Setting user profile with approval status:', completeProfile.approvalStatus);
+
+            // MIGRATION: Auto-approve users who already have a training plan (legacy users from before approval system)
+            if (!completeProfile.approvalStatus && result.data.trainingPlan) {
+              console.log('🔄 Migrating legacy user - auto-approving since they have a training plan');
+              completeProfile.approvalStatus = 'approved';
+
+              // Update Firestore to persist the approval
+              const userRef = doc(db, 'users', firebaseUser.uid);
+              updateDoc(userRef, {
+                approvalStatus: 'approved',
+                approvedAt: new Date(),
+                approvedBy: 'auto-migration'
+              }).catch(err => console.error('Failed to migrate user:', err));
+            }
+
+            // Default to pending if still no approvalStatus
+            if (!completeProfile.approvalStatus) {
+              console.log('⚠️ User has no approvalStatus - defaulting to pending');
+              completeProfile.approvalStatus = 'pending';
+            }
+
             setUserProfile(completeProfile);
           } else {
             console.log('⚠️ No profile found in data');
@@ -133,8 +154,26 @@ function App() {
         };
 
         if (data.profile || data.email) {
+          // MIGRATION: Auto-approve users who already have a training plan (legacy users)
+          if (!completeProfile.approvalStatus && data.trainingPlan) {
+            console.log('🔄 [Realtime] Migrating legacy user - auto-approving');
+            completeProfile.approvalStatus = 'approved';
+
+            updateDoc(userRef, {
+              approvalStatus: 'approved',
+              approvedAt: new Date(),
+              approvedBy: 'auto-migration-realtime'
+            }).catch(err => console.error('Failed to migrate user:', err));
+          }
+
+          // Default to pending if still no approvalStatus
+          if (!completeProfile.approvalStatus) {
+            console.log('⚠️ [Realtime] User has no approvalStatus - defaulting to pending');
+            completeProfile.approvalStatus = 'pending';
+          }
+
           // Check if approval status changed from pending to approved
-          if (userProfile?.approvalStatus === 'pending' && data.approvalStatus === 'approved') {
+          if (userProfile?.approvalStatus === 'pending' && completeProfile.approvalStatus === 'approved') {
             console.log('🎉 User approved! Showing notification...');
             alert('Great news! Your account has been approved. Welcome to Run+ Plans!');
           }
@@ -249,7 +288,14 @@ function App() {
   }
 
   // Check if user account is pending approval
+  console.log('🔍 Checking approval status:', {
+    hasUserProfile: !!userProfile,
+    approvalStatus: userProfile?.approvalStatus,
+    willShowPendingScreen: userProfile?.approvalStatus === 'pending'
+  });
+
   if (userProfile?.approvalStatus === 'pending') {
+    console.log('🚫 Showing pending approval screen');
     return (
       <div style={{
         minHeight: '100vh',
