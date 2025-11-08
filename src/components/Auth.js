@@ -240,9 +240,23 @@ function Auth() {
                   }}
                 />
                 {!isLogin && (
-                  <p style={{ fontSize: '0.85rem', color: '#888', marginTop: '4px', marginBottom: 0 }}>
-                    At least 8 characters with 1 uppercase, 1 lowercase, and 1 special character
-                  </p>
+                  <div style={{
+                    background: 'rgba(0, 212, 255, 0.1)',
+                    border: '1px solid rgba(0, 212, 255, 0.3)',
+                    borderRadius: '6px',
+                    padding: '12px',
+                    marginTop: '8px'
+                  }}>
+                    <p style={{ fontSize: '0.875rem', color: '#00D4FF', fontWeight: '600', marginBottom: '6px' }}>
+                      Password Requirements:
+                    </p>
+                    <ul style={{ fontSize: '0.8rem', color: '#CCCCCC', margin: 0, paddingLeft: '20px', lineHeight: '1.6' }}>
+                      <li>At least 8 characters</li>
+                      <li>1 uppercase letter (A-Z)</li>
+                      <li>1 lowercase letter (a-z)</li>
+                      <li>1 special character (!@#$%^&*)</li>
+                    </ul>
+                  </div>
                 )}
               </div>
 
