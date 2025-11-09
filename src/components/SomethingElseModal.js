@@ -871,26 +871,46 @@ function SomethingElseModal({
 
   const getBrickWorkouts = () => {
     const workouts = [];
-    const brickTypes = brickWorkoutService.getBrickWorkoutTypes();
-    
-    // Get 1-2 workouts from each type
-    brickTypes.forEach(type => {
+
+    // Determine appropriate brick workout intensity based on current workout
+    const currentDistance = extractDistance(currentWorkout.workout?.name || '') ||
+                           extractDistance(currentWorkout.name || '') || 0;
+    const currentDuration = currentWorkout.workout?.duration || currentWorkout.duration || 0;
+
+    // For short workouts (< 5 RunEQ miles or < 30 minutes), only show recovery bricks
+    // For medium workouts (5-10 miles or 30-60 min), show recovery + aerobic
+    // For long workouts (> 10 miles or > 60 min), show all types
+    let appropriateTypes = [];
+
+    if (currentDistance < 5 || (typeof currentDuration === 'number' && currentDuration < 30)) {
+      // SHORT workout - only show short recovery brick
+      appropriateTypes = ['recovery'];
+    } else if (currentDistance < 10 || (typeof currentDuration === 'number' && currentDuration < 60)) {
+      // MEDIUM workout - show recovery and base aerobic
+      appropriateTypes = ['recovery', 'aerobic'];
+    } else {
+      // LONG workout - show all brick types
+      appropriateTypes = ['recovery', 'aerobic', 'tempo', 'speed'];
+    }
+
+    // Generate workouts for appropriate types only
+    appropriateTypes.forEach(type => {
       const workout = brickWorkoutService.generateBrickWorkout({
         type: type,
         equipment: userProfile.standUpBikeType || 'cyclete',
         difficulty: 'intermediate'
       });
-      
+
       // Enhance the description for brick workouts
       const enhancedWorkout = enhanceWorkoutDescription(workout, 'brick', type);
-      
+
       workouts.push({
         ...enhancedWorkout,
         type: 'brick',
         library: 'brick'
       });
     });
-    
+
     return workouts;
   };
 
