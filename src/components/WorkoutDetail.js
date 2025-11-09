@@ -299,15 +299,27 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         paceGuidance = `${formatEquipmentName(userProfileFromState.standUpBikeType)} specific: Focus on smooth motion and consistent effort`;
       }
     }
-    // Priority 1: Use actual pace if available - check interval pace first for interval workouts
-    else if (workoutType === 'intervals' && workoutLib?.paces?.interval) {
-      paceGuidance = `${workoutLib.paces.interval.pace}/mile`;
-    } else if (workoutLib?.paces?.threshold) {
-      paceGuidance = `${workoutLib.paces.threshold.pace}/mile`;
-    } else if (workoutLib?.paces?.interval) {
-      paceGuidance = `${workoutLib.paces.interval.pace}/mile`;
-    } else if (workoutLib?.paces?.easy) {
-      paceGuidance = `${workoutLib.paces.easy.min}-${workoutLib.paces.easy.max}/mile`;
+    // Priority 1: Use actual pace if available - match pace to workout intensity
+    else if (workoutLib?.paces) {
+      // Check workout intensity to determine which pace to show
+      const intensity = workoutLib.intensity || workoutType;
+
+      if (intensity === 'easy' || intensity === 'recovery' && workoutLib.paces.easy) {
+        // EASY/RECOVERY workouts - show easy pace
+        paceGuidance = `${workoutLib.paces.easy.min}-${workoutLib.paces.easy.max}/mile`;
+      } else if ((workoutType === 'intervals' || intensity === 'interval') && workoutLib.paces.interval) {
+        // INTERVAL workouts - show interval pace
+        paceGuidance = `${workoutLib.paces.interval.pace}/mile`;
+      } else if ((workoutType === 'tempo' || intensity === 'threshold') && workoutLib.paces.threshold) {
+        // TEMPO workouts - show threshold pace
+        paceGuidance = `${workoutLib.paces.threshold.pace}/mile`;
+      } else if (intensity === 'marathonPace' && workoutLib.paces.marathon) {
+        // MARATHON PACE workouts - show marathon pace
+        paceGuidance = `${workoutLib.paces.marathon.pace}/mile`;
+      } else if (workoutLib.paces.easy) {
+        // FALLBACK - default to easy pace if nothing else matches
+        paceGuidance = `${workoutLib.paces.easy.min}-${workoutLib.paces.easy.max}/mile`;
+      }
     }
     // Priority 2: Use paceGuidance object/string from library
     else if (workoutLib?.paceGuidance) {
@@ -333,9 +345,30 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       safetyNotes = [...safetyNotes, `Road planning: ${workoutData.workout.roadConsiderations}`];
     }
 
-    // Calculate total duration if we have structure with warmup/cooldown
-    // Check bike workout duration first
+    // Calculate total duration based on distance and pace (if available)
     let calculatedDuration = workoutData.workout?.duration || workoutLib?.duration || '30-45 minutes';
+
+    // For running workouts with distance and easy pace, calculate specific duration
+    if (workoutType === 'longRun' || workoutType === 'easy') {
+      // Extract distance from workout name
+      const distanceMatch = workoutData.workout?.name?.match(/(\d+)-Mile/i);
+      if (distanceMatch && workoutLib?.paces?.easy) {
+        const miles = parseFloat(distanceMatch[1]);
+        const easyPaceMin = workoutLib.paces.easy.min; // e.g., "11:07"
+        const easyPaceMax = workoutLib.paces.easy.max; // e.g., "12:12"
+
+        // Convert pace strings to minutes
+        const parseMinutes = (paceStr) => {
+          const [min, sec] = paceStr.split(':').map(Number);
+          return min + sec / 60;
+        };
+
+        const minDuration = Math.round(miles * parseMinutes(easyPaceMin));
+        const maxDuration = Math.round(miles * parseMinutes(easyPaceMax));
+
+        calculatedDuration = `${minDuration}-${maxDuration} minutes`;
+      }
+    }
 
     // If structure mentions "total", use that instead
     if (structure && typeof structure === 'string') {
@@ -347,7 +380,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       else if (structure.includes('warmup') && structure.includes('cooldown')) {
         // Don't override - the library duration might just be the main set
         // Add a note that structure includes warmup/cooldown
-        calculatedDuration = `${workoutLib?.duration || '30-45 minutes'} (main set)`;
+        calculatedDuration = `${calculatedDuration} (main set)`;
       }
     }
 
