@@ -101,22 +101,17 @@ function App() {
           approvedBy: data.approvedBy
         };
 
-        // MIGRATION: Auto-approve users who already have a training plan (legacy users)
-        if (!completeProfile.approvalStatus && data.trainingPlan) {
-          console.log('🔄 [Realtime] Migrating legacy user - auto-approving');
+        // MIGRATION: Auto-approve ALL existing users without approvalStatus
+        // This is a one-time migration - new signups will have approvalStatus set in Auth.js
+        if (!completeProfile.approvalStatus) {
+          console.log('🔄 [Realtime] Migrating existing user without approvalStatus - auto-approving');
           completeProfile.approvalStatus = 'approved';
 
           updateDoc(userRef, {
             approvalStatus: 'approved',
             approvedAt: new Date(),
-            approvedBy: 'auto-migration-realtime'
+            approvedBy: 'auto-migration-all-existing-users'
           }).catch(err => console.error('Failed to migrate user:', err));
-        }
-
-        // Default to pending if still no approvalStatus (NEW USERS)
-        if (!completeProfile.approvalStatus) {
-          console.log('⚠️ [Realtime] User has no approvalStatus - defaulting to pending');
-          completeProfile.approvalStatus = 'pending';
         }
 
         console.log('✅ Setting userProfile with approvalStatus:', completeProfile.approvalStatus);

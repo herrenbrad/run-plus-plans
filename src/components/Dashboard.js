@@ -22,7 +22,8 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     }
 
     const today = new Date();
-    const startDate = new Date(trainingPlan.planOverview.startDate);
+    // FIXED: Append T00:00:00 to parse as local timezone, not UTC
+    const startDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
 
     // If we're before the start date, return 1 (show first week)
     if (today < startDate) {
@@ -41,10 +42,11 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
       return null;
     }
 
-    const startDate = new Date(trainingPlan.planOverview.startDate);
+    // FIXED: Append T00:00:00 to parse as local timezone, not UTC
+    const startDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
     const msPerDay = 24 * 60 * 60 * 1000;
 
-    // Calculate the Monday of this training week
+    // Calculate the start of this training week
     const weekStartDate = new Date(startDate.getTime() + ((weekNumber - 1) * 7 * msPerDay));
     const weekEndDate = new Date(weekStartDate.getTime() + (6 * msPerDay));
 
@@ -659,7 +661,8 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   const getCurrentWeekData = () => {
     // If we're before training starts (currentWeek = 0), show pre-training message
     if (currentWeek <= 0) {
-      const startDate = new Date(trainingPlan?.planOverview?.startDate);
+      // FIXED: Append T00:00:00 to parse as local timezone, not UTC
+      const startDate = new Date(trainingPlan?.planOverview?.startDate + 'T00:00:00');
       return {
         week: 0,
         weekDates: { displayText: `Training starts ${startDate.toLocaleDateString()}` },
@@ -1672,6 +1675,11 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                       <div>
                         <h3 style={{ margin: 0, color: '#EEEEEE', fontSize: '1.1rem', fontWeight: '600' }}>
                           {workout.day}
+                          {workout.date && (
+                            <span style={{ fontSize: '0.85rem', marginLeft: '8px', color: '#AAAAAA', fontWeight: '400' }}>
+                              {workout.date}
+                            </span>
+                          )}
                           {workouts.length > 1 && (
                             <span style={{
                               fontSize: '0.75rem',
@@ -1684,11 +1692,6 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                               border: '1px solid rgba(0, 212, 255, 0.4)'
                             }}>
                               Workout {workoutIdx + 1}/{workouts.length}
-                            </span>
-                          )}
-                          {workout.date && workout.date !== workout.day && (
-                            <span style={{ fontSize: '0.8rem', marginLeft: '8px', color: '#AAAAAA' }}>
-                              ({workout.date})
                             </span>
                           )}
                         </h3>

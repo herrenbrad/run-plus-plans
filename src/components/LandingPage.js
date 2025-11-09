@@ -134,16 +134,16 @@ function LandingPage() {
               ) : (
                 // Show start option if no saved data
                 <>
-                  <button 
+                  <button
                     className="btn btn-success btn-full-width"
                     onClick={() => navigate('/onboarding')}
                     style={{ fontSize: '1.1rem', padding: '20px' }}
                   >
-                    🚀 Start Free Training Plan
+                    🚀 Start Your Training Plan
                   </button>
-                  
+
                   <p style={{ fontSize: '0.9rem', color: '#888888', margin: '8px 0' }}>
-                    Experience the full onboarding flow for free. See your personalized plan before subscribing.
+                    Create a personalized training plan tailored to your goals, experience, and equipment.
                   </p>
                   
                   <div style={{ display: 'flex', justifyContent: 'space-around', fontSize: '0.8rem', color: '#666666' }}>

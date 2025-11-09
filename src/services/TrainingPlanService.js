@@ -45,7 +45,8 @@ class TrainingPlanService {
         let weeksAvailable = null;
         if (formData.startDate && formData.raceDate) {
             const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-            weeksAvailable = Math.ceil((new Date(formData.raceDate) - new Date(formData.startDate)) / msPerWeek);
+            // FIXED: Append T00:00:00 to parse as local timezone, not UTC
+            weeksAvailable = Math.ceil((new Date(formData.raceDate + 'T00:00:00') - new Date(formData.startDate + 'T00:00:00')) / msPerWeek);
         }
 
         console.log('🔍 Converting onboarding to options:');
@@ -155,6 +156,9 @@ class TrainingPlanService {
 
             console.log('✅ TrainingPlanGenerator created plan with', generatedPlan.weeks.length, 'weeks');
 
+            // FIXED: Add dates and reorder workouts based on start date
+            const weeksWithDates = this.addDatesAndReorderWorkouts(generatedPlan.weeks, formData.startDate);
+
             const trainingPlan = {
                 planOverview: {
                     raceDistance: formData.raceDistance,
@@ -169,7 +173,7 @@ class TrainingPlanService {
                     raceDate: formData.raceDate,
                     trainingPhilosophy: formData.trainingPhilosophy || 'Zone-Based Training'
                 },
-                weeks: generatedPlan.weeks,
+                weeks: weeksWithDates,
                 trainingPaces: generatedPlan.trainingPaces,
                 periodization: generatedPlan.periodization,
                 planSummary: {
@@ -226,6 +230,82 @@ class TrainingPlanService {
     }
 
     /**
+     * Add dates to workouts and reorder them based on start date
+     * Generator creates workouts in Monday-Sunday order, we need to reorder by actual start date
+     */
+    addDatesAndReorderWorkouts(weeks, startDate) {
+        if (!startDate) {
+            console.warn('⚠️ No start date provided, workouts will remain in Monday-Sunday order');
+            return weeks;
+        }
+
+        const start = new Date(startDate + 'T00:00:00');
+        const dayNameToIndex = {
+            'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+            'Thursday': 4, 'Friday': 5, 'Saturday': 6
+        };
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        return weeks.map((week, weekIndex) => {
+            // Calculate the start date for this week
+            const weekStartDate = new Date(start);
+            weekStartDate.setDate(start.getDate() + (weekIndex * 7));
+
+            // Add dates to each workout and track their actual date
+            const workoutsWithDates = week.workouts.map((workout) => {
+                // Find what day of week this workout is for
+                const dayIndex = dayNameToIndex[workout.day];
+
+                // Calculate the actual date for this workout
+                const workoutDate = new Date(weekStartDate);
+                // Adjust from start of week to this specific day
+                const startDayOfWeek = weekStartDate.getDay();
+                let daysToAdd = dayIndex - startDayOfWeek;
+                if (daysToAdd < 0) daysToAdd += 7; // Wrap to next week if needed
+
+                workoutDate.setDate(weekStartDate.getDate() + daysToAdd);
+
+                return {
+                    ...workout,
+                    date: workoutDate.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric'
+                    }),
+                    fullDate: workoutDate.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    }),
+                    actualDate: workoutDate,
+                    dateString: workoutDate.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric'
+                    })
+                };
+            });
+
+            // Sort workouts by their actual date
+            workoutsWithDates.sort((a, b) => a.actualDate - b.actualDate);
+
+            // Remove the actualDate object before saving (keep dateString instead)
+            const sortedWorkouts = workoutsWithDates.map(w => {
+                const { actualDate, ...rest } = w;
+                return rest;
+            });
+
+            console.log(`📅 Week ${week.week} workouts reordered:`, sortedWorkouts.map(w => `${w.day} (${w.date})`).join(', '));
+
+            return {
+                ...week,
+                workouts: sortedWorkouts
+            };
+        });
+    }
+
+    /**
      * Get date range for a specific training week
      * FIXED: Handles mid-week start dates properly - Week 1 can be partial
      */
@@ -238,56 +318,27 @@ class TrainingPlanService {
             };
         }
 
-        const start = new Date(startDate);
+        // FIXED: Append T00:00:00 to parse as local timezone, not UTC
+        const start = new Date(startDate + 'T00:00:00');
 
-        if (weekNumber === 1) {
-            // Week 1 special handling - start on actual start date, end on Sunday
-            const actualStart = new Date(start);
+        // FIXED: All weeks are 7-day periods starting from your start date
+        const weekStart = new Date(start);
+        weekStart.setDate(start.getDate() + ((weekNumber - 1) * 7));
 
-            // Find the Sunday at or after the start date
-            const dayOfWeek = actualStart.getDay(); // 0=Sunday, 6=Saturday
-            const daysUntilSunday = dayOfWeek === 0 ? 0 : (7 - dayOfWeek);
-            const sunday = new Date(actualStart);
-            sunday.setDate(actualStart.getDate() + daysUntilSunday);
-
-            return {
-                start: actualStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                end: sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                displayText: `${actualStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-                weekNumber: weekNumber,
-                isPartialWeek: dayOfWeek !== 1 // True if doesn't start on Monday
-            };
-        }
-
-        // Week 2+ - standard Monday-Sunday weeks
-        // Calculate from the Monday after Week 1 ended
-        const week1Start = new Date(start);
-        const week1Day = week1Start.getDay(); // 0=Sunday, 6=Saturday
-        const daysUntilSunday = week1Day === 0 ? 0 : (7 - week1Day);
-
-        // Monday after Week 1's Sunday
-        const week2MondayStart = new Date(week1Start);
-        week2MondayStart.setDate(week1Start.getDate() + daysUntilSunday + 1);
-
-        // Calculate the Monday for this specific week
-        const weekStart = new Date(week2MondayStart);
-        weekStart.setDate(week2MondayStart.getDate() + (weekNumber - 2) * 7);
-
-        // Get Sunday (end of the week)
-        const sunday = new Date(weekStart);
-        sunday.setDate(weekStart.getDate() + 6);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
 
         return {
             start: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            end: sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            displayText: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+            end: weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            displayText: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
             weekNumber: weekNumber
         };
     }
 
     /**
      * Calculate actual calendar dates for workout schedule
-     * FIXED: Handles mid-week start dates - Week 1 can be partial
+     * FIXED: All weeks are 7-day periods from start date - no ghost workouts
      */
     calculateCalendarDates(startDate, availableDays, weekNumber) {
         if (!startDate || !availableDays || availableDays.length === 0) {
@@ -295,69 +346,25 @@ class TrainingPlanService {
             return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         }
 
-        const start = new Date(startDate);
+        // FIXED: Append T00:00:00 to parse as local timezone, not UTC
+        const start = new Date(startDate + 'T00:00:00');
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const calendarDates = [];
 
-        if (weekNumber === 1) {
-            // Week 1 special handling - start on actual start date, end on Sunday
-            const actualStart = new Date(start);
-            const startDayOfWeek = actualStart.getDay(); // 0=Sunday, 6=Saturday
-
-            // Calculate days from start date to end of week (Sunday)
-            const daysUntilSunday = startDayOfWeek === 0 ? 0 : (7 - startDayOfWeek);
-
-            // Generate only days from start date through Sunday
-            for (let i = 0; i <= daysUntilSunday; i++) {
-                const date = new Date(actualStart);
-                date.setDate(actualStart.getDate() + i);
-
-                const currentDayOfWeek = date.getDay();
-                const dayName = dayNames[currentDayOfWeek];
-
-                calendarDates.push({
-                    dayName: dayName,
-                    date: date,
-                    dateString: date.toLocaleDateString('en-US', {
-                        weekday: 'short',
-                        month: 'short',
-                        day: 'numeric'
-                    }),
-                    fullDate: date.toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                    }),
-                    isAvailable: availableDays.includes(dayName)
-                });
-            }
-
-            return calendarDates;
-        }
-
-        // Week 2+ - standard Monday-Sunday weeks
-        // Calculate from the Monday after Week 1 ended
-        const week1Start = new Date(start);
-        const week1Day = week1Start.getDay();
-        const daysUntilSunday = week1Day === 0 ? 0 : (7 - week1Day);
-
-        // Monday after Week 1's Sunday
-        const week2MondayStart = new Date(week1Start);
-        week2MondayStart.setDate(week1Start.getDate() + daysUntilSunday + 1);
-
-        // Calculate the Monday for this specific week
-        const weekStart = new Date(week2MondayStart);
-        weekStart.setDate(week2MondayStart.getDate() + (weekNumber - 2) * 7);
-
-        const standardDayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        // FIXED: All weeks are 7-day periods starting from your start date
+        // No ghost workouts before the start date
+        const weekStart = new Date(start);
+        weekStart.setDate(start.getDate() + ((weekNumber - 1) * 7));
 
         for (let i = 0; i < 7; i++) {
             const date = new Date(weekStart);
             date.setDate(weekStart.getDate() + i);
 
+            const currentDayOfWeek = date.getDay();
+            const dayName = dayNames[currentDayOfWeek];
+
             calendarDates.push({
-                dayName: standardDayNames[i],
+                dayName: dayName,
                 date: date,
                 dateString: date.toLocaleDateString('en-US', {
                     weekday: 'short',
@@ -370,9 +377,11 @@ class TrainingPlanService {
                     month: 'long',
                     day: 'numeric'
                 }),
-                isAvailable: availableDays.includes(standardDayNames[i])
+                isAvailable: availableDays.includes(dayName)
             });
         }
+
+        console.log(`📅 Generated calendar dates for week ${weekNumber}:`, calendarDates.map(d => `${d.dayName} ${d.dateString}`));
 
         return calendarDates;
     }
@@ -385,25 +394,14 @@ class TrainingPlanService {
         const workouts = [];
         const calendarDates = this.calculateCalendarDates(formData.startDate, formData.availableDays, weekNumber);
 
-        // Create workout pattern based on user preferences
+        // Create workout pattern based on user preferences (returns object with day names as keys)
         const workoutPattern = this.getWorkoutPattern(formData);
 
-        // Map day names to indices in the standard Monday-Sunday pattern
-        const dayNameToIndex = {
-            'Monday': 0,
-            'Tuesday': 1,
-            'Wednesday': 2,
-            'Thursday': 3,
-            'Friday': 4,
-            'Saturday': 5,
-            'Sunday': 6
-        };
-
         calendarDates.forEach((dateInfo) => {
-            // Get the correct index in the workout pattern for this day
-            const patternIndex = dayNameToIndex[dateInfo.dayName];
+            // Get the workout type for this day name
+            const workoutType = workoutPattern[dateInfo.dayName];
 
-            if (workoutPattern[patternIndex] === 'rest' || !dateInfo.isAvailable) {
+            if (workoutType === 'rest' || !dateInfo.isAvailable) {
                 workouts.push({
                     day: dateInfo.dayName,
                     date: dateInfo.dateString,
@@ -418,8 +416,8 @@ class TrainingPlanService {
                     completed: false
                 });
             } else {
-                const workoutType = workoutPattern[patternIndex];
-                
+                // workoutType already defined above
+
                 // Check if this day is a preferred bike day for cyclete workouts
                 // BUT preserve Sunday brick workouts - don't convert Sunday long runs to pure cyclete
                 const isBikeDay = formData.preferredBikeDays && 
@@ -475,9 +473,12 @@ class TrainingPlanService {
     getWorkoutPattern(formData) {
         const { runsPerWeek, availableDays, preferredBikeDays = [], longRunDay } = formData;
         const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        
-        // Initialize all days as rest
-        let pattern = dayNames.map(() => 'rest');
+
+        // Initialize all days as rest - use object instead of array
+        let pattern = {};
+        dayNames.forEach(day => {
+            pattern[day] = 'rest';
+        });
         
         // Start with basic workout requirements
         let requiredWorkouts = [];
@@ -508,42 +509,38 @@ class TrainingPlanService {
         
         // Handle long run day - check if it's also a bike day
         if (longRunDay && availableDays.includes(longRunDay)) {
-            const longRunIndex = dayNames.indexOf(longRunDay);
-            
             // Always use regular long run - user can choose brick on the day itself
-            pattern[longRunIndex] = 'longRun';
+            pattern[longRunDay] = 'longRun';
             requiredWorkouts = requiredWorkouts.filter(w => w !== 'longRun');
         }
-        
-        
+
+
         // Place pure bike workouts on bike days
         if (preferredBikeDays.length > 0) {
-            const pureBikeDays = preferredBikeDays.filter(day => 
-                availableDays.includes(day) && 
-                pattern[dayNames.indexOf(day)] === 'rest'
+            const pureBikeDays = preferredBikeDays.filter(day =>
+                availableDays.includes(day) &&
+                pattern[day] === 'rest'
             );
-            
+
             for (const bikeDay of pureBikeDays) {
-                const dayIndex = dayNames.indexOf(bikeDay);
-                if (pattern[dayIndex] === 'rest' && requiredWorkouts.length > 0) {
+                if (pattern[bikeDay] === 'rest' && requiredWorkouts.length > 0) {
                     // Use pure bike workouts for non-brick days
                     const workoutForBikeDay = requiredWorkouts[0];
                     if (workoutForBikeDay) {
-                        pattern[dayIndex] = workoutForBikeDay;
+                        pattern[bikeDay] = workoutForBikeDay;
                         requiredWorkouts = requiredWorkouts.filter(w => w !== workoutForBikeDay);
                     }
                 }
             }
         }
-        
+
         // Place remaining workouts on available days
-        const remainingDays = availableDays.filter(day => 
-            pattern[dayNames.indexOf(day)] === 'rest'
+        const remainingDays = availableDays.filter(day =>
+            pattern[day] === 'rest'
         ).sort(() => Math.random() - 0.5); // Randomize for variety
-        
+
         for (let i = 0; i < Math.min(remainingDays.length, requiredWorkouts.length); i++) {
-            const dayIndex = dayNames.indexOf(remainingDays[i]);
-            pattern[dayIndex] = requiredWorkouts[i];
+            pattern[remainingDays[i]] = requiredWorkouts[i];
         }
         
         return pattern;
