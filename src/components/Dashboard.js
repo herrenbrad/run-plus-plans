@@ -1933,6 +1933,29 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                         More Options
                       </button>
 
+                      {/* Revert to Original button for replaced workouts */}
+                      {workout.replacementReason && workoutIdx === 0 && (
+                        <button
+                          className="btn"
+                          style={{
+                            fontSize: '0.8rem',
+                            padding: '6px 12px',
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            color: '#3b82f6',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            fontWeight: '600',
+                            textAlign: 'center'
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMakeRegularRun(workout);
+                          }}
+                          title="Restore the original scheduled workout"
+                        >
+                          ↩️ Revert to Original
+                        </button>
+                      )}
+
                       {/* Remove button for secondary workouts */}
                       {workoutIdx > 0 && (
                         <button
