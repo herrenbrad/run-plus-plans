@@ -12,6 +12,8 @@ import BrickWorkoutService from '../services/brickWorkoutService.js';
 import SomethingElseModal from './SomethingElseModal';
 import { formatTrainingSystem, formatEquipmentName, formatPhase, titleCase } from '../utils/typography';
 import { calorieCalculator } from '../lib/calorie-calculator.js';
+import StravaService from '../services/StravaService';
+import StravaSyncService from '../services/StravaSyncService';
 
 function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   const navigate = useNavigate();
@@ -421,6 +423,61 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
 
     setWorkoutCompletions(completions);
   }, [trainingPlan]);
+
+  // Auto-sync Strava activities on dashboard load
+  useEffect(() => {
+    const syncStrava = async () => {
+      if (!userProfile?.stravaConnected || !auth.currentUser || !trainingPlan) {
+        return;
+      }
+
+      // Check if we've synced recently (within last hour)
+      const lastSync = localStorage.getItem('runeq_stravaLastSync');
+      if (lastSync) {
+        const lastSyncTime = new Date(lastSync);
+        const now = new Date();
+        const hoursSinceSync = (now - lastSyncTime) / (1000 * 60 * 60);
+
+        if (hoursSinceSync < 1) {
+          console.log('⏭️ Skipping Strava sync - synced recently');
+          return;
+        }
+      }
+
+      console.log('🔄 Auto-syncing Strava activities...');
+
+      try {
+        const result = await StravaSyncService.syncActivities(
+          auth.currentUser.uid,
+          userProfile,
+          trainingPlan,
+          currentWeek
+        );
+
+        if (result.success) {
+          console.log('✅ Strava sync successful:', result);
+
+          // Update last sync time
+          localStorage.setItem('runeq_stravaLastSync', new Date().toISOString());
+
+          // Refresh the page to show updated completions
+          if (result.workoutsCompleted > 0) {
+            console.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
+            window.location.reload();
+          }
+        } else {
+          console.warn('⚠️ Strava sync failed:', result.error);
+        }
+      } catch (error) {
+        console.error('❌ Strava sync error:', error);
+      }
+    };
+
+    // Run sync after a short delay to avoid blocking initial render
+    const syncTimeout = setTimeout(syncStrava, 2000);
+
+    return () => clearTimeout(syncTimeout);
+  }, [userProfile?.stravaConnected, auth.currentUser, trainingPlan, currentWeek]);
 
   // Initialize workout libraries
   const tempoLibrary = new TempoWorkoutLibrary();
@@ -1556,6 +1613,47 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                 </button>
               )}
 
+              {/* Connect Strava Button */}
+              {userProfile?.stravaConnected ? (
+                <button
+                  style={{
+                    background: 'rgba(252, 76, 2, 0.1)',
+                    color: '#FC4C02',
+                    border: '1px solid rgba(252, 76, 2, 0.3)',
+                    marginLeft: '12px',
+                    fontSize: '0.8rem',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  title={`Connected as ${userProfile.stravaAthleteName || 'Strava athlete'}`}
+                >
+                  ✓ Strava Connected
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const authUrl = StravaService.getAuthorizationUrl();
+                    window.location.href = authUrl;
+                  }}
+                  style={{
+                    background: 'rgba(252, 76, 2, 0.1)',
+                    color: '#FC4C02',
+                    border: '1px solid rgba(252, 76, 2, 0.3)',
+                    marginLeft: '12px',
+                    fontSize: '0.8rem',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔗 Connect Strava
+                </button>
+              )}
+
               <button
                 onClick={() => {
                   if (window.confirm('Clear all data and start over? This will reset your profile and training plan.')) {
@@ -1812,7 +1910,102 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                         {workout.workout?.description || workout.description}
                       </p>
                     )}
-                    
+
+                    {/* Completed Workout Stats - Show Strava-synced data */}
+                    {workout.completed && (() => {
+                      const workoutKey = workout.workoutIndex > 0 ? `${currentWeek}-${workout.day}-${workout.workoutIndex}` : `${currentWeek}-${workout.day}`;
+                      const completionData = workoutCompletions[workoutKey];
+
+                      if (!completionData) return null;
+
+                      const hasRichData = completionData.pace || completionData.avgHeartRate || completionData.cadence || completionData.elevationGain;
+
+                      return (
+                        <div style={{
+                          background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.15) 0%, rgba(0, 212, 255, 0.15) 100%)',
+                          border: '1px solid rgba(0, 255, 136, 0.3)',
+                          borderRadius: '12px',
+                          padding: '12px',
+                          marginBottom: '12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '1rem' }}>✓</span>
+                            <span style={{ color: '#00FF88', fontSize: '0.85rem', fontWeight: '700', letterSpacing: '0.5px' }}>
+                              {completionData.autoCompletedFromStrava ? '🔗 SYNCED FROM STRAVA' : 'COMPLETED'}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px', fontSize: '0.85rem' }}>
+                            {completionData.distance && (
+                              <div>
+                                <div style={{ color: '#999', fontSize: '0.75rem' }}>Distance</div>
+                                <div style={{ color: '#FFF', fontWeight: '600' }}>{completionData.distance} mi</div>
+                              </div>
+                            )}
+                            {completionData.duration && (
+                              <div>
+                                <div style={{ color: '#999', fontSize: '0.75rem' }}>Duration</div>
+                                <div style={{ color: '#FFF', fontWeight: '600' }}>{completionData.duration} min</div>
+                              </div>
+                            )}
+                            {completionData.pace && (
+                              <div>
+                                <div style={{ color: '#999', fontSize: '0.75rem' }}>Pace</div>
+                                <div style={{ color: '#FFF', fontWeight: '600' }}>{completionData.pace}</div>
+                              </div>
+                            )}
+                            {completionData.avgHeartRate && (
+                              <div>
+                                <div style={{ color: '#999', fontSize: '0.75rem' }}>Avg HR</div>
+                                <div style={{ color: '#FFF', fontWeight: '600' }}>{completionData.avgHeartRate} bpm</div>
+                              </div>
+                            )}
+                            {completionData.cadence && (
+                              <div>
+                                <div style={{ color: '#999', fontSize: '0.75rem' }}>Cadence</div>
+                                <div style={{ color: '#FFF', fontWeight: '600' }}>{Math.round(completionData.cadence)} spm</div>
+                              </div>
+                            )}
+                            {completionData.elevationGain && (
+                              <div>
+                                <div style={{ color: '#999', fontSize: '0.75rem' }}>Elevation</div>
+                                <div style={{ color: '#FFF', fontWeight: '600' }}>{completionData.elevationGain} ft</div>
+                              </div>
+                            )}
+                          </div>
+
+                          {completionData.notes && (
+                            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                              <div style={{ color: '#999', fontSize: '0.75rem', marginBottom: '4px' }}>Notes</div>
+                              <div style={{ color: '#CCC', fontSize: '0.85rem' }}>{completionData.notes}</div>
+                            </div>
+                          )}
+
+                          {completionData.stravaActivityUrl && (
+                            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                              <a
+                                href={completionData.stravaActivityUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  color: '#FC4C02',
+                                  fontSize: '0.85rem',
+                                  fontWeight: '600',
+                                  textDecoration: 'none',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                View on Strava →
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <span 
                         className="badge"

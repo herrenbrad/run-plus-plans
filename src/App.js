@@ -16,6 +16,7 @@ import TrainingPlanPreview from './components/TrainingPlanPreview';
 import Dashboard from './components/Dashboard';
 import WorkoutDetail from './components/WorkoutDetail';
 import AdminApproval from './components/AdminApproval';
+import StravaCallback from './components/StravaCallback';
 
 // Scroll to top component
 function ScrollToTop() {
@@ -353,6 +354,10 @@ function App() {
           <Route
             path="/admin/approvals"
             element={<AdminApproval />}
+          />
+          <Route
+            path="/auth/strava/callback"
+            element={<StravaCallback />}
           />
         </Routes>
       </div>

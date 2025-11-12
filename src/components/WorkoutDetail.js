@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import SomethingElseModal from './SomethingElseModal';
 import { formatEquipmentName, formatHeartRate, formatIntensity } from '../utils/typography';
@@ -15,7 +15,8 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     workout: null
   });
   const [modifiedWorkout, setModifiedWorkout] = useState(null);
-  
+  const [completionData, setCompletionData] = useState(null);
+
   // Get workout data from navigation state (passed from Dashboard) or fall back to training plan
   const workoutFromState = location.state?.workout;
   const userProfileFromState = location.state?.userProfile || userProfile;
@@ -47,7 +48,41 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
   };
   
   const workoutData = workoutFromState || getDayWorkout(day);
-  
+
+  // Fetch completion data from Firebase
+  useEffect(() => {
+    const fetchCompletionData = async () => {
+      if (!auth.currentUser || !workoutData) return;
+
+      try {
+        const { doc, getDoc } = await import('firebase/firestore');
+        const { db } = await import('../firebase/config');
+
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        const userDoc = await getDoc(userRef);
+
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          const completedWorkouts = data.completedWorkouts || {};
+
+          // Build workout key based on workout index (for two-a-days)
+          const workoutIndex = workoutData.workoutIndex || 0;
+          const workoutKey = workoutIndex > 0
+            ? `${currentWeekNumber}-${workoutData.day}-${workoutIndex}`
+            : `${currentWeekNumber}-${workoutData.day}`;
+
+          if (completedWorkouts[workoutKey]) {
+            setCompletionData(completedWorkouts[workoutKey]);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching completion data:', error);
+      }
+    };
+
+    fetchCompletionData();
+  }, [workoutData, currentWeekNumber]);
+
   // Fallback workout details in case the training plan doesn't have the data
   const workoutDetails = {
     tuesday: {
@@ -811,6 +846,238 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             ) : null;
           })()}
         </div>
+
+        {/* COMPLETED WORKOUT STATS - Show actual performance data */}
+        {workoutData?.completed && completionData && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(0, 212, 255, 0.2) 100%)',
+            border: '2px solid rgba(0, 255, 136, 0.4)',
+            borderRadius: '20px',
+            padding: '24px',
+            marginBottom: '24px',
+            boxShadow: '0 8px 32px rgba(0, 255, 136, 0.3)'
+          }}>
+            <h2 style={{
+              margin: '0 0 20px 0',
+              color: '#00FF88',
+              fontSize: '1.8rem',
+              fontWeight: '800',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <span style={{ fontSize: '2rem' }}>✓</span>
+              {completionData.autoCompletedFromStrava ? '🔗 Synced from Strava' : 'Workout Completed'}
+            </h2>
+
+            {/* Performance Metrics Grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+              gap: '16px',
+              marginBottom: completionData.notes || completionData.stravaActivityUrl ? '20px' : '0'
+            }}>
+              {completionData.distance && (
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(10px)',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Distance
+                  </div>
+                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
+                    {completionData.distance}
+                  </div>
+                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                    miles
+                  </div>
+                </div>
+              )}
+
+              {completionData.duration && (
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(10px)',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Duration
+                  </div>
+                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
+                    {completionData.duration}
+                  </div>
+                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                    minutes
+                  </div>
+                </div>
+              )}
+
+              {completionData.pace && (
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(10px)',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Pace
+                  </div>
+                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
+                    {completionData.pace.replace('/mi', '')}
+                  </div>
+                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                    per mile
+                  </div>
+                </div>
+              )}
+
+              {completionData.avgHeartRate && (
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(10px)',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Avg Heart Rate
+                  </div>
+                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
+                    {completionData.avgHeartRate}
+                  </div>
+                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                    bpm
+                  </div>
+                </div>
+              )}
+
+              {completionData.maxHeartRate && (
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(10px)',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Max Heart Rate
+                  </div>
+                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
+                    {completionData.maxHeartRate}
+                  </div>
+                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                    bpm
+                  </div>
+                </div>
+              )}
+
+              {completionData.cadence && (
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(10px)',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Cadence
+                  </div>
+                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
+                    {Math.round(completionData.cadence)}
+                  </div>
+                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                    steps/min
+                  </div>
+                </div>
+              )}
+
+              {completionData.elevationGain && (
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(10px)',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Elevation Gain
+                  </div>
+                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
+                    {completionData.elevationGain}
+                  </div>
+                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                    feet
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Notes Section */}
+            {completionData.notes && (
+              <div style={{
+                background: 'rgba(0, 0, 0, 0.3)',
+                backdropFilter: 'blur(10px)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                marginBottom: completionData.stravaActivityUrl ? '16px' : '0'
+              }}>
+                <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  Notes
+                </div>
+                <div style={{ color: '#DDD', fontSize: '1rem', lineHeight: '1.6' }}>
+                  {completionData.notes}
+                </div>
+              </div>
+            )}
+
+            {/* Strava Link */}
+            {completionData.stravaActivityUrl && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                paddingTop: '8px'
+              }}>
+                <a
+                  href={completionData.stravaActivityUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    background: '#FC4C02',
+                    color: 'white',
+                    padding: '12px 24px',
+                    borderRadius: '12px',
+                    fontSize: '1rem',
+                    fontWeight: '700',
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 12px rgba(252, 76, 2, 0.4)',
+                    transition: 'transform 0.2s, box-shadow 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.transform = 'translateY(-2px)';
+                    e.target.style.boxShadow = '0 6px 16px rgba(252, 76, 2, 0.6)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = '0 4px 12px rgba(252, 76, 2, 0.4)';
+                  }}
+                >
+                  <span style={{ fontSize: '1.2rem' }}>🔗</span>
+                  View Full Activity on Strava
+                </a>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* WORKOUT STRUCTURE - VISUAL BREAKDOWN */}
         <div style={{
