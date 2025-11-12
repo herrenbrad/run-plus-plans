@@ -4,6 +4,7 @@ import SomethingElseModal from './SomethingElseModal';
 import { formatEquipmentName, formatHeartRate, formatIntensity } from '../utils/typography';
 import { auth } from '../firebase/config';
 import FirestoreService from '../services/FirestoreService';
+import { calorieCalculator } from '../lib/calorie-calculator.js';
 
 function WorkoutDetail({ userProfile, trainingPlan }) {
   const navigate = useNavigate();
@@ -784,6 +785,31 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                '70-85% Max HR'}
             </div>
           </div>
+
+          {/* Calorie Card - Only for bike workouts */}
+          {(workoutData.type === 'bike' || workoutData.equipmentSpecific) && (() => {
+            const calories = calorieCalculator.calculateWorkoutCalories(workoutData);
+            return calories ? (
+              <div style={{
+                background: 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)',
+                padding: '20px',
+                borderRadius: '16px',
+                boxShadow: '0 8px 24px rgba(255, 149, 0, 0.3)',
+                border: '2px solid rgba(255, 255, 255, 0.1)'
+              }}>
+                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🔥</div>
+                <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+                  Expected Calorie Burn
+                </div>
+                <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
+                  {calories.range} cal
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.75rem', marginTop: '6px', fontWeight: '500' }}>
+                  Based on RunEQ equivalency
+                </div>
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {/* WORKOUT STRUCTURE - VISUAL BREAKDOWN */}

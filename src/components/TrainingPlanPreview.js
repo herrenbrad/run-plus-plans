@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { calorieCalculator } from '../lib/calorie-calculator.js';
 
 function TrainingPlanPreview({ userProfile, trainingPlan }) {
   const navigate = useNavigate();
@@ -57,24 +58,59 @@ function TrainingPlanPreview({ userProfile, trainingPlan }) {
   if (userProfile.standUpBikeType) {
     mockExpandedPlan.weeks[0].workouts[1] = {
       ...mockExpandedPlan.weeks[0].workouts[1],
-      workout: { 
-        name: 'Progressive Build Session', 
+      type: 'bike',
+      workout: {
+        name: 'Progressive Build Session',
         description: `${userProfile.standUpBikeType}-specific teardrop/elliptical motion workout`
       },
-      equipmentSpecific: true
+      equipmentSpecific: true,
+      distance: 4 // RunEQ miles
+    };
+
+    // Add bike workouts to other weeks for preview
+    mockExpandedPlan.weeks[1].workouts[1] = {
+      ...mockExpandedPlan.weeks[1].workouts[1],
+      type: 'bike',
+      equipmentSpecific: true,
+      distance: 5
+    };
+
+    mockExpandedPlan.weeks[2].workouts[1] = {
+      ...mockExpandedPlan.weeks[2].workouts[1],
+      type: 'bike',
+      equipmentSpecific: true,
+      distance: 6
     };
   }
 
   const getWorkoutTypeColor = (type) => {
     const colors = {
       tempo: '#4299e1',
-      intervals: '#e53e3e', 
+      intervals: '#e53e3e',
       hills: '#38a169',
       longRun: '#805ad5',
       easy: '#718096',
-      rest: '#a0aec0'
+      rest: '#a0aec0',
+      bike: '#FF9500'
     };
     return colors[type] || '#718096';
+  };
+
+  const calculateWeekCalories = (week) => {
+    let totalCalories = { min: 0, max: 0 };
+    const bikeWorkouts = week.workouts?.filter(w =>
+      (w.type === 'bike' || w.equipmentSpecific) && w.distance && w.distance > 0
+    ) || [];
+
+    bikeWorkouts.forEach(workout => {
+      const calories = calorieCalculator.calculateWorkoutCalories(workout);
+      if (calories) {
+        totalCalories.min += calories.min;
+        totalCalories.max += calories.max;
+      }
+    });
+
+    return { totalCalories, bikeWorkoutCount: bikeWorkouts.length };
   };
 
   return (
@@ -162,14 +198,31 @@ function TrainingPlanPreview({ userProfile, trainingPlan }) {
             <p style={{ margin: '8px 0 0 0', color: '#666' }}>See how varied and intelligent your workouts are</p>
           </div>
           
-          {mockExpandedPlan.weeks.map((week, index) => (
+          {mockExpandedPlan.weeks.map((week, index) => {
+            const { totalCalories, bikeWorkoutCount } = calculateWeekCalories(week);
+
+            return (
             <div key={week.week} style={{ marginBottom: index < mockExpandedPlan.weeks.length - 1 ? '32px' : 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
                 <h3 style={{ margin: 0, color: '#AAAAAA' }}>
                   Week {week.week} - {week.phase.toUpperCase()} Phase
                 </h3>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   <span className="badge badge-info">{week.totalMileage} miles</span>
+                  {bikeWorkoutCount > 0 && (
+                    <span
+                      className="badge"
+                      style={{
+                        background: 'rgba(255, 149, 0, 0.15)',
+                        color: '#FF9500',
+                        border: '1px solid rgba(255, 149, 0, 0.3)',
+                        padding: '6px 12px',
+                        fontWeight: '600'
+                      }}
+                    >
+                      🔥 {Math.round(totalCalories.min)}-{Math.round(totalCalories.max)} cal
+                    </span>
+                  )}
                   {week.isRestWeek && <span className="badge badge-warning">Recovery Week</span>}
                 </div>
               </div>
@@ -214,7 +267,8 @@ function TrainingPlanPreview({ userProfile, trainingPlan }) {
                 ))}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Workout Variety Showcase */}

@@ -246,10 +246,20 @@ class TrainingPlanService {
         };
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+        // FIXED: Calculate the Monday of the week containing the start date
+        // This ensures all weeks align to Monday-Sunday calendar weeks
+        const mondayOfStartWeek = new Date(start);
+        const dayOfWeek = start.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+        mondayOfStartWeek.setDate(start.getDate() - daysFromMonday);
+
+        console.log(`📅 Start date: ${start.toDateString()} (${dayNames[start.getDay()]})`);
+        console.log(`📅 Monday of start week: ${mondayOfStartWeek.toDateString()}`);
+
         return weeks.map((week, weekIndex) => {
-            // Calculate the start date for this week
-            const weekStartDate = new Date(start);
-            weekStartDate.setDate(start.getDate() + (weekIndex * 7));
+            // Calculate the start date for this week (always Monday)
+            const weekStartDate = new Date(mondayOfStartWeek);
+            weekStartDate.setDate(mondayOfStartWeek.getDate() + (weekIndex * 7));
 
             // Add dates to each workout and track their actual date
             const workoutsWithDates = week.workouts.map((workout) => {
@@ -287,11 +297,16 @@ class TrainingPlanService {
                 };
             });
 
+            // Filter out workouts before the start date (for Week 1 only)
+            const filteredWorkouts = weekIndex === 0
+                ? workoutsWithDates.filter(w => w.actualDate >= start)
+                : workoutsWithDates;
+
             // Sort workouts by their actual date
-            workoutsWithDates.sort((a, b) => a.actualDate - b.actualDate);
+            filteredWorkouts.sort((a, b) => a.actualDate - b.actualDate);
 
             // Remove the actualDate object before saving (keep dateString instead)
-            const sortedWorkouts = workoutsWithDates.map(w => {
+            const sortedWorkouts = filteredWorkouts.map(w => {
                 const { actualDate, ...rest } = w;
                 return rest;
             });
@@ -307,7 +322,7 @@ class TrainingPlanService {
 
     /**
      * Get date range for a specific training week
-     * FIXED: Handles mid-week start dates properly - Week 1 can be partial
+     * FIXED: All weeks align to Monday-Sunday calendar weeks
      */
     getWeekDateRange(startDate, weekNumber) {
         if (!startDate) {
@@ -321,9 +336,15 @@ class TrainingPlanService {
         // FIXED: Append T00:00:00 to parse as local timezone, not UTC
         const start = new Date(startDate + 'T00:00:00');
 
-        // FIXED: All weeks are 7-day periods starting from your start date
-        const weekStart = new Date(start);
-        weekStart.setDate(start.getDate() + ((weekNumber - 1) * 7));
+        // FIXED: Calculate the Monday of the week containing the start date
+        const mondayOfStartWeek = new Date(start);
+        const dayOfWeek = start.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+        mondayOfStartWeek.setDate(start.getDate() - daysFromMonday);
+
+        // All weeks start on Monday
+        const weekStart = new Date(mondayOfStartWeek);
+        weekStart.setDate(mondayOfStartWeek.getDate() + ((weekNumber - 1) * 7));
 
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 6);
@@ -338,7 +359,7 @@ class TrainingPlanService {
 
     /**
      * Calculate actual calendar dates for workout schedule
-     * FIXED: All weeks are 7-day periods from start date - no ghost workouts
+     * FIXED: All weeks align to Monday-Sunday calendar weeks
      */
     calculateCalendarDates(startDate, availableDays, weekNumber) {
         if (!startDate || !availableDays || availableDays.length === 0) {
@@ -351,10 +372,15 @@ class TrainingPlanService {
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const calendarDates = [];
 
-        // FIXED: All weeks are 7-day periods starting from your start date
-        // No ghost workouts before the start date
-        const weekStart = new Date(start);
-        weekStart.setDate(start.getDate() + ((weekNumber - 1) * 7));
+        // FIXED: Calculate the Monday of the week containing the start date
+        const mondayOfStartWeek = new Date(start);
+        const dayOfWeek = start.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+        mondayOfStartWeek.setDate(start.getDate() - daysFromMonday);
+
+        // All weeks start on Monday
+        const weekStart = new Date(mondayOfStartWeek);
+        weekStart.setDate(mondayOfStartWeek.getDate() + ((weekNumber - 1) * 7));
 
         for (let i = 0; i < 7; i++) {
             const date = new Date(weekStart);

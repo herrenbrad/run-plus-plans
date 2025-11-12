@@ -11,6 +11,7 @@ import WorkoutOptionsService from '../services/WorkoutOptionsService.js';
 import BrickWorkoutService from '../services/brickWorkoutService.js';
 import SomethingElseModal from './SomethingElseModal';
 import { formatTrainingSystem, formatEquipmentName, formatPhase, titleCase } from '../utils/typography';
+import { calorieCalculator } from '../lib/calorie-calculator.js';
 
 function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   const navigate = useNavigate();
@@ -25,14 +26,20 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     // FIXED: Append T00:00:00 to parse as local timezone, not UTC
     const startDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
 
-    // If we're before the start date, return 1 (show first week)
-    if (today < startDate) {
+    // FIXED: Calculate the Monday of the week containing the start date
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const dayOfWeek = startDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+    const mondayOfStartWeek = new Date(startDate.getTime() - (daysFromMonday * msPerDay));
+
+    // If we're before the Monday of the start week, return 1 (show first week)
+    if (today < mondayOfStartWeek) {
       return 1;
     }
 
-    // Calculate weeks since start
+    // Calculate weeks since the Monday of start week
     const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-    const weeksSinceStart = Math.floor((today - startDate) / msPerWeek);
+    const weeksSinceStart = Math.floor((today - mondayOfStartWeek) / msPerWeek);
     return Math.min(weeksSinceStart + 1, trainingPlan?.planOverview?.totalWeeks || 12);
   };
 
@@ -46,8 +53,13 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     const startDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
     const msPerDay = 24 * 60 * 60 * 1000;
 
-    // Calculate the start of this training week
-    const weekStartDate = new Date(startDate.getTime() + ((weekNumber - 1) * 7 * msPerDay));
+    // FIXED: Calculate the Monday of the week containing the start date
+    const dayOfWeek = startDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+    const mondayOfStartWeek = new Date(startDate.getTime() - (daysFromMonday * msPerDay));
+
+    // Calculate the start of this training week (always Monday)
+    const weekStartDate = new Date(mondayOfStartWeek.getTime() + ((weekNumber - 1) * 7 * msPerDay));
     const weekEndDate = new Date(weekStartDate.getTime() + (6 * msPerDay));
 
     const options = { month: 'short', day: 'numeric' };
@@ -1394,6 +1406,46 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                   );
                 })()}
                 {(() => {
+                  // Calculate weekly calorie total for bike workouts
+                  let totalCalories = { min: 0, max: 0 };
+                  const bikeWorkouts = currentWeekData.workouts?.filter(w =>
+                    (w.type === 'bike' || w.equipmentSpecific) && w.distance && w.distance > 0
+                  ) || [];
+
+                  bikeWorkouts.forEach(workout => {
+                    const calories = calorieCalculator.calculateWorkoutCalories(workout);
+                    if (calories) {
+                      totalCalories.min += calories.min;
+                      totalCalories.max += calories.max;
+                    }
+                  });
+
+                  // Only show if there are bike workouts this week
+                  if (bikeWorkouts.length === 0) return null;
+
+                  return (
+                    <div style={{
+                      background: 'rgba(255, 149, 0, 0.15)',
+                      color: '#FF9500',
+                      padding: '8px 14px',
+                      borderRadius: '10px',
+                      fontWeight: '600',
+                      fontSize: '1.1rem',
+                      border: '1px solid rgba(255, 149, 0, 0.3)'
+                    }}>
+                      🔥 {Math.round(totalCalories.min)}-{Math.round(totalCalories.max)} Cal This Week
+                      <div style={{
+                        fontSize: '0.8rem',
+                        fontWeight: '500',
+                        marginTop: '4px',
+                        color: '#FFB84D'
+                      }}>
+                        {bikeWorkouts.length} bike workout{bikeWorkouts.length !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {(() => {
                   const rollingDistance = calculateRollingDistance();
                   const hasCompletedWorkouts = rollingDistance.allTime > 0;
 
@@ -1733,6 +1785,27 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                         {getWorkoutDistance(workout)}
                       </div>
                     )}
+
+                    {/* Expected Calorie Burn - Stand-Up Bike Workouts Only */}
+                    {(workout.type === 'bike' || workout.equipmentSpecific) && (() => {
+                      const calories = calorieCalculator.calculateWorkoutCalories(workout);
+                      return calories ? (
+                        <div style={{
+                          display: 'inline-block',
+                          background: 'rgba(255, 149, 0, 0.15)',
+                          color: '#FF9500',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          fontSize: '0.85rem',
+                          fontWeight: '600',
+                          marginBottom: '8px',
+                          marginLeft: '8px',
+                          border: '1px solid rgba(255, 149, 0, 0.3)'
+                        }}>
+                          🔥 {calories.range} cal
+                        </div>
+                      ) : null;
+                    })()}
 
                     {(workout.workout?.description || workout.description) && (
                       <p style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#CCCCCC', lineHeight: '1.4' }}>

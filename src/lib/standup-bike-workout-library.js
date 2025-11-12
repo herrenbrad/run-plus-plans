@@ -351,6 +351,38 @@ export class StandUpBikeWorkoutLibrary {
                         perceived: "Each interval harder than previous"
                     },
                     roadConsiderations: "Final 1-minute effort is near-maximal"
+                },
+                {
+                    name: "400m Repeats",
+                    duration: "60-80 minutes",
+                    equipment: "both",
+                    description: "Short, fast intervals for speed and lactic tolerance",
+                    structure: "15 min warmup + 20 x 400m at target HR with 0:45-1:30 recovery + 10 min cooldown",
+                    intensity: "intervals",
+                    benefits: "Speed endurance, lactic tolerance, VO2max development",
+                    cycleteNotes: "Quick turnover mimics running stride frequency",
+                    elliptigoNotes: "Maintain high cadence and moderate resistance",
+                    effort: {
+                        heartRate: "Zone 4-5 (87-92% max HR)",
+                        perceived: "Hard but repeatable, recovery should feel brief"
+                    },
+                    roadConsiderations: "Can be done on track outer lanes or measured road segments"
+                },
+                {
+                    name: "800m Repeats",
+                    duration: "60-85 minutes",
+                    equipment: "both",
+                    description: "Classic VO2max intervals at sustained hard effort",
+                    structure: "15 min warmup + 10 x 800m at target HR with 1:00-2:00 recovery + 10 min cooldown",
+                    intensity: "intervals",
+                    benefits: "VO2max development, sustained speed, aerobic power",
+                    cycleteNotes: "Longer intervals allow rhythm and power development",
+                    elliptigoNotes: "Balance resistance and cadence for sustainable effort",
+                    effort: {
+                        heartRate: "Zone 4-5 (87-92% max HR)",
+                        perceived: "Hard sustainable effort, need full recovery between"
+                    },
+                    roadConsiderations: "Track outer lanes or 2-3 minute road segments work well"
                 }
             ],
 
@@ -483,6 +515,54 @@ export class StandUpBikeWorkoutLibrary {
                         perceived: "Playful hard efforts with varying resistance"
                     },
                     roadConsiderations: "Use terrain features to vary resistance naturally"
+                },
+                {
+                    name: "Hill Sprint Repeats",
+                    duration: "50-65 minutes",
+                    equipment: "both",
+                    description: "Short explosive sprints up moderate hill for power and lactic tolerance",
+                    structure: "15 min warmup + 8-12 x 0:30 sprint up 4-6% grade with 1:30 coast down recovery + 10 min cooldown",
+                    intensity: "power",
+                    benefits: "Explosive power, motor recruitment, lactic acid tolerance, posterior chain strength",
+                    cycleteNotes: "Maximum power output in natural running motion up hill",
+                    elliptigoNotes: "High resistance, explosive stride, full body engagement",
+                    effort: {
+                        heartRate: "Zone 5+ (100% max HR)",
+                        perceived: "Maximum effort, fighting lactic acid by end of session"
+                    },
+                    roadConsiderations: "Need consistent 4-6% grade hill with safe descent for recovery"
+                },
+                {
+                    name: "Power Sprint Buildups",
+                    duration: "55-70 minutes",
+                    equipment: "both",
+                    description: "High-end lactate workout with buildup into maximum sprint",
+                    structure: "15 min warmup + 3-5 x (200m buildup into 400m max sprint) with full recovery + 10 min cooldown",
+                    intensity: "power",
+                    benefits: "Maximum power development, lactic tolerance, sprint speed",
+                    cycleteNotes: "Progressive acceleration into all-out sprint effort",
+                    elliptigoNotes: "Build through gears, max resistance and cadence on sprint",
+                    effort: {
+                        heartRate: "Zone 5+ on sprint (100% max HR)",
+                        perceived: "Maximum sprint effort, stop when 400m time drops 3+ seconds"
+                    },
+                    roadConsiderations: "Need flat safe stretch, full recovery between efforts (3-5 min)"
+                },
+                {
+                    name: "Steady State Hill Climb",
+                    duration: "60-90 minutes",
+                    equipment: "both",
+                    description: "Continuous climb for sustained threshold and mental toughness",
+                    structure: "10 min easy warmup on flat + 60-90 min continuous climb @ steady effort (no coasting)",
+                    intensity: "power",
+                    benefits: "Aerobic threshold development, muscular endurance, mental toughness, climbing strength",
+                    cycleteNotes: "Extended natural motion climb builds race-specific fitness",
+                    elliptigoNotes: "Focus on high turnover in lower gears (3-5), maintain rhythm",
+                    effort: {
+                        heartRate: "Zone 3-4 (80-90% max HR sustained)",
+                        perceived: "Steady hard effort, forced to stay engaged throughout"
+                    },
+                    roadConsiderations: "Need long consistent 5-10% grade climb - canyon roads or mountain climbs ideal"
                 }
             ],
 
