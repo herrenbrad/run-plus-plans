@@ -181,17 +181,8 @@ class StravaSyncService {
         continue;
       }
 
-      // Check distance match (±30% tolerance for flexibility)
-      if (workout.distance) {
-        const distanceDiff = Math.abs(activityDistanceMiles - workout.distance);
-        const tolerance = workout.distance * 0.3;
-
-        if (distanceDiff > tolerance) {
-          continue;
-        }
-      }
-
       // Found a match!
+      // No distance check - if you did the workout on the right day, that's what counts
       return workout;
     }
 

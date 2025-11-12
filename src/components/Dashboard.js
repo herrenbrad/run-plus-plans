@@ -345,6 +345,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   const [workoutCompletions, setWorkoutCompletions] = useState({}); // Track workout completions for instant UI updates
   const [showBetaSetup, setShowBetaSetup] = useState(false); // Show beta code setup modal
   const [showBrickOptions, setShowBrickOptions] = useState({}); // Track which workouts are showing brick split options
+  const [stravaSyncing, setStravaSyncing] = useState(false); // Track Strava sync status
   const [completionModal, setCompletionModal] = useState({
     isOpen: false,
     workout: null,
@@ -423,6 +424,49 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
 
     setWorkoutCompletions(completions);
   }, [trainingPlan]);
+
+  // Manual Strava sync function
+  const handleManualStravaSync = async () => {
+    if (!userProfile?.stravaConnected || !auth.currentUser || !trainingPlan) {
+      return;
+    }
+
+    setStravaSyncing(true);
+    console.log('🔄 Manual Strava sync triggered...');
+
+    try {
+      const result = await StravaSyncService.syncActivities(
+        auth.currentUser.uid,
+        userProfile,
+        trainingPlan,
+        currentWeek
+      );
+
+      if (result.success) {
+        console.log('✅ Strava sync successful:', result);
+
+        // Update last sync time
+        localStorage.setItem('runeq_stravaLastSync', new Date().toISOString());
+
+        // Refresh the page to show updated completions
+        if (result.workoutsCompleted > 0) {
+          console.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
+          window.location.reload();
+        } else {
+          alert(`Sync complete! Found ${result.activitiesFetched} activities, ${result.matchesFound} matched workouts.`);
+          setStravaSyncing(false);
+        }
+      } else {
+        console.warn('⚠️ Strava sync failed:', result.error);
+        alert(`Sync failed: ${result.error}`);
+        setStravaSyncing(false);
+      }
+    } catch (error) {
+      console.error('❌ Strava sync error:', error);
+      alert(`Sync error: ${error.message}`);
+      setStravaSyncing(false);
+    }
+  };
 
   // Auto-sync Strava activities on dashboard load
   useEffect(() => {
@@ -1615,24 +1659,44 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
 
               {/* Connect Strava Button */}
               {userProfile?.stravaConnected ? (
-                <button
-                  style={{
-                    background: 'rgba(252, 76, 2, 0.1)',
-                    color: '#FC4C02',
-                    border: '1px solid rgba(252, 76, 2, 0.3)',
-                    marginLeft: '12px',
-                    fontSize: '0.8rem',
-                    padding: '6px 12px',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                  title={`Connected as ${userProfile.stravaAthleteName || 'Strava athlete'}`}
-                >
-                  ✓ Strava Connected
-                </button>
+                <>
+                  <button
+                    style={{
+                      background: 'rgba(252, 76, 2, 0.1)',
+                      color: '#FC4C02',
+                      border: '1px solid rgba(252, 76, 2, 0.3)',
+                      marginLeft: '12px',
+                      fontSize: '0.8rem',
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                    title={`Connected as ${userProfile.stravaAthleteName || 'Strava athlete'}`}
+                  >
+                    ✓ Strava Connected
+                  </button>
+                  <button
+                    onClick={handleManualStravaSync}
+                    disabled={stravaSyncing}
+                    style={{
+                      background: stravaSyncing ? 'rgba(100, 100, 100, 0.1)' : 'rgba(252, 76, 2, 0.2)',
+                      color: stravaSyncing ? '#666' : '#FC4C02',
+                      border: `1px solid ${stravaSyncing ? 'rgba(100, 100, 100, 0.3)' : 'rgba(252, 76, 2, 0.4)'}`,
+                      marginLeft: '8px',
+                      fontSize: '0.8rem',
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      cursor: stravaSyncing ? 'not-allowed' : 'pointer',
+                      opacity: stravaSyncing ? 0.6 : 1
+                    }}
+                    title="Manually sync your Strava activities"
+                  >
+                    {stravaSyncing ? '⏳ Syncing...' : '🔄 Sync Now'}
+                  </button>
+                </>
               ) : (
                 <button
                   onClick={() => {
