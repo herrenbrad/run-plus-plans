@@ -2819,35 +2819,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
             })}
           </div>
         </div>
-
-        {/* Feature Highlights */}
-        <div className="card" style={{ background: 'linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%)', border: '1px solid #90cdf4' }}>
-          <h3 style={{ margin: '0 0 16px 0', color: '#00D4FF' }}>🚀 Your RunEQ Advantages</h3>
-          <div style={{ display: 'grid', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ color: '#00D4FF', fontSize: '1.2rem' }}>🔄</span>
-              <span><strong>Flexible scheduling:</strong> Miss a workout? We'll {userProfile.missedWorkoutPreference}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ color: '#00D4FF', fontSize: '1.2rem' }}>🌡️</span>
-              <span><strong>Climate smart:</strong> Automatic pace adjustments for your local weather</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ color: '#00D4FF', fontSize: '1.2rem' }}>🎨</span>
-              <span><strong>Never boring:</strong> 80+ workout variations from research-based sources</span>
-            </div>
-            {userProfile.standUpBikeType && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ color: '#00D4FF', fontSize: '1.2rem' }}>⚡</span>
-                <span><strong>Equipment Optimized:</strong> {formatEquipmentName(userProfile.standUpBikeType)}-specific motion training</span>
-              </div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ color: '#00D4FF', fontSize: '1.2rem' }}>📱</span>
-              <span><strong>Cross-platform:</strong> Works on phone, tablet, and web (unlike competitors!)</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Something Else Modal */}
