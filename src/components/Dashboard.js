@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { auth } from '../firebase/config';
+import { doc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase/config';
 import FirestoreService from '../services/FirestoreService';
+import TrainingPlanService from '../services/TrainingPlanService';
 import { TempoWorkoutLibrary } from '../lib/tempo-workout-library.js';
 import { IntervalWorkoutLibrary } from '../lib/interval-workout-library.js';
 import { LongRunWorkoutLibrary } from '../lib/long-run-workout-library.js';
@@ -15,7 +17,7 @@ import { calorieCalculator } from '../lib/calorie-calculator.js';
 import StravaService from '../services/StravaService';
 import StravaSyncService from '../services/StravaSyncService';
 
-function Dashboard({ userProfile, trainingPlan, clearAllData }) {
+function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData }) {
   const navigate = useNavigate();
   
   // Calculate the actual current week based on training plan start date
@@ -89,46 +91,59 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
   };
 
   // Function to refresh the training plan with latest features
-  const refreshTrainingPlan = () => {
+  const refreshTrainingPlan = async () => {
     if (!userProfile || !trainingPlan) return;
-    
+
     try {
-      // Temporarily disabled - using working fallback system
-      // const realWorldTrainingService = new RealWorldTrainingService();
-      
+      console.log('🔄 Regenerating training plan with updated workout logic...');
+
       // Reconstruct the original form data from user profile and training plan
       const formData = {
         raceDistance: trainingPlan.planOverview.raceDistance,
         raceDate: trainingPlan.planOverview.raceDate,
         startDate: trainingPlan.planOverview.startDate,
-        currentRaceTime: userProfile.currentRaceTime,
-        runsPerWeek: trainingPlan.planOverview.runsPerWeek,
+        currentRaceTime: userProfile.currentRaceTime || '2:00:00',
+        runsPerWeek: trainingPlan.planOverview.runsPerWeek || 5,
         experienceLevel: userProfile.experienceLevel || 'recreational',
-        standUpBikeType: userProfile.standUpBikeType,
-        availableDays: userProfile.availableDays,
-        preferredBikeDays: userProfile.preferredBikeDays,
+        standUpBikeType: userProfile.standUpBikeType || null,
+        availableDays: userProfile.availableDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+        preferredBikeDays: userProfile.preferredBikeDays || [],
         longRunDay: userProfile.longRunDay || 'Sunday',
-        trainingStyle: userProfile.trainingStyle || 'prescribed'
+        trainingStyle: userProfile.trainingStyle || 'prescribed',
+        weeksAvailable: trainingPlan.planOverview.totalWeeks || 16,
+        hardSessionDays: userProfile.hardSessionDays || ['Wednesday', 'Friday'],
+        hardSessionsPerWeek: userProfile.hardSessionsPerWeek || 2,
+        currentWeeklyMileage: userProfile.currentWeeklyMileage || 15,
+        currentLongRunDistance: userProfile.currentLongRunDistance || 6,
+        raceElevationProfile: userProfile.raceElevationProfile || 'flat',
+        climate: userProfile.climate || 'temperate',
+        trainingPhilosophy: userProfile.trainingPhilosophy || 'practical_periodization',
+        missedWorkoutPreference: userProfile.missedWorkoutPreference || 'modify',
+        goal: userProfile.goal || 'race'
       };
-      
-      // Create new plan structure compatible with existing UI
-      const newPlan = {
-        planOverview: {
-          raceDistance: formData.raceDistance,
-          raceDate: formData.raceDate,
-          startDate: formData.startDate,
-          totalWeeks: formData.weeksAvailable || 16,
-          runsPerWeek: formData.runsPerWeek
-        },
-        weeks: [] // Will be populated using proper TrainingPlanService
-      };
-      
-      // Preserve any workout modifications from existing plan
-      const modifiedWorkouts = JSON.parse(localStorage.getItem('runeq_modifiedWorkouts') || '{}');
-      
-      // Update localStorage with new plan
-      localStorage.setItem('runeq_trainingPlan', JSON.stringify(newPlan));
-      
+
+      console.log('📋 Form data for regeneration:', formData);
+
+      // Generate new plan using TrainingPlanService
+      const trainingPlanService = new TrainingPlanService();
+      const result = await trainingPlanService.generatePlanFromOnboarding(formData);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate plan');
+      }
+
+      const newPlan = result.plan;
+      console.log('✅ New plan generated with', newPlan.weeks?.length, 'weeks');
+
+      // Save to Firebase
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      await updateDoc(userRef, {
+        trainingPlan: newPlan,
+        planLastUpdated: new Date().toISOString()
+      });
+
+      console.log('💾 Plan saved to Firebase - reloading...');
+
       // Reload the page to show updated plan
       window.location.reload();
     } catch (error) {
@@ -405,29 +420,26 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     }
   }, [modifiedWorkouts, hasLoaded]);
 
-  // Load workout completion status from training plan on mount
+  // Load workout completion status from Firebase completedWorkouts object
   useEffect(() => {
-    if (!trainingPlan?.weeks) return;
+    if (!completedWorkouts) {
+      setWorkoutCompletions({});
+      return;
+    }
 
-    const completions = {};
-    trainingPlan.weeks.forEach(week => {
-      week.workouts?.forEach(workout => {
-        if (workout.completed !== undefined) {
-          const workoutKey = `${week.week}-${workout.day}`;
-          completions[workoutKey] = {
-            completed: workout.completed,
-            completedAt: workout.completedAt
-          };
-        }
-      });
-    });
-
-    setWorkoutCompletions(completions);
-  }, [trainingPlan]);
+    console.log('📦 Dashboard: Loading completions from Firebase:', completedWorkouts);
+    setWorkoutCompletions(completedWorkouts);
+  }, [completedWorkouts]);
 
   // Manual Strava sync function
   const handleManualStravaSync = async () => {
+    console.log('🔘 BUTTON CLICKED - handleManualStravaSync called');
     if (!userProfile?.stravaConnected || !auth.currentUser || !trainingPlan) {
+      console.log('❌ Cannot sync - missing requirements:', {
+        stravaConnected: userProfile?.stravaConnected,
+        hasUser: !!auth.currentUser,
+        hasTrainingPlan: !!trainingPlan
+      });
       return;
     }
 
@@ -573,19 +585,19 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
     }
   };
 
-  // Intensity-based color system for workout cards
+  // Intensity-based color system for workout cards - BOLD & VIVID 2025
   const getIntensityColors = (intensity, difficulty) => {
     const intensityMap = {
-      'Very Easy': { bg: 'rgba(34, 197, 94, 0.1)', border: 'rgba(34, 197, 94, 0.3)', accent: '#22c55e', icon: '😌' },
-      'Easy': { bg: 'rgba(34, 197, 94, 0.15)', border: 'rgba(34, 197, 94, 0.4)', accent: '#22c55e', icon: '🟢' },
-      'Easy-Moderate': { bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)', accent: '#f59e0b', icon: '🟡' },
-      'Moderate': { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.4)', accent: '#f59e0b', icon: '🔶' },
-      'Medium-Hard': { bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)', accent: '#ef4444', icon: '🔸' },
-      'Hard': { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.4)', accent: '#ef4444', icon: '🔥' },
-      'Very Hard': { bg: 'rgba(220, 38, 127, 0.1)', border: 'rgba(220, 38, 127, 0.3)', accent: '#dc2626', icon: '💥' },
-      'Variable': { bg: 'rgba(168, 85, 247, 0.1)', border: 'rgba(168, 85, 247, 0.3)', accent: '#a855f7', icon: '⚡' },
-      'Variable Hard': { bg: 'rgba(168, 85, 247, 0.15)', border: 'rgba(168, 85, 247, 0.4)', accent: '#a855f7', icon: '⚡' },
-      'Progressive': { bg: 'rgba(59, 130, 246, 0.1)', border: 'rgba(59, 130, 246, 0.3)', accent: '#3b82f6', icon: '📈' }
+      'Very Easy': { bg: 'rgba(34, 197, 94, 0.4)', border: 'rgba(34, 197, 94, 0.8)', accent: '#22c55e', icon: '😌' },
+      'Easy': { bg: 'rgba(34, 197, 94, 0.45)', border: 'rgba(34, 197, 94, 0.9)', accent: '#22c55e', icon: '🟢' },
+      'Easy-Moderate': { bg: 'rgba(245, 158, 11, 0.4)', border: 'rgba(245, 158, 11, 0.8)', accent: '#f59e0b', icon: '🟡' },
+      'Moderate': { bg: 'rgba(245, 158, 11, 0.45)', border: 'rgba(245, 158, 11, 0.9)', accent: '#f59e0b', icon: '🔶' },
+      'Medium-Hard': { bg: 'rgba(239, 68, 68, 0.4)', border: 'rgba(239, 68, 68, 0.8)', accent: '#ef4444', icon: '🔸' },
+      'Hard': { bg: 'rgba(239, 68, 68, 0.45)', border: 'rgba(239, 68, 68, 0.9)', accent: '#ef4444', icon: '🔥' },
+      'Very Hard': { bg: 'rgba(220, 38, 127, 0.4)', border: 'rgba(220, 38, 127, 0.8)', accent: '#dc2626', icon: '💥' },
+      'Variable': { bg: 'rgba(168, 85, 247, 0.4)', border: 'rgba(168, 85, 247, 0.8)', accent: '#a855f7', icon: '⚡' },
+      'Variable Hard': { bg: 'rgba(168, 85, 247, 0.45)', border: 'rgba(168, 85, 247, 0.9)', accent: '#a855f7', icon: '⚡' },
+      'Progressive': { bg: 'rgba(59, 130, 246, 0.4)', border: 'rgba(59, 130, 246, 0.8)', accent: '#3b82f6', icon: '📈' }
     };
 
     // Fallback based on difficulty if intensity not found
@@ -1451,28 +1463,31 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
 
   return (
     <>
-    <div style={{ minHeight: '100vh' }}>
-      {/* Header */}
+      <div style={{ minHeight: '100vh' }}>
+        {/* Header */}
       <div style={{ color: '#AAAAAA', padding: '20px 0' }}>
         <div className="container">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1 }}>
-              <h1 style={{ margin: '0', lineHeight: '1.2' }}>
-                Week {currentWeek}
-              </h1>
-              {(() => {
-                const dateRange = getWeekDateRange(currentWeek);
-                return dateRange ? (
-                  <div style={{
-                    fontSize: '0.9rem',
-                    color: '#AAAAAA',
-                    marginTop: '4px'
-                  }}>
-                    Week of {dateRange}
-                  </div>
-                ) : null;
-              })()}
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginTop: '8px' }}>
+          {/* Title Row */}
+          <div style={{ marginBottom: '12px' }}>
+            <h1 style={{ margin: '0', lineHeight: '1.2' }}>
+              Week {currentWeek}
+            </h1>
+            {(() => {
+              const dateRange = getWeekDateRange(currentWeek);
+              return dateRange ? (
+                <div style={{
+                  fontSize: '0.9rem',
+                  color: '#AAAAAA',
+                  marginTop: '4px'
+                }}>
+                  Week of {dateRange}
+                </div>
+              ) : null;
+            })()}
+          </div>
+
+          {/* Stats Row */}
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
                 {(() => {
                   const mileageBreakdown = calculateMileageBreakdown(currentWeekData);
                   const hasEquivalentMiles = mileageBreakdown.equivalentMiles > 0;
@@ -1574,17 +1589,97 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                     </div>
                   );
                 })()}
-                <span style={{ color: '#EEEEEE', fontSize: '0.9rem', fontWeight: '500' }}>
-                  {formatPhase(currentWeekData.phase || 'base')}
-                </span>
+          </div>
+
+          {/* Training Phase Banner with Coach Encouragement */}
+          {(() => {
+            const phase = currentWeekData.phase || 'base';
+            const phaseConfig = {
+              base: {
+                color: '#3b82f6',
+                bgColor: 'rgba(59, 130, 246, 0.15)',
+                borderColor: 'rgba(59, 130, 246, 0.4)',
+                icon: '🏃',
+                message: 'Building your aerobic foundation - consistency over intensity'
+              },
+              build: {
+                color: '#f59e0b',
+                bgColor: 'rgba(245, 158, 11, 0.15)',
+                borderColor: 'rgba(245, 158, 11, 0.4)',
+                icon: '🏗️',
+                message: 'Building strength and speed - time to push harder'
+              },
+              peak: {
+                color: '#ef4444',
+                bgColor: 'rgba(239, 68, 68, 0.15)',
+                borderColor: 'rgba(239, 68, 68, 0.4)',
+                icon: '🏔️',
+                message: 'Peak fitness - your hardest workouts are here'
+              },
+              taper: {
+                color: '#8b5cf6',
+                bgColor: 'rgba(139, 92, 246, 0.15)',
+                borderColor: 'rgba(139, 92, 246, 0.4)',
+                icon: '⚡',
+                message: 'Tapering for race day - trust your training'
+              },
+              recovery: {
+                color: '#22c55e',
+                bgColor: 'rgba(34, 197, 94, 0.15)',
+                borderColor: 'rgba(34, 197, 94, 0.4)',
+                icon: '🌱',
+                message: 'Recovery week - let your body adapt and rebuild'
+              }
+            };
+
+            const config = phaseConfig[phase] || phaseConfig.base;
+
+            return (
+              <div style={{
+                background: config.bgColor,
+                border: `2px solid ${config.borderColor}`,
+                borderRadius: '12px',
+                padding: '14px 18px',
+                marginTop: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <div style={{ fontSize: '1.8rem', lineHeight: '1' }}>{config.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    color: config.color,
+                    fontSize: '1rem',
+                    fontWeight: '700',
+                    marginBottom: '2px'
+                  }}>
+                    {formatPhase(phase)}
+                  </div>
+                  <div style={{
+                    color: '#CCCCCC',
+                    fontSize: '0.85rem',
+                    fontWeight: '500'
+                  }}>
+                    {config.message}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div style={{ display: 'flex', gap: '12px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <button
+            );
+          })()}
+
+          <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
                 className="btn btn-secondary"
                 onClick={() => setCurrentWeek(Math.max(1, currentWeek - 1))}
                 disabled={currentWeek <= 1}
-                style={{ background: 'rgba(255,255,255,0.1)', color: '#AAAAAA', border: '1px solid rgba(255,255,255,0.2)' }}
+                style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  color: '#AAAAAA',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  fontSize: '0.8rem',
+                  padding: '6px 12px',
+                  borderRadius: '4px'
+                }}
               >
                 ← Prev
               </button>
@@ -1597,11 +1692,11 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                   color: '#00D4FF',
                   border: '2px solid rgba(0, 212, 255, 0.4)',
                   borderRadius: '8px',
-                  padding: '8px 12px',
-                  fontSize: '1rem',
+                  padding: '6px 12px',
+                  fontSize: '0.8rem',
                   fontWeight: '600',
                   cursor: 'pointer',
-                  minWidth: '120px'
+                  minWidth: '100px'
                 }}
               >
                 {Array.from({ length: trainingPlan?.planOverview?.totalWeeks || 12 }, (_, i) => i + 1).map(week => (
@@ -1615,7 +1710,14 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                 className="btn btn-secondary"
                 onClick={() => setCurrentWeek(Math.min(trainingPlan?.planOverview?.totalWeeks || 12, currentWeek + 1))}
                 disabled={currentWeek === (trainingPlan?.planOverview?.totalWeeks || 12)}
-                style={{ background: 'rgba(255,255,255,0.1)', color: '#AAAAAA', border: '1px solid rgba(255,255,255,0.2)' }}
+                style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  color: '#AAAAAA',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  fontSize: '0.8rem',
+                  padding: '6px 12px',
+                  borderRadius: '4px'
+                }}
               >
                 Next →
               </button>
@@ -1625,11 +1727,10 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                     refreshTrainingPlan();
                   }
                 }}
-                style={{ 
-                  background: 'rgba(34, 197, 94, 0.1)', 
-                  color: '#22c55e', 
+                style={{
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  color: '#22c55e',
                   border: '1px solid rgba(34, 197, 94, 0.3)',
-                  marginLeft: '12px',
                   fontSize: '0.8rem',
                   padding: '6px 12px',
                   borderRadius: '4px'
@@ -1637,25 +1738,6 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
               >
                 🔄 Refresh Plan
               </button>
-
-              {/* Beta Code Setup Button - Only show for admin (your email) */}
-              {auth.currentUser?.email === 'herrenbrad@gmail.com' && (
-                <button
-                  onClick={() => setShowBetaSetup(true)}
-                  style={{
-                    background: 'rgba(0, 212, 255, 0.1)',
-                    color: '#00D4FF',
-                    border: '1px solid rgba(0, 212, 255, 0.3)',
-                    marginLeft: '12px',
-                    fontSize: '0.8rem',
-                    padding: '6px 12px',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  🎫 Setup Beta Codes
-                </button>
-              )}
 
               {/* Connect Strava Button */}
               {userProfile?.stravaConnected ? (
@@ -1665,32 +1747,37 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                       background: 'rgba(252, 76, 2, 0.1)',
                       color: '#FC4C02',
                       border: '1px solid rgba(252, 76, 2, 0.3)',
-                      marginLeft: '12px',
                       fontSize: '0.8rem',
                       padding: '6px 12px',
                       borderRadius: '4px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
+                      cursor: 'pointer'
                     }}
                     title={`Connected as ${userProfile.stravaAthleteName || 'Strava athlete'}`}
                   >
                     ✓ Strava Connected
                   </button>
                   <button
-                    onClick={handleManualStravaSync}
+                    onClick={(e) => {
+                      console.log('🔘 BUTTON CLICKED INLINE - Event:', e);
+                      console.log('🔘 stravaSyncing:', stravaSyncing);
+                      console.log('🔘 userProfile?.stravaConnected:', userProfile?.stravaConnected);
+                      console.log('🔘 auth.currentUser:', auth.currentUser);
+                      console.log('🔘 trainingPlan:', trainingPlan);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleManualStravaSync();
+                    }}
                     disabled={stravaSyncing}
                     style={{
                       background: stravaSyncing ? 'rgba(100, 100, 100, 0.1)' : 'rgba(252, 76, 2, 0.2)',
                       color: stravaSyncing ? '#666' : '#FC4C02',
                       border: `1px solid ${stravaSyncing ? 'rgba(100, 100, 100, 0.3)' : 'rgba(252, 76, 2, 0.4)'}`,
-                      marginLeft: '8px',
                       fontSize: '0.8rem',
                       padding: '6px 12px',
                       borderRadius: '4px',
                       cursor: stravaSyncing ? 'not-allowed' : 'pointer',
-                      opacity: stravaSyncing ? 0.6 : 1
+                      opacity: stravaSyncing ? 0.6 : 1,
+                      pointerEvents: stravaSyncing ? 'none' : 'auto'
                     }}
                     title="Manually sync your Strava activities"
                   >
@@ -1707,7 +1794,6 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                     background: 'rgba(252, 76, 2, 0.1)',
                     color: '#FC4C02',
                     border: '1px solid rgba(252, 76, 2, 0.3)',
-                    marginLeft: '12px',
                     fontSize: '0.8rem',
                     padding: '6px 12px',
                     borderRadius: '4px',
@@ -1728,7 +1814,6 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                   background: 'rgba(239, 68, 68, 0.1)',
                   color: '#ef4444',
                   border: '1px solid rgba(239, 68, 68, 0.3)',
-                  marginLeft: '12px',
                   fontSize: '0.8rem',
                   padding: '6px 12px',
                   borderRadius: '4px',
@@ -1748,7 +1833,6 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                   background: 'rgba(156, 163, 175, 0.1)',
                   color: '#9ca3af',
                   border: '1px solid rgba(156, 163, 175, 0.3)',
-                  marginLeft: '12px',
                   fontSize: '0.8rem',
                   padding: '6px 12px',
                   borderRadius: '4px',
@@ -1759,36 +1843,23 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                 🚪 Logout
               </button>
             </div>
-          </div>
         </div>
       </div>
 
       <div className="container" style={{ padding: '20px 16px' }}>
         {/* Current Training System */}
         <div className="card" style={{ marginBottom: '20px', background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <div>
-              <h3 style={{ margin: '0 0 4px 0', color: '#00D4FF' }}>Current Training System</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.2rem' }}>🔬</span>
-                <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
-                  {formatTrainingSystem(trainingPlan?.planOverview?.trainingPhilosophy || userProfile?.trainingPhilosophy || 'Zone-Based Training')}
-                </span>
-              </div>
-              <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: '#00D4FF' }}>
-                Week {currentWeek} of {trainingPlan?.planOverview?.totalWeeks || 16} • Periodized training system
-              </p>
+          <div style={{ marginBottom: '16px' }}>
+            <h3 style={{ margin: '0 0 4px 0', color: '#00D4FF' }}>Current Training System</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '1.2rem' }}>🔬</span>
+              <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                {formatTrainingSystem(trainingPlan?.planOverview?.trainingPhilosophy || userProfile?.trainingPhilosophy || 'Zone-Based Training')}
+              </span>
             </div>
-            <button 
-              className="btn btn-secondary"
-              onClick={() => {
-                const totalWeeks = trainingPlan?.planOverview?.totalWeeks || 16;
-                alert('🔄 Switch Training System\n\nYou\'re at week ' + currentWeek + ' of ' + totalWeeks + ' - perfect timing!\n\n✅ Week ' + (currentWeek-1) + ' progress preserved\n📅 Weeks ' + (currentWeek+1) + '-' + totalWeeks + ' will be redesigned\n🎯 Race day plan unchanged\n\nChoose new system:\n• Practical Periodization (💡 80/20 easy/hard)\n• High Mileage (💪 Volume focused)\n• Polarized (⚡ Elite inspired)\n• Adaptive Pacing (⏱️ Fitness test driven)\n• Ben Parkes Method (🎯 Research-based)\n\nThis feature would show a full system selector!');
-              }}
-              style={{ fontSize: '0.9rem', whiteSpace: 'nowrap' }}
-            >
-              🔄 Switch System
-            </button>
+            <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: '#00D4FF' }}>
+              Week {currentWeek} of {trainingPlan?.planOverview?.totalWeeks || 16} • Periodized training system
+            </p>
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', fontSize: '0.85rem' }}>
@@ -2146,24 +2217,54 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                       minWidth: '140px',
                       flexShrink: 0
                     }}>
-                      {/* Mark Complete Button */}
+                      {/* Mark Complete Button - Conditional based on Strava */}
                       <button
                         className="btn"
                         style={{
                           fontSize: '0.85rem',
                           padding: '10px 12px',
                           fontWeight: '600',
-                          background: workout.completed ? 'rgba(156, 163, 175, 0.1)' : 'rgba(0, 255, 136, 0.1)',
-                          color: workout.completed ? '#9ca3af' : '#00FF88',
-                          border: workout.completed ? '1px solid rgba(156, 163, 175, 0.3)' : '1px solid rgba(0, 255, 136, 0.3)',
-                          textAlign: 'center'
+                          background: workout.completed
+                            ? 'rgba(156, 163, 175, 0.1)'
+                            : userProfile?.stravaConnected
+                              ? 'rgba(0, 212, 255, 0.1)'
+                              : 'rgba(0, 255, 136, 0.1)',
+                          color: workout.completed
+                            ? '#9ca3af'
+                            : userProfile?.stravaConnected
+                              ? '#00D4FF'
+                              : '#00FF88',
+                          border: workout.completed
+                            ? '1px solid rgba(156, 163, 175, 0.3)'
+                            : userProfile?.stravaConnected
+                              ? '1px solid rgba(0, 212, 255, 0.3)'
+                              : '1px solid rgba(0, 255, 136, 0.3)',
+                          textAlign: 'center',
+                          cursor: workout.completed
+                            ? 'pointer'
+                            : userProfile?.stravaConnected
+                              ? 'default'
+                              : 'pointer',
+                          opacity: userProfile?.stravaConnected && !workout.completed ? 0.7 : 1
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleMarkComplete(workout);
+                          // Only allow manual completion if not connected to Strava or if undoing
+                          if (!userProfile?.stravaConnected || workout.completed) {
+                            handleMarkComplete(workout);
+                          }
                         }}
                       >
-                        {workout.completed ? '⏪ Undo' : '✅ Complete'}
+                        {workout.completed
+                          ? '⏪ Undo'
+                          : userProfile?.stravaConnected
+                            ? <>
+                                <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', display: 'inline-block', marginRight: '6px', verticalAlign: 'middle' }}>
+                                  <path fill="#FC4C02" d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/>
+                                </svg>
+                                Strava Sync
+                              </>
+                            : '📝 Log Workout'}
                       </button>
 
                       {/* Show adventure options for adventure/flexible users */}
@@ -2185,7 +2286,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                         >
                           {(() => {
                             const workoutKey = `${currentWeek}-${workout.day}`;
-                            return showingOptions[workoutKey] ? '📋 Hide' : '🎲 Choose';
+                            return showingOptions[workoutKey] ? '📋 Hide' : '🎲 Choose Adventure';
                           })()}
                         </button>
                       )}
@@ -2253,14 +2354,33 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                       )}
                       
                       <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: '0.8rem', padding: '6px 12px', textAlign: 'center' }}
+                        className="btn"
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '8px 14px',
+                          textAlign: 'center',
+                          background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(0, 255, 136, 0.2) 100%)',
+                          border: '2px solid rgba(0, 212, 255, 0.5)',
+                          color: '#00D4FF',
+                          fontWeight: '600',
+                          transition: 'all 0.3s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.35) 0%, rgba(0, 255, 136, 0.3) 100%)';
+                          e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.8)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(0, 255, 136, 0.2) 100%)';
+                          e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.5)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleSomethingElse(workout);
                         }}
                       >
-                        More Options
+                        Life Adaptations
                       </button>
 
                       {/* Revert to Original button for replaced workouts */}
@@ -2362,15 +2482,15 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
 
                   return (
                     <div style={{ marginTop: '12px' }}>
-                      <div className="card" style={{
-                        background: 'rgba(237, 137, 54, 0.15)',
-                        border: '1px solid rgba(237, 137, 54, 0.4)',
-                        backdropFilter: 'blur(5px)'
+                      <div style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: '0'
                       }}>
-                        <h4 style={{ margin: '0 0 16px 0', color: '#ed8936', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h4 style={{ margin: '0 0 16px 0', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem', fontWeight: '700' }}>
                           🧱 Choose Your Brick Workout Split
                         </h4>
-                        <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#888' }}>
+                        <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#CCCCCC' }}>
                           All options = {originalDistance} miles total training load. Pick based on how your legs feel today:
                         </p>
                         <div style={{ display: 'grid', gap: '12px' }}>
@@ -2448,13 +2568,13 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                 
                 return (
                   <div style={{ marginTop: '12px' }}>
-                    <div className="card" style={{ 
-                      background: 'rgba(65, 153, 225, 0.15)', 
-                      border: '1px solid rgba(65, 153, 225, 0.4)',
-                      backdropFilter: 'blur(5px)' // Reduce blur effect
+                    <div style={{
+                      background: 'transparent',
+                      border: 'none',
+                      padding: '0'
                     }}>
-                      <h4 style={{ margin: '0 0 16px 0', color: '#4299e1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        🎲 Choose Your {workout.type === 'longRun' ? 'Long Run' : 
+                      <h4 style={{ margin: '0 0 16px 0', color: '#00D4FF', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem', fontWeight: '700' }}>
+                        🎲 Choose Your {workout.type === 'longRun' ? 'Long Run' :
                                         workout.type === 'intervals' ? 'Speed' :
                                         workout.type === 'tempo' ? 'Tempo' :
                                         workout.type === 'hills' ? 'Hill' :
@@ -2502,7 +2622,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                                   <span style={{ fontSize: '1.2rem' }}>{colors.icon}</span>
-                                  <h5 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '600', color: colors.accent }}>
+                                  <h5 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '600', color: '#FFFFFF' }}>
                                     {option.name}
                                   </h5>
                                   {isSelected && (
@@ -2518,18 +2638,18 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                                     </span>
                                   )}
                                 </div>
-                                <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#CCCCCC', lineHeight: '1.4' }}>
+                                <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#FFFFFF', lineHeight: '1.4', opacity: '1' }}>
                                   {option.description}
                                 </p>
-                                <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem', color: '#AAAAAA', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem', color: '#FFFFFF', opacity: '1', marginBottom: '8px' }}>
                                   <span>⏱️ {option.timeRequired}</span>
                                   <span>📍 {option.location}</span>
                                   <span>💪 {option.difficulty}</span>
                                 </div>
                               </div>
-                              <div style={{ 
+                              <div style={{
                                 background: colors.accent + '20',
-                                color: colors.accent,
+                                color: '#FFFFFF',
                                 padding: '6px 12px',
                                 borderRadius: '16px',
                                 fontSize: '0.8rem',
@@ -2541,9 +2661,9 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                                 {option.focus}
                               </div>
                             </div>
-                            <div style={{ 
+                            <div style={{
                               background: colors.accent + '15',
-                              color: colors.accent,
+                              color: '#FFFFFF',
                               padding: '8px 12px',
                               borderRadius: '8px',
                               fontSize: '0.85rem',
@@ -2558,7 +2678,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
                       </div>
                       
                       <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '6px' }}>
-                        <p style={{ margin: 0, fontSize: '0.8rem', color: '#666', fontStyle: 'italic' }}>
+                        <p style={{ margin: 0, fontSize: '0.8rem', color: '#CCCCCC', fontStyle: 'italic' }}>
                           💡 <strong>All options target the same training system</strong> - choose based on your mood, time, and location!
                         </p>
                       </div>
@@ -2981,7 +3101,7 @@ function Dashboard({ userProfile, trainingPlan, clearAllData }) {
           </div>
         </div>
       )}
-    </div>
+      </div>
     </>
   );
 }

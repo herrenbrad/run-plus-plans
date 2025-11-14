@@ -4,6 +4,17 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+// Suppress ResizeObserver errors globally
+window.addEventListener('error', (e) => {
+  if (e.message && (
+    e.message.includes('ResizeObserver loop') ||
+    e.message.includes('ResizeObserver loop completed with undelivered notifications')
+  )) {
+    e.stopImmediatePropagation();
+    return false;
+  }
+});
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>

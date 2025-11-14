@@ -25,6 +25,19 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title>Run+ Plans - Smart Training for Runners</title>
+
+    <!-- Suppress harmless ResizeObserver errors -->
+    <script>
+      // Suppress ResizeObserver loop errors (harmless browser timing issue)
+      const resizeObserverErrHandler = (e) => {
+        if (e.message === 'ResizeObserver loop completed with undelivered notifications.' ||
+            e.message === 'ResizeObserver loop limit exceeded') {
+          e.stopImmediatePropagation();
+          return false;
+        }
+      };
+      window.addEventListener('error', resizeObserverErrHandler);
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

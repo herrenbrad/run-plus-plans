@@ -131,7 +131,8 @@ export class TrainingPlanGenerator {
             availableDays = null,        // e.g., ['Monday', 'Wednesday', 'Friday', 'Saturday']
             hardSessionDays = null,      // e.g., ['Wednesday', 'Friday']
             longRunDay = null,           // e.g., 'Saturday'
-            preferredBikeDays = null     // e.g., ['Monday']
+            preferredBikeDays = null,    // e.g., ['Monday']
+            startDay = null              // e.g., 'Friday' for Week 1 partial week
         } = options;
 
         console.log('🏃 Training Plan Generator Options:');
@@ -210,7 +211,8 @@ export class TrainingPlanGenerator {
             hardSessionDays,
             longRunDay,
             preferredBikeDays,
-            currentWeeklyMileage
+            currentWeeklyMileage,
+            startDay
         );
 
         // Generate periodization
@@ -347,7 +349,7 @@ export class TrainingPlanGenerator {
     /**
      * Calculate optimal weekly structure using USER schedule inputs
      */
-    calculateWeeklyStructure(template, runsPerWeek, experienceLevel, availableDays, hardSessionDays, longRunDay, preferredBikeDays, currentWeeklyMileage) {
+    calculateWeeklyStructure(template, runsPerWeek, experienceLevel, availableDays, hardSessionDays, longRunDay, preferredBikeDays, currentWeeklyMileage, startDay) {
         const runIndex = template.runsPerWeek.indexOf(runsPerWeek);
         if (runIndex === -1) {
             throw new Error(`${runsPerWeek} runs per week not supported for this distance`);
@@ -371,7 +373,8 @@ export class TrainingPlanGenerator {
             hardSessionDays: hardSessionDays || [],
             longRunDay: longRunDay || 'Saturday',
             preferredBikeDays: preferredBikeDays || [],
-            restDays: 7 - runsPerWeek
+            restDays: 7 - runsPerWeek,
+            startDay: startDay // e.g., 'Friday' for Week 1 partial week
         };
 
         // Calculate easy days = available days that aren't hard days, bike days, or long run day
@@ -607,8 +610,17 @@ export class TrainingPlanGenerator {
         // Track which hard session we're on
         let hardSessionIndex = 0;
 
-        // Generate workouts for ALL days
-        allDays.forEach(day => {
+        // For Week 1, only generate workouts from start date through Sunday
+        // Get start day from structure (passed from options)
+        const startDay = structure.startDay; // e.g., 'Friday'
+        const daysToGenerate = (weekNumber === 1 && startDay)
+            ? allDays.slice(allDays.indexOf(startDay)) // From start day to Sunday
+            : allDays; // All 7 days for Week 2+
+
+        console.log(`📅 Week ${weekNumber} - Generating workouts for:`, daysToGenerate.join(', '));
+
+        // Generate workouts
+        daysToGenerate.forEach(day => {
             console.log(`\n  📍 Processing ${day}:`);
             console.log(`     availableDays.includes('${day}'):`, availableDays.includes(day));
             console.log(`     hardSessionDays.includes('${day}'):`, hardSessionDays.includes(day));
@@ -653,8 +665,9 @@ export class TrainingPlanGenerator {
                         focus: "Endurance"
                     });
                 }
-            } else if (hardSessionDays.includes(day) && preferredBikeDays.includes(day) && standUpBikeType) {
+            } else if (hardSessionDays.includes(day) && preferredBikeDays.includes(day) && standUpBikeType && !(weekNumber === totalWeeks - 1 && phase.phase === 'taper')) {
                 // HARD BIKE DAY (user wants BOTH hard work AND bike day)
+                // SKIP hard workouts during taper week (but NOT race week)
                 console.log(`     ✅ Result: HARD BIKE SESSION (hard day + bike day, hardSessionIndex: ${hardSessionIndex})`);
                 const bikeWorkoutTypes = ['tempo', 'intervals', 'aerobic_power'];
                 const bikeWorkoutType = bikeWorkoutTypes[hardSessionIndex % bikeWorkoutTypes.length];
@@ -668,8 +681,9 @@ export class TrainingPlanGenerator {
                     equipmentSpecific: true
                 });
                 hardSessionIndex++;
-            } else if (hardSessionDays.includes(day)) {
+            } else if (hardSessionDays.includes(day) && !(weekNumber === totalWeeks - 1 && phase.phase === 'taper')) {
                 // HARD RUN DAY (user specified, but NOT a bike day)
+                // SKIP hard workouts during taper week (but NOT race week)
                 if (runningStatus === 'bikeOnly') {
                     // Bike-only mode: use bike intervals/tempo instead of running
                     console.log(`     ✅ Result: HARD BIKE SESSION (bike-only mode, hardSessionIndex: ${hardSessionIndex})`);

@@ -46,9 +46,18 @@ class StravaSyncService {
         console.log('✅ Token refreshed successfully');
       }
 
-      // Fetch recent activities (last 30 days)
-      const activities = await StravaService.getActivities(accessToken, 1, 50);
-      console.log(`📥 Fetched ${activities.length} Strava activities`);
+      // Calculate training plan start date (only fetch activities from this date forward)
+      const planStartDate = trainingPlan?.planOverview?.startDate
+        ? new Date(trainingPlan.planOverview.startDate + 'T00:00:00')
+        : null;
+
+      if (!planStartDate) {
+        console.log('⚠️ No plan start date found - fetching all recent activities');
+      }
+
+      // Fetch activities only from training plan start date
+      const activities = await StravaService.getActivities(accessToken, 1, 50, planStartDate);
+      console.log(`📥 Fetched ${activities.length} Strava activities ${planStartDate ? `since ${planStartDate.toLocaleDateString()}` : ''}`);
 
       // Get current week's workouts
       const currentWeekData = trainingPlan.weeks[currentWeek - 1];
@@ -82,9 +91,13 @@ class StravaSyncService {
       const completedWorkouts = await this.getCompletedWorkouts(userId);
 
       for (const activity of activities) {
+        // Log ALL activity types to debug
+        console.log(`📋 Activity: "${activity.name}" - Type: "${activity.type}" - Date: ${activity.start_date_local}`);
+
         // Only sync rides and runs
         const supportedTypes = ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun'];
         if (!supportedTypes.includes(activity.type)) {
+          console.log(`  ⏭️ Skipping - unsupported type: ${activity.type}`);
           continue;
         }
 
@@ -150,6 +163,14 @@ class StravaSyncService {
     const activityDate = new Date(activity.start_date_local);
     const activityDistanceMiles = activity.distance / 1609.34;
 
+    console.log('🔍 Matching activity:', {
+      name: activity.name,
+      type: activity.type,
+      date: activity.start_date_local,
+      activityDate: activityDate.toLocaleDateString(),
+      distance: activityDistanceMiles.toFixed(2) + ' mi'
+    });
+
     // Determine if activity is a bike or run
     const rideTypes = ['Ride', 'VirtualRide', 'EBikeRide'];
     const runTypes = ['Run', 'VirtualRun'];
@@ -160,6 +181,7 @@ class StravaSyncService {
       // Skip if already completed
       const workoutKey = `${workout.weekNumber}-${workout.day}`;
       if (completedWorkouts.some(cw => cw.key === workoutKey)) {
+        console.log(`  ⏭️ Skipping ${workout.day} - already completed`);
         continue;
       }
 
@@ -167,25 +189,44 @@ class StravaSyncService {
       const isBikeWorkout = workout.type === 'bike' || workout.equipmentSpecific;
       const isRunWorkout = ['tempo', 'intervals', 'hills', 'longRun', 'easy'].includes(workout.type);
 
+      // Parse workout date as local time (not UTC) to avoid timezone shifts
+      const workoutDate = new Date(workout.date + ' 00:00:00');
+      console.log(`  📅 Checking ${workout.day}:`, {
+        workoutDate: workoutDate.toLocaleDateString(),
+        rawDate: workout.date,
+        workoutType: workout.type,
+        isBikeWorkout,
+        isRunWorkout,
+        activityIsBike: isBikeActivity,
+        activityIsRun: isRunActivity
+      });
+
       // Skip if types don't match
-      if (isBikeActivity && !isBikeWorkout) continue;
-      if (isRunActivity && !isRunWorkout) continue;
+      if (isBikeActivity && !isBikeWorkout) {
+        console.log(`    ❌ Type mismatch: bike activity but not bike workout`);
+        continue;
+      }
+      if (isRunActivity && !isRunWorkout) {
+        console.log(`    ❌ Type mismatch: run activity but not run workout`);
+        continue;
+      }
 
       // Check date match (same day)
-      const workoutDate = new Date(workout.date);
       if (
         activityDate.getFullYear() !== workoutDate.getFullYear() ||
         activityDate.getMonth() !== workoutDate.getMonth() ||
         activityDate.getDate() !== workoutDate.getDate()
       ) {
+        console.log(`    ❌ Date mismatch`);
         continue;
       }
 
       // Found a match!
-      // No distance check - if you did the workout on the right day, that's what counts
+      console.log(`    ✅ MATCH FOUND!`);
       return workout;
     }
 
+    console.log('  ❌ No match found for this activity');
     return null;
   }
 
@@ -202,15 +243,24 @@ class StravaSyncService {
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
 
-      if (!userDoc.exists()) return [];
+      if (!userDoc.exists()) {
+        console.log('📦 getCompletedWorkouts: User doc does not exist');
+        return [];
+      }
 
       const data = userDoc.data();
       const completedWorkouts = data.completedWorkouts || {};
 
-      return Object.keys(completedWorkouts).map(key => ({
+      console.log('📦 getCompletedWorkouts: Raw data from Firebase:', completedWorkouts);
+      console.log('📦 getCompletedWorkouts: Number of completed workouts:', Object.keys(completedWorkouts).length);
+
+      const result = Object.keys(completedWorkouts).map(key => ({
         key,
         data: completedWorkouts[key]
       }));
+
+      console.log('📦 getCompletedWorkouts: Returning array:', result);
+      return result;
     } catch (error) {
       console.error('Error fetching completed workouts:', error);
       return [];

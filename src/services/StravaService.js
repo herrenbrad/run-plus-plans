@@ -81,13 +81,21 @@ class StravaService {
    * @param {string} accessToken - Valid Strava access token
    * @param {number} page - Page number (default 1)
    * @param {number} perPage - Activities per page (default 30, max 200)
+   * @param {Date} after - Only fetch activities after this date (optional)
    * @returns {Promise<Array>} Array of activity objects
    */
-  async getActivities(accessToken, page = 1, perPage = 30) {
+  async getActivities(accessToken, page = 1, perPage = 30, after = null) {
     const params = new URLSearchParams({
       page: page.toString(),
       per_page: perPage.toString(),
     });
+
+    // Add 'after' parameter if provided (Unix timestamp in seconds)
+    if (after) {
+      const afterTimestamp = Math.floor(after.getTime() / 1000);
+      params.append('after', afterTimestamp.toString());
+      console.log(`📅 Filtering activities after: ${after.toLocaleDateString()} (${afterTimestamp})`);
+    }
 
     const response = await fetch(
       `${STRAVA_CONFIG.apiBaseUrl}/athlete/activities?${params.toString()}`,
