@@ -5,6 +5,7 @@
 
 import STRAVA_CONFIG from '../config/strava';
 import { auth } from '../firebase/config';
+import logger from '../utils/logger';
 
 class StravaService {
   /**
@@ -94,7 +95,7 @@ class StravaService {
     if (after) {
       const afterTimestamp = Math.floor(after.getTime() / 1000);
       params.append('after', afterTimestamp.toString());
-      console.log(`📅 Filtering activities after: ${after.toLocaleDateString()} (${afterTimestamp})`);
+      logger.log(`📅 Filtering activities after: ${after.toLocaleDateString()} (${afterTimestamp})`);
     }
 
     const response = await fetch(

@@ -7,6 +7,7 @@ import './App.css';
 // Firebase
 import { auth, db } from './firebase/config';
 import FirestoreService from './services/FirestoreService';
+import logger from './utils/logger';
 
 // Components
 import Auth from './components/Auth';
@@ -31,28 +32,30 @@ function ScrollToTop() {
 
 function App() {
   const APP_VERSION = 'v2.0-approval-fix-' + new Date().toISOString();
-  console.log('🚀 APP VERSION:', APP_VERSION);
-  console.log('📅 Build timestamp:', new Date().toISOString());
+  logger.log('🚀 APP VERSION:', APP_VERSION);
+  logger.log('📅 Build timestamp:', new Date().toISOString());
 
   const [user, setUser] = useState(null); // Firebase user
   const [userProfile, setUserProfile] = useState(null);
   const [trainingPlan, setTrainingPlan] = useState(null);
+  const [completedWorkouts, setCompletedWorkouts] = useState(null);
   const [loading, setLoading] = useState(true); // Loading state for auth
 
   // Listen for authentication state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      console.log('🔐 Auth state changed:', firebaseUser ? 'Logged in' : 'Logged out');
+      logger.log('🔐 Auth state changed:', firebaseUser ? 'Logged in' : 'Logged out');
 
       if (firebaseUser) {
         setUser(firebaseUser);
         // Don't load data here - let the real-time listener handle it
-        console.log('✅ User authenticated, real-time listener will load data');
+        logger.log('✅ User authenticated, real-time listener will load data');
       } else {
         // User logged out - clear everything
         setUser(null);
         setUserProfile(null);
         setTrainingPlan(null);
+        setCompletedWorkouts(null);
 
         // Clear localStorage on logout
         const keysToRemove = [];
@@ -75,15 +78,15 @@ function App() {
   useEffect(() => {
     if (!user) return;
 
-    console.log('👂 Setting up real-time listener for user:', user.uid);
+    logger.log('👂 Setting up real-time listener for user:', user.uid);
     const userRef = doc(db, 'users', user.uid);
 
     const unsubscribe = onSnapshot(userRef, (docSnapshot) => {
-      console.log('🔄 Snapshot received:', { exists: docSnapshot.exists() });
+      logger.log('🔄 Snapshot received:', { exists: docSnapshot.exists() });
 
       if (docSnapshot.exists()) {
         const data = docSnapshot.data();
-        console.log('📦 User document data:', {
+        logger.log('📦 User document data:', {
           hasProfile: !!data.profile,
           hasTrainingPlan: !!data.trainingPlan,
           hasEmail: !!data.email,
@@ -99,13 +102,22 @@ function App() {
           approvalStatus: data.approvalStatus,
           createdAt: data.createdAt,
           approvedAt: data.approvedAt,
-          approvedBy: data.approvedBy
+          approvedBy: data.approvedBy,
+          // Strava connection data
+          stravaConnected: data.stravaConnected,
+          stravaAccessToken: data.stravaAccessToken,
+          stravaRefreshToken: data.stravaRefreshToken,
+          stravaTokenExpiresAt: data.stravaTokenExpiresAt,
+          stravaAthleteId: data.stravaAthleteId,
+          stravaAthleteName: data.stravaAthleteName,
+          stravaConnectedAt: data.stravaConnectedAt,
+          stravaLastSync: data.stravaLastSync
         };
 
         // MIGRATION: Auto-approve ALL existing users without approvalStatus
         // This is a one-time migration - new signups will have approvalStatus set in Auth.js
         if (!completeProfile.approvalStatus) {
-          console.log('🔄 [Realtime] Migrating existing user without approvalStatus - auto-approving');
+          logger.log('🔄 [Realtime] Migrating existing user without approvalStatus - auto-approving');
           completeProfile.approvalStatus = 'approved';
 
           updateDoc(userRef, {
@@ -115,22 +127,30 @@ function App() {
           }).catch(err => console.error('Failed to migrate user:', err));
         }
 
-        console.log('✅ Setting userProfile with approvalStatus:', completeProfile.approvalStatus);
+        logger.log('✅ Setting userProfile with approvalStatus:', completeProfile.approvalStatus);
 
         // Check if approval status changed from pending to approved
         if (userProfile?.approvalStatus === 'pending' && completeProfile.approvalStatus === 'approved') {
-          console.log('🎉 User approved! Showing notification...');
+          logger.log('🎉 User approved! Showing notification...');
           alert('Great news! Your account has been approved. Welcome to Run+ Plans!');
         }
 
         setUserProfile(completeProfile);
 
         if (data.trainingPlan) {
-          console.log('✅ Setting training plan');
+          logger.log('✅ Setting training plan');
           setTrainingPlan(data.trainingPlan);
         }
+
+        // Load completedWorkouts from root level (Strava sync writes here)
+        if (data.completedWorkouts) {
+          logger.log('✅ Setting completed workouts:', Object.keys(data.completedWorkouts).length, 'workouts');
+          setCompletedWorkouts(data.completedWorkouts);
+        } else {
+          setCompletedWorkouts({});
+        }
       } else {
-        console.log('⚠️ User document does not exist yet - waiting for creation');
+        logger.log('⚠️ User document does not exist yet - waiting for creation');
       }
 
       // Loading complete - either found data or confirmed no document
@@ -141,7 +161,7 @@ function App() {
     });
 
     return () => {
-      console.log('🔇 Cleaning up real-time listener');
+      logger.log('🔇 Cleaning up real-time listener');
       unsubscribe();
     };
   }, [user, userProfile?.approvalStatus]);
@@ -157,11 +177,11 @@ function App() {
       }
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
-    console.log('🧹 Cleared localStorage:', keysToRemove);
+    logger.log('🧹 Cleared localStorage:', keysToRemove);
   };
 
   const handleOnboardingComplete = async (profile, plan) => {
-    console.log('🎯 Onboarding complete - received data:', {
+    logger.log('🎯 Onboarding complete - received data:', {
       hasProfile: !!profile,
       hasPlan: !!plan,
       planKeys: plan ? Object.keys(plan) : []
@@ -175,7 +195,7 @@ function App() {
 
     // Save to Firestore
     if (user) {
-      console.log('💾 Saving profile to Firestore...', profile);
+      logger.log('💾 Saving profile to Firestore...', profile);
       const profileResult = await FirestoreService.saveUserProfile(user.uid, profile);
       if (!profileResult.success) {
         console.error('❌ Failed to save profile:', profileResult.error);
@@ -183,7 +203,7 @@ function App() {
         throw new Error('Profile save failed: ' + profileResult.error);
       }
 
-      console.log('💾 Saving training plan to Firestore...', plan);
+      logger.log('💾 Saving training plan to Firestore...', plan);
       const planResult = await FirestoreService.saveTrainingPlan(user.uid, plan);
       if (!planResult.success) {
         console.error('❌ Failed to save training plan:', planResult.error);
@@ -191,7 +211,7 @@ function App() {
         throw new Error('Training plan save failed: ' + planResult.error);
       }
 
-      console.log('✅ Successfully saved all data to Firestore');
+      logger.log('✅ Successfully saved all data to Firestore');
     } else {
       console.error('❌ No user found - cannot save to Firestore');
       throw new Error('User not authenticated');
@@ -239,14 +259,14 @@ function App() {
   }
 
   // Check if user account is pending approval
-  console.log('🔍 Checking approval status:', {
+  logger.log('🔍 Checking approval status:', {
     hasUserProfile: !!userProfile,
     approvalStatus: userProfile?.approvalStatus,
     willShowPendingScreen: userProfile?.approvalStatus === 'pending'
   });
 
   if (userProfile?.approvalStatus === 'pending') {
-    console.log('🚫 Showing pending approval screen');
+    logger.log('🚫 Showing pending approval screen');
     return (
       <div style={{
         minHeight: '100vh',
@@ -337,6 +357,7 @@ function App() {
                 <Dashboard
                   userProfile={userProfile}
                   trainingPlan={trainingPlan}
+                  completedWorkouts={completedWorkouts}
                   clearAllData={clearAllData}
                 /> :
                 <Navigate to="/onboarding" replace />

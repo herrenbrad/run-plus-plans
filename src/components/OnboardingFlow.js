@@ -4,6 +4,7 @@ import TrainingPlanService from '../services/TrainingPlanService.js';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { formatEquipmentName } from '../utils/typography';
+import logger from '../utils/logger';
 
 // Modern Date Picker Component
 function ModernDatePicker({ selected, onChange, minDate, maxDate, placeholder }) {
@@ -269,7 +270,7 @@ function OnboardingFlow({ onComplete }) {
     hardSessionDays: [],
     startDate: '',
     raceDate: '',
-    missedWorkoutPreference: '',
+    missedWorkoutPreference: 'modify', // Default: modify plan when workouts are missed
 
     // Our Competitive Advantages (Steps 8-12)
     standUpBikeType: null,
@@ -277,7 +278,7 @@ function OnboardingFlow({ onComplete }) {
     location: '',
     climate: '',
     trainingStyle: 'adventure', // Always use adventure mode - our core differentiator!
-    trainingPhilosophy: '',
+    trainingPhilosophy: 'practical_periodization', // Default: Real World Training
     hasGarmin: null // true, false, or null (not answered yet)
   });
 
@@ -289,7 +290,10 @@ function OnboardingFlow({ onComplete }) {
 
   // Check if a step should be shown
   const shouldShowStep = (stepNumber) => {
-    // All steps in the consolidated flow are shown
+    // Skip Step 5 (Training Philosophy & Missed Workout Handling) - not ready yet
+    if (stepNumber === 5) {
+      return false;
+    }
     return true;
   };
 
@@ -394,7 +398,7 @@ function OnboardingFlow({ onComplete }) {
         const wasAdjusted = date.getTime() !== originalDate.getTime();
 
         if (wasAdjusted) {
-          console.log(`📅 Start date adjusted from ${startDate} (${daysOfWeek[originalDate.getDay()]}) to ${adjustedDate} (${dayOfWeek}) - original date was a rest day`);
+          logger.log(`📅 Start date adjusted from ${startDate} (${daysOfWeek[originalDate.getDay()]}) to ${adjustedDate} (${dayOfWeek}) - original date was a rest day`);
         }
 
         return { adjustedDate, wasAdjusted, originalDayName: daysOfWeek[originalDate.getDay()], newDayName: dayOfWeek };
@@ -426,15 +430,15 @@ function OnboardingFlow({ onComplete }) {
 
         // Notify user about the adjustment
         const message = `Your start date has been automatically adjusted from ${dateAdjustment.originalDayName} to ${dateAdjustment.newDayName} because ${dateAdjustment.originalDayName} is marked as a rest day in your schedule.`;
-        console.log(`⚠️ ${message}`);
+        logger.log(`⚠️ ${message}`);
         alert(message);
       }
 
       // Generate training plan using TrainingPlanService
-      console.log('🔧 Creating training plan service...');
+      logger.log('🔧 Creating training plan service...');
       const trainingPlanService = new TrainingPlanService();
 
-      console.log('📋 Converting form data to training plan profile...', formData);
+      logger.log('📋 Converting form data to training plan profile...', formData);
 
       // Calculate rest days (days not in availableDays)
       const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -443,30 +447,30 @@ function OnboardingFlow({ onComplete }) {
       // Use the exact hard session days selected by user
       const hardDays = formData.hardSessionDays;
 
-      console.log('🔍 User selections:');
-      console.log('   📅 Available training days:', formData.availableDays);
-      console.log('   😴 Rest days:', restDays);
-      console.log('   🚴 Cyclete days:', formData.preferredBikeDays);
-      console.log('   💪 Hard session days:', hardDays);
-      console.log('   🏃 Long run day:', formData.longRunDay);
-      console.log('   📏 Current weekly mileage:', parseInt(formData.currentWeeklyMileage) || 'NOT PROVIDED', 'miles');
+      logger.log('🔍 User selections:');
+      logger.log('   📅 Available training days:', formData.availableDays);
+      logger.log('   😴 Rest days:', restDays);
+      logger.log('   🚴 Cyclete days:', formData.preferredBikeDays);
+      logger.log('   💪 Hard session days:', hardDays);
+      logger.log('   🏃 Long run day:', formData.longRunDay);
+      logger.log('   📏 Current weekly mileage:', parseInt(formData.currentWeeklyMileage) || 'NOT PROVIDED', 'miles');
 
-      console.log('🚀 Generating training plan with user profile');
+      logger.log('🚀 Generating training plan with user profile');
       // Generate plan using working service
       const planResult = await trainingPlanService.generatePlanFromOnboarding(formData);
-      console.log('✅ Training plan created successfully');
+      logger.log('✅ Training plan created successfully');
 
       if (planResult && planResult.plan) {
-        console.log('Generated training plan:', planResult);
+        logger.log('Generated training plan:', planResult);
         await onComplete(formData, planResult.plan);
-        console.log('✅ Plan saved successfully, navigating to dashboard...');
+        logger.log('✅ Plan saved successfully, navigating to dashboard...');
         navigate('/dashboard');
       } else {
         console.error('Failed to generate plan');
         // Fall back to the mock plan
         const mockPlan = generateMockPlan(formData);
         await onComplete(formData, mockPlan);
-        console.log('✅ Mock plan saved successfully, navigating to dashboard...');
+        logger.log('✅ Mock plan saved successfully, navigating to dashboard...');
         navigate('/dashboard');
       }
     } catch (error) {
@@ -1793,8 +1797,6 @@ function OnboardingFlow({ onComplete }) {
                   <div><strong>Equipment:</strong> {formatEquipmentName(formData.standUpBikeType)} specific workouts</div>
                 )}
                 <div><strong>Climate:</strong> {formData.climate} adapted paces</div>
-                <div><strong>Philosophy:</strong> {formData.trainingPhilosophy.replace('_', '/')} approach</div>
-                <div><strong>Missed workouts:</strong> {formData.missedWorkoutPreference}</div>
               </div>
             </div>
 

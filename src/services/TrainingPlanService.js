@@ -9,6 +9,7 @@ import { HillWorkoutLibrary } from '../lib/hill-workout-library.js';
 import { LongRunWorkoutLibrary } from '../lib/long-run-workout-library.js';
 import { TrainingPlanGenerator } from '../lib/training-plan-generator.js';
 import BrickWorkoutService from './brickWorkoutService.js';
+import logger from '../utils/logger';
 
 class TrainingPlanService {
     constructor() {
@@ -49,16 +50,21 @@ class TrainingPlanService {
             weeksAvailable = Math.ceil((new Date(formData.raceDate + 'T00:00:00') - new Date(formData.startDate + 'T00:00:00')) / msPerWeek);
         }
 
-        console.log('🔍 Converting onboarding to options:');
-        console.log('  currentRaceTime:', formData.currentRaceTime);
-        console.log('  parsedDistance:', distance);
-        console.log('  parsedTime:', time);
-        console.log('  currentWeeklyMileage:', formData.currentWeeklyMileage);
-        console.log('  currentLongRunDistance:', formData.currentLongRunDistance);
-        console.log('  availableDays:', formData.availableDays);
-        console.log('  hardSessionDays:', formData.hardSessionDays);
-        console.log('  longRunDay:', formData.longRunDay);
-        console.log('  preferredBikeDays:', formData.preferredBikeDays);
+        logger.log('🔍 Converting onboarding to options:');
+        logger.log('  currentRaceTime:', formData.currentRaceTime);
+        logger.log('  parsedDistance:', distance);
+        logger.log('  parsedTime:', time);
+        logger.log('  currentWeeklyMileage:', formData.currentWeeklyMileage);
+        logger.log('  currentLongRunDistance:', formData.currentLongRunDistance);
+        logger.log('  availableDays:', formData.availableDays);
+        logger.log('  hardSessionDays:', formData.hardSessionDays);
+        logger.log('  longRunDay:', formData.longRunDay);
+        logger.log('  preferredBikeDays:', formData.preferredBikeDays);
+
+        // Calculate start day of week for Week 1 partial week logic
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const startDate = formData.startDate ? new Date(formData.startDate + 'T00:00:00') : null;
+        const startDay = startDate ? dayNames[startDate.getDay()] : null;
 
         return {
             raceDistance: formData.raceDistance, // Goal race distance (e.g., "Half")
@@ -75,6 +81,7 @@ class TrainingPlanService {
             hasGarmin: formData.hasGarmin !== false, // Default to true if not specified (for existing users)
             // CURRENT FITNESS - critical for pace progression calculation
             currentWeeklyMileage: parseInt(formData.currentWeeklyMileage) || null,
+            startDay: startDay, // e.g., 'Friday' for Week 1 partial week logic
             currentLongRunDistance: parseInt(formData.currentLongRunDistance) || null,
             // USER SCHEDULE INPUTS - pass to generator
             availableDays: formData.availableDays,
@@ -146,7 +153,7 @@ class TrainingPlanService {
      */
     async generatePlanFromOnboarding(formData) {
         try {
-            console.log('Generating training plan for:', formData);
+            logger.log('Generating training plan for:', formData);
 
             // Convert onboarding data to TrainingPlanGenerator options
             const generatorOptions = this.convertOnboardingToOptions(formData);
@@ -154,7 +161,7 @@ class TrainingPlanService {
             // Use the proper TrainingPlanGenerator
             const generatedPlan = this.trainingPlanGenerator.generateTrainingPlan(generatorOptions);
 
-            console.log('✅ TrainingPlanGenerator created plan with', generatedPlan.weeks.length, 'weeks');
+            logger.log('✅ TrainingPlanGenerator created plan with', generatedPlan.weeks.length, 'weeks');
 
             // FIXED: Add dates and reorder workouts based on start date
             const weeksWithDates = this.addDatesAndReorderWorkouts(generatedPlan.weeks, formData.startDate);
@@ -246,20 +253,27 @@ class TrainingPlanService {
         };
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-        // FIXED: Calculate the Monday of the week containing the start date
-        // This ensures all weeks align to Monday-Sunday calendar weeks
-        const mondayOfStartWeek = new Date(start);
-        const dayOfWeek = start.getDay(); // 0 = Sunday, 1 = Monday, etc.
-        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
-        mondayOfStartWeek.setDate(start.getDate() - daysFromMonday);
-
-        console.log(`📅 Start date: ${start.toDateString()} (${dayNames[start.getDay()]})`);
-        console.log(`📅 Monday of start week: ${mondayOfStartWeek.toDateString()}`);
+        // Use the actual training plan start date (don't force to Monday)
+        // Weeks will follow the user's chosen start date
+        logger.log(`📅 Training plan start date: ${start.toDateString()} (${dayNames[start.getDay()]})`);
 
         return weeks.map((week, weekIndex) => {
-            // Calculate the start date for this week (always Monday)
-            const weekStartDate = new Date(mondayOfStartWeek);
-            weekStartDate.setDate(mondayOfStartWeek.getDate() + (weekIndex * 7));
+            // Calculate the start date for this week
+            let weekStartDate;
+            if (weekIndex === 0) {
+                // Week 1: Use actual start date (e.g., Friday)
+                weekStartDate = new Date(start);
+            } else {
+                // Week 2+: Start on Monday after Week 1 ends
+                const startDayOfWeek = start.getDay();
+                const daysUntilSunday = startDayOfWeek === 0 ? 0 : 7 - startDayOfWeek;
+                const firstMonday = new Date(start);
+                firstMonday.setDate(start.getDate() + daysUntilSunday + 1);
+
+                // Add weeks from first Monday
+                weekStartDate = new Date(firstMonday);
+                weekStartDate.setDate(firstMonday.getDate() + ((weekIndex - 1) * 7));
+            }
 
             // Add dates to each workout and track their actual date
             const workoutsWithDates = week.workouts.map((workout) => {
@@ -280,7 +294,8 @@ class TrainingPlanService {
                     date: workoutDate.toLocaleDateString('en-US', {
                         weekday: 'short',
                         month: 'short',
-                        day: 'numeric'
+                        day: 'numeric',
+                        year: 'numeric'  // FIXED: Include year so date parsing works correctly
                     }),
                     fullDate: workoutDate.toLocaleDateString('en-US', {
                         weekday: 'long',
@@ -297,10 +312,23 @@ class TrainingPlanService {
                 };
             });
 
-            // Filter out workouts before the start date (for Week 1 only)
-            const filteredWorkouts = weekIndex === 0
-                ? workoutsWithDates.filter(w => w.actualDate >= start)
-                : workoutsWithDates;
+            // Filter Week 1 to only include days from start date through end of that week (Sunday)
+            let filteredWorkouts;
+            if (weekIndex === 0) {
+                // Week 1: Calculate the Sunday that ends this week
+                const startDayOfWeek = start.getDay();
+                const daysUntilSunday = startDayOfWeek === 0 ? 0 : 7 - startDayOfWeek;
+                const weekEndDate = new Date(start);
+                weekEndDate.setDate(start.getDate() + daysUntilSunday);
+                weekEndDate.setHours(23, 59, 59, 999); // End of Sunday
+
+                // Keep only workouts from start date through end of week
+                filteredWorkouts = workoutsWithDates.filter(w =>
+                    w.actualDate >= start && w.actualDate <= weekEndDate
+                );
+            } else {
+                filteredWorkouts = workoutsWithDates;
+            }
 
             // Sort workouts by their actual date
             filteredWorkouts.sort((a, b) => a.actualDate - b.actualDate);
@@ -311,7 +339,7 @@ class TrainingPlanService {
                 return rest;
             });
 
-            console.log(`📅 Week ${week.week} workouts reordered:`, sortedWorkouts.map(w => `${w.day} (${w.date})`).join(', '));
+            logger.log(`📅 Week ${week.week} workouts reordered:`, sortedWorkouts.map(w => `${w.day} (${w.date})`).join(', '));
 
             return {
                 ...week,
@@ -322,7 +350,7 @@ class TrainingPlanService {
 
     /**
      * Get date range for a specific training week
-     * FIXED: All weeks align to Monday-Sunday calendar weeks
+     * FIXED: Week 1 is partial (start date to Sunday), Week 2+ are full Monday-Sunday weeks
      */
     getWeekDateRange(startDate, weekNumber) {
         if (!startDate) {
@@ -336,30 +364,48 @@ class TrainingPlanService {
         // FIXED: Append T00:00:00 to parse as local timezone, not UTC
         const start = new Date(startDate + 'T00:00:00');
 
-        // FIXED: Calculate the Monday of the week containing the start date
-        const mondayOfStartWeek = new Date(start);
-        const dayOfWeek = start.getDay(); // 0 = Sunday, 1 = Monday, etc.
-        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
-        mondayOfStartWeek.setDate(start.getDate() - daysFromMonday);
+        if (weekNumber === 1) {
+            // Week 1: From start date to end of that week (Sunday)
+            const startDayOfWeek = start.getDay();
+            const daysUntilSunday = startDayOfWeek === 0 ? 0 : 7 - startDayOfWeek;
 
-        // All weeks start on Monday
-        const weekStart = new Date(mondayOfStartWeek);
-        weekStart.setDate(mondayOfStartWeek.getDate() + ((weekNumber - 1) * 7));
+            const weekEnd = new Date(start);
+            weekEnd.setDate(start.getDate() + daysUntilSunday);
 
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
+            return {
+                start: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                end: weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                displayText: `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+                weekNumber: weekNumber
+            };
+        } else {
+            // Week 2+: Full Monday-Sunday weeks
+            const startDayOfWeek = start.getDay();
+            const daysUntilSunday = startDayOfWeek === 0 ? 0 : 7 - startDayOfWeek;
 
-        return {
-            start: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            end: weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            displayText: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-            weekNumber: weekNumber
-        };
+            // First Monday is the day after Week 1's Sunday
+            const firstMonday = new Date(start);
+            firstMonday.setDate(start.getDate() + daysUntilSunday + 1);
+
+            // Calculate this week's Monday
+            const weekStart = new Date(firstMonday);
+            weekStart.setDate(firstMonday.getDate() + ((weekNumber - 2) * 7));
+
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+
+            return {
+                start: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                end: weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                displayText: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+                weekNumber: weekNumber
+            };
+        }
     }
 
     /**
      * Calculate actual calendar dates for workout schedule
-     * FIXED: All weeks align to Monday-Sunday calendar weeks
+     * FIXED: Week 1 only shows remaining days from start date, Week 2+ are full Monday-Sunday weeks
      */
     calculateCalendarDates(startDate, availableDays, weekNumber) {
         if (!startDate || !availableDays || availableDays.length === 0) {
@@ -372,42 +418,81 @@ class TrainingPlanService {
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const calendarDates = [];
 
-        // FIXED: Calculate the Monday of the week containing the start date
-        const mondayOfStartWeek = new Date(start);
-        const dayOfWeek = start.getDay(); // 0 = Sunday, 1 = Monday, etc.
-        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
-        mondayOfStartWeek.setDate(start.getDate() - daysFromMonday);
+        if (weekNumber === 1) {
+            // Week 1: Only include days from start date to end of that week (Sunday)
+            const startDayOfWeek = start.getDay(); // 0 = Sunday, 6 = Saturday
 
-        // All weeks start on Monday
-        const weekStart = new Date(mondayOfStartWeek);
-        weekStart.setDate(mondayOfStartWeek.getDate() + ((weekNumber - 1) * 7));
+            // Calculate how many days until Sunday
+            const daysUntilSunday = startDayOfWeek === 0 ? 0 : 7 - startDayOfWeek;
 
-        for (let i = 0; i < 7; i++) {
-            const date = new Date(weekStart);
-            date.setDate(weekStart.getDate() + i);
+            // Generate dates from start date through Sunday
+            for (let i = 0; i <= daysUntilSunday; i++) {
+                const date = new Date(start);
+                date.setDate(start.getDate() + i);
 
-            const currentDayOfWeek = date.getDay();
-            const dayName = dayNames[currentDayOfWeek];
+                const currentDayOfWeek = date.getDay();
+                const dayName = dayNames[currentDayOfWeek];
 
-            calendarDates.push({
-                dayName: dayName,
-                date: date,
-                dateString: date.toLocaleDateString('en-US', {
-                    weekday: 'short',
-                    month: 'short',
-                    day: 'numeric'
-                }),
-                fullDate: date.toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                }),
-                isAvailable: availableDays.includes(dayName)
-            });
+                calendarDates.push({
+                    dayName: dayName,
+                    date: date,
+                    dateString: date.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric'
+                    }),
+                    fullDate: date.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    }),
+                    isAvailable: availableDays.includes(dayName)
+                });
+            }
+
+            logger.log(`📅 Week 1 partial week: ${calendarDates.map(d => `${d.dayName} ${d.dateString}`).join(', ')}`);
+        } else {
+            // Week 2+: Full Monday-Sunday weeks
+            // Calculate the Monday after Week 1 ended
+            const startDayOfWeek = start.getDay();
+            const daysUntilSunday = startDayOfWeek === 0 ? 0 : 7 - startDayOfWeek;
+
+            // First Monday is the day after Week 1's Sunday
+            const firstMonday = new Date(start);
+            firstMonday.setDate(start.getDate() + daysUntilSunday + 1);
+
+            // Calculate this week's Monday (weekNumber - 2 because we're 0-indexed after Week 1)
+            const weekStart = new Date(firstMonday);
+            weekStart.setDate(firstMonday.getDate() + ((weekNumber - 2) * 7));
+
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(weekStart);
+                date.setDate(weekStart.getDate() + i);
+
+                const currentDayOfWeek = date.getDay();
+                const dayName = dayNames[currentDayOfWeek];
+
+                calendarDates.push({
+                    dayName: dayName,
+                    date: date,
+                    dateString: date.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric'
+                    }),
+                    fullDate: date.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    }),
+                    isAvailable: availableDays.includes(dayName)
+                });
+            }
+
+            logger.log(`📅 Week ${weekNumber} (Monday-Sunday): ${calendarDates.map(d => `${d.dayName} ${d.dateString}`).join(', ')}`);
         }
-
-        console.log(`📅 Generated calendar dates for week ${weekNumber}:`, calendarDates.map(d => `${d.dayName} ${d.dateString}`));
 
         return calendarDates;
     }
@@ -574,38 +659,75 @@ class TrainingPlanService {
 
     /**
      * Select specific workout from libraries
+     * ALWAYS returns workout with explicit distance field
      */
     selectWorkout(workoutType, weekNumber, formData) {
+        const totalWeeks = this.planTemplates[formData.raceDistance]?.weeks || 12;
+        const phase = this.getPhase(weekNumber, totalWeeks);
+        const weeklyMileage = this.calculateWeeklyMileage(weekNumber, formData);
+
+        let workout;
+        let distance;
+
         switch (workoutType) {
             case 'tempo':
-                return this.tempoLibrary.getRandomWorkout('TRADITIONAL_TEMPO');
+                workout = this.tempoLibrary.getRandomWorkout('TRADITIONAL_TEMPO');
+                // Tempo runs: 10-15% of weekly mileage, 4-8 miles typical
+                distance = Math.max(4, Math.min(8, Math.round(weeklyMileage * 0.12)));
+                break;
+
             case 'intervals':
-                return this.intervalLibrary.getRandomWorkout('VO2_MAX');
+                workout = this.intervalLibrary.getRandomWorkout('VO2_MAX');
+                // Interval workouts: 8-12% of weekly mileage, 3-6 miles typical
+                distance = Math.max(3, Math.min(6, Math.round(weeklyMileage * 0.10)));
+                break;
+
             case 'hills':
-                return this.hillLibrary.getRandomWorkout('short_power');
+                workout = this.hillLibrary.getRandomWorkout('short_power');
+                // Hill workouts: 8-12% of weekly mileage, 3-6 miles typical
+                distance = Math.max(3, Math.min(6, Math.round(weeklyMileage * 0.10)));
+                break;
+
             case 'longRun':
                 return this.selectProgressiveLongRun(weekNumber, formData);
+
             case 'bike':
                 return this.selectBikeWorkout(weekNumber, formData);
+
             case 'brick':
                 return this.selectBrickWorkout(weekNumber, formData);
+
             case 'brickLongRun':
                 return this.selectBrickLongRun(weekNumber, formData);
+
             case 'easy':
-                return {
+                // Easy runs: 15-20% of weekly mileage, 3-6 miles typical
+                distance = Math.max(3, Math.min(6, Math.round(weeklyMileage * 0.17)));
+                workout = {
                     name: 'Easy Run',
                     description: 'Conversational pace, aerobic base building',
-                    duration: '30-45 minutes',
+                    duration: `${distance * 10}-${distance * 12} minutes`,
                     intensity: 'Easy'
                 };
+                break;
+
             default:
-                return {
+                // Recovery runs: 10-15% of weekly mileage, 3-4 miles typical
+                distance = Math.max(3, Math.min(4, Math.round(weeklyMileage * 0.12)));
+                workout = {
                     name: 'Recovery Run',
                     description: 'Very easy pace, active recovery',
-                    duration: '20-30 minutes',
+                    duration: `${distance * 11}-${distance * 13} minutes`,
                     intensity: 'Recovery'
                 };
+                break;
         }
+
+        // CRITICAL: Always return workout with explicit distance field
+        return {
+            ...workout,
+            distance: distance
+        };
     }
 
     /**
@@ -826,7 +948,7 @@ class TrainingPlanService {
         
         return {
             name: `${distance}-Mile Long Run`,
-            distance: `${distance} miles`,
+            distance: distance,  // CRITICAL: Must be a number, not a string
             duration: `${Math.round(distance * 8.5)}-${Math.round(distance * 11)} minutes`, // 8:30-11:00 pace range
             description: `${distance} mile long run - ${paceGuidance.effort}`,
             structure: `${coachingNotes.warmup} + ${distance} miles @ ${paceGuidance.pace} + ${coachingNotes.cooldown}`,

@@ -999,13 +999,13 @@ function SomethingElseModal({
         }}>
           <div>
             <h2 style={{ margin: 0, color: 'var(--runeq-primary)' }}>
-              {mode === 'add' ? '➕ Add Second Workout' : '🔄 Something Else'}
+              {mode === 'add' ? '➕ Add Second Workout' : '🔄 Life Adaptations'}
             </h2>
-            <p style={{ margin: 'var(--space-2) 0 0 0', color: 'var(--gray-600)' }}>
+            <p style={{ margin: 'var(--space-2) 0 0 0', color: '#CCCCCC' }}>
               {mode === 'add' ? (
                 <>Add a second workout to <strong>{currentWorkout.day}</strong></>
               ) : (
-                <>Scheduled: <strong>{currentWorkout.workout.name}</strong> • {currentWorkout.day}</>
+                <>Your plan adapts when life happens • Scheduled: <strong>{currentWorkout.workout.name}</strong> • {currentWorkout.day}</>
               )}
             </p>
           </div>
@@ -1021,25 +1021,47 @@ function SomethingElseModal({
         {!selectedCategory ? (
           /* Category Selection */
           <div>
-            <h3 style={{ marginBottom: 'var(--space-4)' }}>Choose Your Alternative</h3>
+            <h3 style={{ marginBottom: 'var(--space-4)', color: '#FFFFFF' }}>Choose Your Adventure</h3>
             <div className="card-grid">
               {categories.map(category => (
                 <div
                   key={category.id}
                   className="card card-interactive"
                   onClick={() => handleCategorySelect(category)}
-                  style={{ textAlign: 'center', cursor: 'pointer' }}
+                  style={{
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 255, 136, 0.1) 100%)',
+                    border: '2px solid rgba(0, 212, 255, 0.4)',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(0, 255, 136, 0.2) 100%)';
+                    e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.6)';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 255, 136, 0.1) 100%)';
+                    e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.4)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
                 >
-                  <div style={{ fontSize: '2rem', marginBottom: 'var(--space-2)' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: 'var(--space-2)' }}>
                     {category.icon}
                   </div>
-                  <h4 style={{ margin: '0 0 var(--space-2) 0' }}>
+                  <h4 style={{ margin: '0 0 var(--space-2) 0', color: '#FFFFFF', fontSize: '1.1rem' }}>
                     {category.title}
                   </h4>
-                  <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--gray-600)' }}>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#CCCCCC' }}>
                     {category.subtitle}
                   </p>
-                  <div className="badge badge-info" style={{ marginTop: 'var(--space-3)' }}>
+                  <div className="badge" style={{
+                    marginTop: 'var(--space-3)',
+                    background: 'rgba(0, 255, 136, 0.2)',
+                    color: '#00FF88',
+                    border: '1px solid rgba(0, 255, 136, 0.4)',
+                    fontWeight: '600'
+                  }}>
                     {category.workouts.length} options
                   </div>
                 </div>
@@ -1057,8 +1079,8 @@ function SomethingElseModal({
                 ← Back
               </button>
               <div>
-                <h3 style={{ margin: 0 }}>{selectedCategory.title}</h3>
-                <p style={{ margin: 0, color: 'var(--gray-600)', fontSize: '0.9rem' }}>
+                <h3 style={{ margin: 0, color: '#FFFFFF' }}>{selectedCategory.title}</h3>
+                <p style={{ margin: 0, color: '#CCCCCC', fontSize: '0.9rem' }}>
                   {selectedCategory.subtitle}
                 </p>
               </div>
@@ -1070,14 +1092,37 @@ function SomethingElseModal({
                   key={index}
                   className={`card card-interactive ${selectedWorkout === workout ? 'selected' : ''}`}
                   onClick={() => handleWorkoutSelect(workout)}
-                  style={{ cursor: 'pointer' }}
+                  style={{
+                    cursor: 'pointer',
+                    background: selectedWorkout === workout
+                      ? 'linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(0, 255, 136, 0.2) 100%)'
+                      : 'linear-gradient(135deg, rgba(0, 212, 255, 0.12) 0%, rgba(0, 255, 136, 0.08) 100%)',
+                    border: selectedWorkout === workout
+                      ? '2px solid rgba(0, 212, 255, 0.8)'
+                      : '2px solid rgba(0, 212, 255, 0.3)',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedWorkout !== workout) {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 255, 136, 0.15) 100%)';
+                      e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.5)';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedWorkout !== workout) {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.12) 0%, rgba(0, 255, 136, 0.08) 100%)';
+                      e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.3)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }
+                  }}
                 >
-                  <h4 style={{ margin: '0 0 var(--space-2) 0' }}>
+                  <h4 style={{ margin: '0 0 var(--space-2) 0', color: '#FFFFFF', fontSize: '1.05rem' }}>
                     {workout.name}
                   </h4>
-                  <p style={{ margin: '0 0 var(--space-3) 0', fontSize: '0.9rem' }}>
-                    {typeof workout.description === 'string' ? workout.description : 
-                     typeof workout.description === 'object' ? JSON.stringify(workout.description) : 
+                  <p style={{ margin: '0 0 var(--space-3) 0', fontSize: '0.9rem', color: '#CCCCCC' }}>
+                    {typeof workout.description === 'string' ? workout.description :
+                     typeof workout.description === 'object' ? JSON.stringify(workout.description) :
                      'Workout description'}
                   </p>
                   

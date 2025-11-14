@@ -16,6 +16,7 @@ import { formatTrainingSystem, formatEquipmentName, formatPhase, titleCase } fro
 import { calorieCalculator } from '../lib/calorie-calculator.js';
 import StravaService from '../services/StravaService';
 import StravaSyncService from '../services/StravaSyncService';
+import logger from '../utils/logger';
 
 function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData }) {
   const navigate = useNavigate();
@@ -95,7 +96,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     if (!userProfile || !trainingPlan) return;
 
     try {
-      console.log('🔄 Regenerating training plan with updated workout logic...');
+      logger.log('🔄 Regenerating training plan with updated workout logic...');
 
       // Reconstruct the original form data from user profile and training plan
       const formData = {
@@ -122,7 +123,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         goal: userProfile.goal || 'race'
       };
 
-      console.log('📋 Form data for regeneration:', formData);
+      logger.log('📋 Form data for regeneration:', formData);
 
       // Generate new plan using TrainingPlanService
       const trainingPlanService = new TrainingPlanService();
@@ -133,7 +134,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       }
 
       const newPlan = result.plan;
-      console.log('✅ New plan generated with', newPlan.weeks?.length, 'weeks');
+      logger.log('✅ New plan generated with', newPlan.weeks?.length, 'weeks');
 
       // Save to Firebase
       const userRef = doc(db, 'users', auth.currentUser.uid);
@@ -142,7 +143,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         planLastUpdated: new Date().toISOString()
       });
 
-      console.log('💾 Plan saved to Firebase - reloading...');
+      logger.log('💾 Plan saved to Firebase - reloading...');
 
       // Reload the page to show updated plan
       window.location.reload();
@@ -158,8 +159,8 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       return { runMiles: 0, bikeMiles: 0, ellipticalMiles: 0, runEqMiles: 0, totalMiles: 0, equivalentMiles: 0 };
     }
 
-    console.log('🔢 Calculating mileage for week:', weekData.week);
-    console.log('📋 Workouts:', weekData.workouts);
+    logger.log('🔢 Calculating mileage for week:', weekData.week);
+    logger.log('📋 Workouts:', weekData.workouts);
 
     let runMiles = 0;
     let bikeMiles = 0; // This will be the actual bike miles (not equivalent)
@@ -170,11 +171,11 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       // Get ALL workouts for this day (including two-a-days)
       const allWorkoutsForDay = getWorkouts(workout);
 
-      console.log(`🏃 ${workout.day}: ${allWorkoutsForDay.length} workout(s)`);
+      logger.log(`🏃 ${workout.day}: ${allWorkoutsForDay.length} workout(s)`);
 
       // Calculate mileage for each workout on this day
       allWorkoutsForDay.forEach((currentWorkout, idx) => {
-      console.log(`   Workout ${idx + 1}: ${currentWorkout.workout?.name} (type: ${currentWorkout.type})`);
+      logger.log(`   Workout ${idx + 1}: ${currentWorkout.workout?.name} (type: ${currentWorkout.type})`);
 
       if (currentWorkout.type === 'brick') {
         // For brick workouts, we need to extract both run and bike components
@@ -188,7 +189,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         const runEqMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*RunEQ\s*Miles?/i);
         if (runEqMatch) {
           const extractedRunEq = parseFloat(runEqMatch[1]);
-          console.log(`   ✅ Extracted ${extractedRunEq} RunEQ miles from "${currentWorkout.workout?.name}" (already equivalent)`);
+          logger.log(`   ✅ Extracted ${extractedRunEq} RunEQ miles from "${currentWorkout.workout?.name}" (already equivalent)`);
           runEqMiles += extractedRunEq;
         }
       } else if (currentWorkout.workout?.name?.includes('Bike') || currentWorkout.workout?.name?.includes('Cycling')) {
@@ -206,7 +207,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                         currentWorkout.workout?.name?.match(/^(\d+(?:\.\d+)?)\s*(mile|miles|mi)/i);
         if (runMatch) {
           const extractedMiles = parseFloat(runMatch[1]);
-          console.log(`   📏 Extracted ${extractedMiles} miles from "${currentWorkout.workout?.name}"`);
+          logger.log(`   📏 Extracted ${extractedMiles} miles from "${currentWorkout.workout?.name}"`);
           runMiles += extractedMiles;
         } else {
           // Fallback: try to estimate from workout type
@@ -233,7 +234,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
             default:
               defaultMiles = 4; // Default fallback
           }
-          console.log(`   📏 Using default ${defaultMiles} miles for ${currentWorkout.type} workout "${currentWorkout.workout?.name}"`);
+          logger.log(`   📏 Using default ${defaultMiles} miles for ${currentWorkout.type} workout "${currentWorkout.workout?.name}"`);
           runMiles += defaultMiles;
         }
       }
@@ -247,12 +248,12 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     const equivalentMiles = bikeEquivalentMiles + ellipticalEquivalentMiles + runEqMiles;
     const totalMiles = runMiles + equivalentMiles;
 
-    console.log('📊 Final mileage calculation:');
-    console.log(`   Running: ${runMiles} miles`);
-    console.log(`   Biking: ${bikeMiles} miles (${bikeEquivalentMiles} equivalent)`);
-    console.log(`   Elliptical: ${ellipticalMiles} miles (${ellipticalEquivalentMiles} equivalent)`);
-    console.log(`   RunEQ: ${runEqMiles} miles (already equivalent)`);
-    console.log(`   Total: ${totalMiles} miles`);
+    logger.log('📊 Final mileage calculation:');
+    logger.log(`   Running: ${runMiles} miles`);
+    logger.log(`   Biking: ${bikeMiles} miles (${bikeEquivalentMiles} equivalent)`);
+    logger.log(`   Elliptical: ${ellipticalMiles} miles (${ellipticalEquivalentMiles} equivalent)`);
+    logger.log(`   RunEQ: ${runEqMiles} miles (already equivalent)`);
+    logger.log(`   Total: ${totalMiles} miles`);
 
     const result = {
       runMiles: Math.round(runMiles * 10) / 10,
@@ -263,7 +264,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       totalMiles: Math.round(totalMiles * 10) / 10
     };
 
-    console.log('📊 Rounded result:', result);
+    logger.log('📊 Rounded result:', result);
     return result;
   };
 
@@ -328,7 +329,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
 
     // If plan start date changed, use calculated week (new plan)
     if (trainingPlan?.planOverview?.startDate !== savedStartDate) {
-      console.log('📅 New plan detected - using calculated week:', calculatedWeek);
+      logger.log('📅 New plan detected - using calculated week:', calculatedWeek);
       localStorage.setItem('runeq_startDate', trainingPlan?.planOverview?.startDate);
       return calculatedWeek;
     }
@@ -372,10 +373,10 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   useEffect(() => {
     try {
       const savedModifiedWorkouts = localStorage.getItem('runeq_modifiedWorkouts');
-      console.log('📦 Dashboard loading from localStorage:', savedModifiedWorkouts);
+      logger.log('📦 Dashboard loading from localStorage:', savedModifiedWorkouts);
       if (savedModifiedWorkouts) {
         const parsed = JSON.parse(savedModifiedWorkouts);
-        console.log('📦 Dashboard parsed data:', parsed);
+        logger.log('📦 Dashboard parsed data:', parsed);
         setModifiedWorkouts(parsed);
       }
       setHasLoaded(true); // Mark as loaded after attempting to load data
@@ -393,7 +394,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         try {
           const result = await FirestoreService.getModifiedWorkouts(auth.currentUser.uid);
           if (result.success && result.data && Object.keys(result.data).length > 0) {
-            console.log('📦 Loaded modified workouts from Firestore:', result.data);
+            logger.log('📦 Loaded modified workouts from Firestore:', result.data);
             setModifiedWorkouts(result.data);
             // Update localStorage with Firestore data (authoritative source)
             localStorage.setItem('runeq_modifiedWorkouts', JSON.stringify(result.data));
@@ -412,7 +413,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   useEffect(() => {
     if (hasLoaded) {
       try {
-        console.log('💾 Dashboard saving to localStorage:', modifiedWorkouts);
+        logger.log('💾 Dashboard saving to localStorage:', modifiedWorkouts);
         localStorage.setItem('runeq_modifiedWorkouts', JSON.stringify(modifiedWorkouts));
       } catch (error) {
         console.warn('Error saving modified workouts:', error);
@@ -427,15 +428,15 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       return;
     }
 
-    console.log('📦 Dashboard: Loading completions from Firebase:', completedWorkouts);
+    logger.log('📦 Dashboard: Loading completions from Firebase:', completedWorkouts);
     setWorkoutCompletions(completedWorkouts);
   }, [completedWorkouts]);
 
   // Manual Strava sync function
   const handleManualStravaSync = async () => {
-    console.log('🔘 BUTTON CLICKED - handleManualStravaSync called');
+    logger.log('🔘 BUTTON CLICKED - handleManualStravaSync called');
     if (!userProfile?.stravaConnected || !auth.currentUser || !trainingPlan) {
-      console.log('❌ Cannot sync - missing requirements:', {
+      logger.log('❌ Cannot sync - missing requirements:', {
         stravaConnected: userProfile?.stravaConnected,
         hasUser: !!auth.currentUser,
         hasTrainingPlan: !!trainingPlan
@@ -444,7 +445,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     }
 
     setStravaSyncing(true);
-    console.log('🔄 Manual Strava sync triggered...');
+    logger.log('🔄 Manual Strava sync triggered...');
 
     try {
       const result = await StravaSyncService.syncActivities(
@@ -455,14 +456,14 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       );
 
       if (result.success) {
-        console.log('✅ Strava sync successful:', result);
+        logger.log('✅ Strava sync successful:', result);
 
         // Update last sync time
         localStorage.setItem('runeq_stravaLastSync', new Date().toISOString());
 
         // Refresh the page to show updated completions
         if (result.workoutsCompleted > 0) {
-          console.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
+          logger.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
           window.location.reload();
         } else {
           alert(`Sync complete! Found ${result.activitiesFetched} activities, ${result.matchesFound} matched workouts.`);
@@ -495,12 +496,12 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         const hoursSinceSync = (now - lastSyncTime) / (1000 * 60 * 60);
 
         if (hoursSinceSync < 1) {
-          console.log('⏭️ Skipping Strava sync - synced recently');
+          logger.log('⏭️ Skipping Strava sync - synced recently');
           return;
         }
       }
 
-      console.log('🔄 Auto-syncing Strava activities...');
+      logger.log('🔄 Auto-syncing Strava activities...');
 
       try {
         const result = await StravaSyncService.syncActivities(
@@ -511,14 +512,14 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         );
 
         if (result.success) {
-          console.log('✅ Strava sync successful:', result);
+          logger.log('✅ Strava sync successful:', result);
 
           // Update last sync time
           localStorage.setItem('runeq_stravaLastSync', new Date().toISOString());
 
           // Refresh the page to show updated completions
           if (result.workoutsCompleted > 0) {
-            console.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
+            logger.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
             window.location.reload();
           }
         } else {
@@ -619,10 +620,10 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   // Generate dynamic workouts based on week and user profile
   const generateWeekWorkouts = (week, profile) => {
     // Debug: Log profile data to see what we have
-    console.log('🔍 generateWeekWorkouts - profile:', profile);
-    console.log('🚴 preferredBikeDays:', profile?.preferredBikeDays);
-    console.log('📀 localStorage userProfile:', localStorage.getItem('runeq_userProfile'));
-    console.log('📅 localStorage trainingPlan:', localStorage.getItem('runeq_trainingPlan'));
+    logger.log('🔍 generateWeekWorkouts - profile:', profile);
+    logger.log('🚴 preferredBikeDays:', profile?.preferredBikeDays);
+    logger.log('📀 localStorage userProfile:', localStorage.getItem('runeq_userProfile'));
+    logger.log('📅 localStorage trainingPlan:', localStorage.getItem('runeq_trainingPlan'));
     // Create workout pool for different training focuses
     const workoutPools = {
       tempo: [
@@ -690,14 +691,14 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     const saturdayTypeInfo = getWorkoutTypeAndFocus(pattern.saturday);
     const sundayTypeInfo = getWorkoutTypeAndFocus(pattern.sunday);
 
-    console.log('🚴 Checking bike days for each day:');
-    console.log('  Monday bike day?', profile?.preferredBikeDays?.includes('Monday'));
-    console.log('  Tuesday bike day?', profile?.preferredBikeDays?.includes('Tuesday'));  
-    console.log('  Wednesday bike day?', profile?.preferredBikeDays?.includes('Wednesday'));
-    console.log('  Thursday bike day?', profile?.preferredBikeDays?.includes('Thursday'));
-    console.log('  Friday bike day?', profile?.preferredBikeDays?.includes('Friday'));
-    console.log('  Saturday bike day?', profile?.preferredBikeDays?.includes('Saturday'));
-    console.log('  Sunday bike day?', profile?.preferredBikeDays?.includes('Sunday'));
+    logger.log('🚴 Checking bike days for each day:');
+    logger.log('  Monday bike day?', profile?.preferredBikeDays?.includes('Monday'));
+    logger.log('  Tuesday bike day?', profile?.preferredBikeDays?.includes('Tuesday'));  
+    logger.log('  Wednesday bike day?', profile?.preferredBikeDays?.includes('Wednesday'));
+    logger.log('  Thursday bike day?', profile?.preferredBikeDays?.includes('Thursday'));
+    logger.log('  Friday bike day?', profile?.preferredBikeDays?.includes('Friday'));
+    logger.log('  Saturday bike day?', profile?.preferredBikeDays?.includes('Saturday'));
+    logger.log('  Sunday bike day?', profile?.preferredBikeDays?.includes('Sunday'));
 
     return [
       { 
@@ -812,11 +813,11 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     if (trainingPlan && trainingPlan.weeks && trainingPlan.weeks.length > 0) {
       const weekData = trainingPlan.weeks[currentWeek - 1];
       if (weekData && weekData.workouts && weekData.workouts.length > 0) {
-        console.log('Using training plan data for week', currentWeek, 'with', weekData.workouts.length, 'workouts');
+        logger.log('Using training plan data for week', currentWeek, 'with', weekData.workouts.length, 'workouts');
         // Check for brick workouts in the data
         weekData.workouts.forEach(workout => {
           if (workout.type === 'brickLongRun') {
-            console.log('Found brick workout:', workout.day, workout.workout?.name);
+            logger.log('Found brick workout:', workout.day, workout.workout?.name);
           }
         });
         return weekData;
@@ -824,7 +825,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     }
 
     // Fallback to generated workouts if training plan is empty/missing
-    console.log('Falling back to generated workouts for week', currentWeek);
+    logger.log('Falling back to generated workouts for week', currentWeek);
     return {
       week: currentWeek,
       weekDates: { displayText: `Week ${currentWeek}` },
@@ -1092,7 +1093,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
 
       setModifiedWorkouts(updatedWorkouts);
       localStorage.setItem('runeq_modifiedWorkouts', JSON.stringify(updatedWorkouts));
-      console.log('💾 Added second workout:', workoutKey, newWorkout.workout?.name);
+      logger.log('💾 Added second workout:', workoutKey, newWorkout.workout?.name);
     } else {
       // Replace mode - use index 0
       const workoutKey = `${dayKey}-0`;
@@ -1103,7 +1104,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
 
       setModifiedWorkouts(updatedWorkouts);
       localStorage.setItem('runeq_modifiedWorkouts', JSON.stringify(updatedWorkouts));
-      console.log('💾 Replaced workout:', workoutKey, newWorkout.workout?.name);
+      logger.log('💾 Replaced workout:', workoutKey, newWorkout.workout?.name);
     }
 
     // Close the modal
@@ -1244,7 +1245,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   const handleSelectOption = (workout, selectedOption) => {
     const workoutKey = `${currentWeek}-${workout.day}`;
     
-    console.log('🎯 Option selected:', {
+    logger.log('🎯 Option selected:', {
       workoutKey,
       selectedOption: selectedOption.shortName,
       workout: workout.day,
@@ -1259,7 +1260,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         [workoutKey]: selectedOption
       };
       
-      console.log('📝 Direct state update:', {
+      logger.log('📝 Direct state update:', {
         oldState: selectedOptions,
         newState: newSelectedOptions,
         workoutKey,
@@ -1269,7 +1270,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       setSelectedOptions(newSelectedOptions);
       
       // Force a re-render to make sure the state updates
-      console.log('✨ State update dispatched, should see confirmation buttons next');
+      logger.log('✨ State update dispatched, should see confirmation buttons next');
       
     } catch (error) {
       console.error('❌ Error in handleSelectOption:', error);
@@ -1309,7 +1310,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         workout.day,
         newWorkout
       );
-      console.log('✅ SAVED to Firestore:', selectedOption.name, 'for', workout.day);
+      logger.log('✅ SAVED to Firestore:', selectedOption.name, 'for', workout.day);
     }
 
     // Clear selection and hide options immediately
@@ -1758,11 +1759,11 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                   </button>
                   <button
                     onClick={(e) => {
-                      console.log('🔘 BUTTON CLICKED INLINE - Event:', e);
-                      console.log('🔘 stravaSyncing:', stravaSyncing);
-                      console.log('🔘 userProfile?.stravaConnected:', userProfile?.stravaConnected);
-                      console.log('🔘 auth.currentUser:', auth.currentUser);
-                      console.log('🔘 trainingPlan:', trainingPlan);
+                      logger.log('🔘 BUTTON CLICKED INLINE - Event:', e);
+                      logger.log('🔘 stravaSyncing:', stravaSyncing);
+                      logger.log('🔘 userProfile?.stravaConnected:', userProfile?.stravaConnected);
+                      logger.log('🔘 auth.currentUser:', auth.currentUser);
+                      logger.log('🔘 trainingPlan:', trainingPlan);
                       e.preventDefault();
                       e.stopPropagation();
                       handleManualStravaSync();
@@ -1868,9 +1869,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
             </div>
             <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '8px', borderRadius: '6px' }}>
               <strong>Current Phase:</strong> {(currentWeekData.phase || 'base').toUpperCase()}
-            </div>
-            <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '8px', borderRadius: '6px' }}>
-              <strong>Switch Impact:</strong> Minimal at Week {currentWeek}
             </div>
           </div>
         </div>
@@ -2688,7 +2686,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                         const workoutKey = `${currentWeek}-${workout.day}`;
                         const selectedOption = selectedOptions[workoutKey];
                         
-                        console.log('🔍 Checking confirmation buttons:', {
+                        logger.log('🔍 Checking confirmation buttons:', {
                           workoutKey,
                           selectedOption: selectedOption?.shortName || 'none',
                           hasSelection: !!selectedOption,
@@ -2696,13 +2694,13 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                         });
                         
                         if (!selectedOption) {
-                          console.log('❌ No selectedOption found for key:', workoutKey);
-                          console.log('   Available keys:', Object.keys(selectedOptions));
+                          logger.log('❌ No selectedOption found for key:', workoutKey);
+                          logger.log('   Available keys:', Object.keys(selectedOptions));
                           return null;
                         }
                         
-                        console.log('✅ Showing confirmation buttons for:', selectedOption.shortName);
-                        console.log('   Confirmation buttons should be visible now!');
+                        logger.log('✅ Showing confirmation buttons for:', selectedOption.shortName);
+                        logger.log('   Confirmation buttons should be visible now!');
                         console.warn('🚨 BUTTONS RENDERING NOW - they should be bright green and obvious!');
                         
                         return (

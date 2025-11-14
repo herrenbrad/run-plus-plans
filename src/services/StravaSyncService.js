@@ -7,6 +7,7 @@ import StravaService from './StravaService';
 import FirestoreService from './FirestoreService';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import logger from '../utils/logger';
 
 class StravaSyncService {
   /**
@@ -18,10 +19,10 @@ class StravaSyncService {
    * @returns {Promise<object>} Sync results
    */
   async syncActivities(userId, userProfile, trainingPlan, currentWeek) {
-    console.log('🔄 Starting Strava sync...', { userId, currentWeek });
+    logger.log('🔄 Starting Strava sync...', { userId, currentWeek });
 
     if (!userProfile.stravaConnected) {
-      console.log('⚠️ Strava not connected - skipping sync');
+      logger.log('⚠️ Strava not connected - skipping sync');
       return { success: false, error: 'Strava not connected' };
     }
 
@@ -31,7 +32,7 @@ class StravaSyncService {
       const expiresAt = userProfile.stravaTokenExpiresAt;
 
       if (StravaService.isTokenExpired(expiresAt)) {
-        console.log('🔄 Access token expired - refreshing...');
+        logger.log('🔄 Access token expired - refreshing...');
         const newTokens = await StravaService.refreshAccessToken(userProfile.stravaRefreshToken);
 
         // Update tokens in Firebase
@@ -43,7 +44,7 @@ class StravaSyncService {
         });
 
         accessToken = newTokens.access_token;
-        console.log('✅ Token refreshed successfully');
+        logger.log('✅ Token refreshed successfully');
       }
 
       // Calculate training plan start date (only fetch activities from this date forward)
@@ -52,17 +53,17 @@ class StravaSyncService {
         : null;
 
       if (!planStartDate) {
-        console.log('⚠️ No plan start date found - fetching all recent activities');
+        logger.log('⚠️ No plan start date found - fetching all recent activities');
       }
 
       // Fetch activities only from training plan start date
       const activities = await StravaService.getActivities(accessToken, 1, 50, planStartDate);
-      console.log(`📥 Fetched ${activities.length} Strava activities ${planStartDate ? `since ${planStartDate.toLocaleDateString()}` : ''}`);
+      logger.log(`📥 Fetched ${activities.length} Strava activities ${planStartDate ? `since ${planStartDate.toLocaleDateString()}` : ''}`);
 
       // Get current week's workouts
       const currentWeekData = trainingPlan.weeks[currentWeek - 1];
       if (!currentWeekData || !currentWeekData.workouts) {
-        console.log('⚠️ No workouts found for current week');
+        logger.log('⚠️ No workouts found for current week');
         return { success: false, error: 'No workouts in current week' };
       }
 
@@ -84,7 +85,7 @@ class StravaSyncService {
         }
       });
 
-      console.log(`🔍 Checking ${allWorkouts.length} workouts across ${weeksToCheck.length} weeks`);
+      logger.log(`🔍 Checking ${allWorkouts.length} workouts across ${weeksToCheck.length} weeks`);
 
       // Match activities to workouts
       const matches = [];
@@ -92,12 +93,12 @@ class StravaSyncService {
 
       for (const activity of activities) {
         // Log ALL activity types to debug
-        console.log(`📋 Activity: "${activity.name}" - Type: "${activity.type}" - Date: ${activity.start_date_local}`);
+        logger.log(`📋 Activity: "${activity.name}" - Type: "${activity.type}" - Date: ${activity.start_date_local}`);
 
         // Only sync rides and runs
         const supportedTypes = ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun'];
         if (!supportedTypes.includes(activity.type)) {
-          console.log(`  ⏭️ Skipping - unsupported type: ${activity.type}`);
+          logger.log(`  ⏭️ Skipping - unsupported type: ${activity.type}`);
           continue;
         }
 
@@ -105,7 +106,7 @@ class StravaSyncService {
         const matchedWorkout = this.findMatchingWorkout(activity, allWorkouts, completedWorkouts);
 
         if (matchedWorkout) {
-          console.log(`✅ Matched Strava activity ${activity.id} to workout:`, {
+          logger.log(`✅ Matched Strava activity ${activity.id} to workout:`, {
             day: matchedWorkout.day,
             week: matchedWorkout.weekNumber,
             workout: matchedWorkout.workout?.name,
@@ -119,7 +120,7 @@ class StravaSyncService {
         }
       }
 
-      console.log(`🎯 Found ${matches.length} matching workouts`);
+      logger.log(`🎯 Found ${matches.length} matching workouts`);
 
       // Auto-complete matched workouts
       let completedCount = 0;
@@ -132,7 +133,7 @@ class StravaSyncService {
         if (completed) completedCount++;
       }
 
-      console.log(`✅ Strava sync complete: ${completedCount}/${matches.length} workouts auto-completed`);
+      logger.log(`✅ Strava sync complete: ${completedCount}/${matches.length} workouts auto-completed`);
 
       return {
         success: true,
@@ -163,7 +164,7 @@ class StravaSyncService {
     const activityDate = new Date(activity.start_date_local);
     const activityDistanceMiles = activity.distance / 1609.34;
 
-    console.log('🔍 Matching activity:', {
+    logger.log('🔍 Matching activity:', {
       name: activity.name,
       type: activity.type,
       date: activity.start_date_local,
@@ -181,7 +182,7 @@ class StravaSyncService {
       // Skip if already completed
       const workoutKey = `${workout.weekNumber}-${workout.day}`;
       if (completedWorkouts.some(cw => cw.key === workoutKey)) {
-        console.log(`  ⏭️ Skipping ${workout.day} - already completed`);
+        logger.log(`  ⏭️ Skipping ${workout.day} - already completed`);
         continue;
       }
 
@@ -191,7 +192,7 @@ class StravaSyncService {
 
       // Parse workout date as local time (not UTC) to avoid timezone shifts
       const workoutDate = new Date(workout.date + ' 00:00:00');
-      console.log(`  📅 Checking ${workout.day}:`, {
+      logger.log(`  📅 Checking ${workout.day}:`, {
         workoutDate: workoutDate.toLocaleDateString(),
         rawDate: workout.date,
         workoutType: workout.type,
@@ -203,11 +204,11 @@ class StravaSyncService {
 
       // Skip if types don't match
       if (isBikeActivity && !isBikeWorkout) {
-        console.log(`    ❌ Type mismatch: bike activity but not bike workout`);
+        logger.log(`    ❌ Type mismatch: bike activity but not bike workout`);
         continue;
       }
       if (isRunActivity && !isRunWorkout) {
-        console.log(`    ❌ Type mismatch: run activity but not run workout`);
+        logger.log(`    ❌ Type mismatch: run activity but not run workout`);
         continue;
       }
 
@@ -217,16 +218,16 @@ class StravaSyncService {
         activityDate.getMonth() !== workoutDate.getMonth() ||
         activityDate.getDate() !== workoutDate.getDate()
       ) {
-        console.log(`    ❌ Date mismatch`);
+        logger.log(`    ❌ Date mismatch`);
         continue;
       }
 
       // Found a match!
-      console.log(`    ✅ MATCH FOUND!`);
+      logger.log(`    ✅ MATCH FOUND!`);
       return workout;
     }
 
-    console.log('  ❌ No match found for this activity');
+    logger.log('  ❌ No match found for this activity');
     return null;
   }
 
@@ -244,22 +245,22 @@ class StravaSyncService {
       const userDoc = await getDoc(userRef);
 
       if (!userDoc.exists()) {
-        console.log('📦 getCompletedWorkouts: User doc does not exist');
+        logger.log('📦 getCompletedWorkouts: User doc does not exist');
         return [];
       }
 
       const data = userDoc.data();
       const completedWorkouts = data.completedWorkouts || {};
 
-      console.log('📦 getCompletedWorkouts: Raw data from Firebase:', completedWorkouts);
-      console.log('📦 getCompletedWorkouts: Number of completed workouts:', Object.keys(completedWorkouts).length);
+      logger.log('📦 getCompletedWorkouts: Raw data from Firebase:', completedWorkouts);
+      logger.log('📦 getCompletedWorkouts: Number of completed workouts:', Object.keys(completedWorkouts).length);
 
       const result = Object.keys(completedWorkouts).map(key => ({
         key,
         data: completedWorkouts[key]
       }));
 
-      console.log('📦 getCompletedWorkouts: Returning array:', result);
+      logger.log('📦 getCompletedWorkouts: Returning array:', result);
       return result;
     } catch (error) {
       console.error('Error fetching completed workouts:', error);
@@ -293,7 +294,7 @@ class StravaSyncService {
         }
       });
 
-      console.log(`✅ Auto-completed workout: ${workoutKey}`);
+      logger.log(`✅ Auto-completed workout: ${workoutKey}`);
       return true;
     } catch (error) {
       console.error(`❌ Error completing workout:`, error);

@@ -10,6 +10,7 @@ import { IntervalWorkoutLibrary } from './interval-workout-library.js';
 import { LongRunWorkoutLibrary } from './long-run-workout-library.js';
 import { StandUpBikeWorkoutLibrary } from './standup-bike-workout-library.js';
 import { PaceCalculator } from './pace-calculator.js';
+import logger from '../utils/logger.js';
 
 export class TrainingPlanGenerator {
     constructor() {
@@ -135,13 +136,13 @@ export class TrainingPlanGenerator {
             startDay = null              // e.g., 'Friday' for Week 1 partial week
         } = options;
 
-        console.log('🏃 Training Plan Generator Options:');
-        console.log('  runningStatus:', runningStatus);
-        console.log('  currentWeeklyMileage:', currentWeeklyMileage);
-        console.log('  availableDays:', availableDays);
-        console.log('  hardSessionDays:', hardSessionDays);
-        console.log('  longRunDay:', longRunDay);
-        console.log('  preferredBikeDays:', preferredBikeDays);
+        logger.log('🏃 Training Plan Generator Options:');
+        logger.log('  runningStatus:', runningStatus);
+        logger.log('  currentWeeklyMileage:', currentWeeklyMileage);
+        logger.log('  availableDays:', availableDays);
+        logger.log('  hardSessionDays:', hardSessionDays);
+        logger.log('  longRunDay:', longRunDay);
+        logger.log('  preferredBikeDays:', preferredBikeDays);
 
         // Get plan template
         const template = this.planTemplates[raceDistance];
@@ -158,30 +159,30 @@ export class TrainingPlanGenerator {
         if (currentPaces) {
             // User provided explicit current paces
             trainingPaces = currentPaces;
-            console.log('📊 Using provided current paces');
+            logger.log('📊 Using provided current paces');
         } else if (raceTime) {
             // Calculate GOAL paces from goal race time
             const distanceForGoal = options.currentRaceDistance || raceDistance;
-            console.log(`🎯 Calculating GOAL paces: ${distanceForGoal} in ${raceTime}`);
+            logger.log(`🎯 Calculating GOAL paces: ${distanceForGoal} in ${raceTime}`);
             goalPaces = this.paceCalculator.calculateFromGoal(distanceForGoal, raceTime);
-            console.log('  Goal paces:', goalPaces.paces);
+            logger.log('  Goal paces:', goalPaces.paces);
 
             // Estimate CURRENT FITNESS paces from long run + weekly mileage
             if (currentWeeklyMileage || options.currentLongRunDistance) {
                 const longRun = parseInt(options.currentLongRunDistance) || 0;
                 const weeklyMiles = parseInt(currentWeeklyMileage) || 0;
 
-                console.log(`📊 Estimating CURRENT fitness from:`);
-                console.log(`   Long run: ${longRun} miles`);
-                console.log(`   Weekly mileage: ${weeklyMiles} miles`);
+                logger.log(`📊 Estimating CURRENT fitness from:`);
+                logger.log(`   Long run: ${longRun} miles`);
+                logger.log(`   Weekly mileage: ${weeklyMiles} miles`);
 
                 currentFitnessPaces = this.paceCalculator.calculateFromCurrentFitness(
                     longRun,
                     weeklyMiles,
                     distanceForGoal
                 );
-                console.log('  Current fitness paces:', currentFitnessPaces.paces);
-                console.log(`  📈 Progressive training: Week 1 at current fitness → Final week at goal pace`);
+                logger.log('  Current fitness paces:', currentFitnessPaces.paces);
+                logger.log(`  📈 Progressive training: Week 1 at current fitness → Final week at goal pace`);
 
                 // Store both for progressive blending
                 trainingPaces = {
@@ -242,10 +243,10 @@ export class TrainingPlanGenerator {
             const finalWeek = weeklyPlans[weeklyPlans.length - 1];
             const longRunDayName = weeklyStructure.longRunDay || 'Saturday';
 
-            console.log('🏁 Race Day Feature:');
-            console.log('  Race Date:', raceDate);
-            console.log('  Long Run Day Name:', longRunDayName);
-            console.log('  Final Week Workouts:', finalWeek.workouts.map(w => ({
+            logger.log('🏁 Race Day Feature:');
+            logger.log('  Race Date:', raceDate);
+            logger.log('  Long Run Day Name:', longRunDayName);
+            logger.log('  Final Week Workouts:', finalWeek.workouts.map(w => ({
                 day: w.day,
                 type: w.type,
                 distance: w.distance,
@@ -256,12 +257,12 @@ export class TrainingPlanGenerator {
             // Try multiple strategies:
             // 1. Find by type 'longRun'
             let longRunIndex = finalWeek.workouts.findIndex(w => w.type === 'longRun');
-            console.log('  Strategy 1 (type=longRun): index =', longRunIndex);
+            logger.log('  Strategy 1 (type=longRun): index =', longRunIndex);
 
             // 2. If not found, find by day name
             if (longRunIndex === -1) {
                 longRunIndex = finalWeek.workouts.findIndex(w => w.day === longRunDayName);
-                console.log('  Strategy 2 (day=' + longRunDayName + '): index =', longRunIndex);
+                logger.log('  Strategy 2 (day=' + longRunDayName + '): index =', longRunIndex);
             }
 
             // 3. If still not found, find the workout with the longest distance
@@ -273,15 +274,15 @@ export class TrainingPlanGenerator {
                         longRunIndex = idx;
                     }
                 });
-                console.log('  Strategy 3 (longest distance): index =', longRunIndex);
+                logger.log('  Strategy 3 (longest distance): index =', longRunIndex);
             }
 
             if (longRunIndex !== -1) {
                 // Generate the Race Day workout
                 const raceDayWorkout = this.generateRaceDayWorkout(raceDistance, raceDate);
 
-                console.log('  Replacing workout at index', longRunIndex, 'with Race Day');
-                console.log('  Old workout:', finalWeek.workouts[longRunIndex]);
+                logger.log('  Replacing workout at index', longRunIndex, 'with Race Day');
+                logger.log('  Old workout:', finalWeek.workouts[longRunIndex]);
 
                 // Replace the long run with Race Day workout
                 // IMPORTANT: Wrap in 'workout' property to match expected structure
@@ -300,15 +301,15 @@ export class TrainingPlanGenerator {
                     }
                 };
 
-                console.log('  New workout:', finalWeek.workouts[longRunIndex]);
-                console.log(`✅ Race Day workout added to final week on ${finalWeek.workouts[longRunIndex].day}`);
+                logger.log('  New workout:', finalWeek.workouts[longRunIndex]);
+                logger.log(`✅ Race Day workout added to final week on ${finalWeek.workouts[longRunIndex].day}`);
             } else {
                 console.error('❌ Could not find suitable workout to replace with Race Day in final week!');
                 console.error('   This is a bug - please report this issue');
             }
         } else {
             if (!raceDate) {
-                console.log('ℹ️ No race date provided - skipping Race Day feature');
+                logger.log('ℹ️ No race date provided - skipping Race Day feature');
             }
         }
 
@@ -355,12 +356,12 @@ export class TrainingPlanGenerator {
             throw new Error(`${runsPerWeek} runs per week not supported for this distance`);
         }
 
-        console.log('📊 calculateWeeklyStructure received:');
-        console.log('  hardSessionDays:', hardSessionDays);
-        console.log('  availableDays:', availableDays);
-        console.log('  longRunDay:', longRunDay);
-        console.log('  preferredBikeDays:', preferredBikeDays);
-        console.log('  currentWeeklyMileage:', currentWeeklyMileage);
+        logger.log('📊 calculateWeeklyStructure received:');
+        logger.log('  hardSessionDays:', hardSessionDays);
+        logger.log('  availableDays:', availableDays);
+        logger.log('  longRunDay:', longRunDay);
+        logger.log('  preferredBikeDays:', preferredBikeDays);
+        logger.log('  currentWeeklyMileage:', currentWeeklyMileage);
 
         // Use USER inputs instead of hardcoded schedules
         const structure = {
@@ -485,7 +486,7 @@ export class TrainingPlanGenerator {
                 weekNumber,
                 totalWeeks
             );
-            console.log(`🎯 Week ${weekNumber} pace blend: ${Math.round(weekPaces.progressionRatio * 100)}% toward goal`);
+            logger.log(`🎯 Week ${weekNumber} pace blend: ${Math.round(weekPaces.progressionRatio * 100)}% toward goal`);
         } else {
             // No progression - use static paces
             weekPaces = paces;
@@ -498,7 +499,7 @@ export class TrainingPlanGenerator {
         const startingMileage = structure.currentWeeklyMileage || Math.round(structure.peakMileage * 0.5);
         const buildWeeks = totalWeeks - 2; // Leave 2 weeks for taper
 
-        console.log(`📐 Week ${weekNumber} mileage calculation:`, {
+        logger.log(`📐 Week ${weekNumber} mileage calculation:`, {
             weekNumber,
             weekNumberType: typeof weekNumber,
             startingMileage,
@@ -512,7 +513,7 @@ export class TrainingPlanGenerator {
         if (weekNumber === 1) {
             // Week 1: Start at current mileage
             weeklyMileage = startingMileage;
-            console.log(`   ✅ Week 1 detected - using startingMileage: ${weeklyMileage}`);
+            logger.log(`   ✅ Week 1 detected - using startingMileage: ${weeklyMileage}`);
         } else if (weekNumber >= totalWeeks - 1) {
             // Taper weeks: reduce to 60-70% of peak
             weeklyMileage = Math.round(structure.peakMileage * (weekNumber === totalWeeks ? 0.6 : 0.7));
@@ -525,7 +526,7 @@ export class TrainingPlanGenerator {
             weeklyMileage = Math.round(startingMileage + ((structure.peakMileage - startingMileage) * (weekNumber / buildWeeks)));
         }
 
-        console.log(`📅 Week ${weekNumber}: ${weeklyMileage} miles (start: ${startingMileage}, peak: ${structure.peakMileage}, isRest: ${isRestWeek}, phase: ${currentPhase.phase})`);
+        logger.log(`📅 Week ${weekNumber}: ${weeklyMileage} miles (start: ${startingMileage}, peak: ${structure.peakMileage}, isRest: ${isRestWeek}, phase: ${currentPhase.phase})`);
 
         // Generate workouts for each day using USER schedule
         const workouts = this.generateWeekWorkouts(
@@ -571,13 +572,13 @@ export class TrainingPlanGenerator {
             easyDays
         } = structure;
 
-        console.log(`\n🗓️ Week ${weekNumber} Workout Generation:`);
-        console.log('  runningStatus:', runningStatus);
-        console.log('  availableDays:', availableDays);
-        console.log('  hardSessionDays:', hardSessionDays);
-        console.log('  longRunDay:', longRunDay);
-        console.log('  preferredBikeDays:', preferredBikeDays);
-        console.log('  easyDays:', easyDays);
+        logger.log(`\n🗓️ Week ${weekNumber} Workout Generation:`);
+        logger.log('  runningStatus:', runningStatus);
+        logger.log('  availableDays:', availableDays);
+        logger.log('  hardSessionDays:', hardSessionDays);
+        logger.log('  longRunDay:', longRunDay);
+        logger.log('  preferredBikeDays:', preferredBikeDays);
+        logger.log('  easyDays:', easyDays);
 
         // Distribute mileage across runs
         const longRunMiles = this.calculateLongRunDistance(weeklyMileage, runsPerWeek);
@@ -617,20 +618,20 @@ export class TrainingPlanGenerator {
             ? allDays.slice(allDays.indexOf(startDay)) // From start day to Sunday
             : allDays; // All 7 days for Week 2+
 
-        console.log(`📅 Week ${weekNumber} - Generating workouts for:`, daysToGenerate.join(', '));
+        logger.log(`📅 Week ${weekNumber} - Generating workouts for:`, daysToGenerate.join(', '));
 
         // Generate workouts
         daysToGenerate.forEach(day => {
-            console.log(`\n  📍 Processing ${day}:`);
-            console.log(`     availableDays.includes('${day}'):`, availableDays.includes(day));
-            console.log(`     hardSessionDays.includes('${day}'):`, hardSessionDays.includes(day));
-            console.log(`     preferredBikeDays.includes('${day}'):`, preferredBikeDays.includes(day));
-            console.log(`     day === longRunDay ('${longRunDay}'):`, day === longRunDay);
+            logger.log(`\n  📍 Processing ${day}:`);
+            logger.log(`     availableDays.includes('${day}'):`, availableDays.includes(day));
+            logger.log(`     hardSessionDays.includes('${day}'):`, hardSessionDays.includes(day));
+            logger.log(`     preferredBikeDays.includes('${day}'):`, preferredBikeDays.includes(day));
+            logger.log(`     day === longRunDay ('${longRunDay}'):`, day === longRunDay);
 
             // Check if this is a training day
             if (!availableDays.includes(day)) {
                 // REST DAY - not in user's available days
-                console.log(`     ⛔ Result: REST DAY (not in availableDays)`);
+                logger.log(`     ⛔ Result: REST DAY (not in availableDays)`);
                 workouts.push({
                     day,
                     type: "rest",
@@ -645,7 +646,7 @@ export class TrainingPlanGenerator {
             if (day === longRunDay) {
                 // LONG RUN DAY (or long ride for bike-only users)
                 if (runningStatus === 'bikeOnly') {
-                    console.log(`     ✅ Result: LONG BIKE RIDE (bike-only mode)`);
+                    logger.log(`     ✅ Result: LONG BIKE RIDE (bike-only mode)`);
                     workouts.push({
                         day,
                         type: "bike",
@@ -655,7 +656,7 @@ export class TrainingPlanGenerator {
                         equipmentSpecific: true
                     });
                 } else {
-                    console.log(`     ✅ Result: LONG RUN`);
+                    logger.log(`     ✅ Result: LONG RUN`);
                     const paceData = paces.paces || paces;
                     workouts.push({
                         day,
@@ -668,7 +669,7 @@ export class TrainingPlanGenerator {
             } else if (hardSessionDays.includes(day) && preferredBikeDays.includes(day) && standUpBikeType && !(weekNumber === totalWeeks - 1 && phase.phase === 'taper')) {
                 // HARD BIKE DAY (user wants BOTH hard work AND bike day)
                 // SKIP hard workouts during taper week (but NOT race week)
-                console.log(`     ✅ Result: HARD BIKE SESSION (hard day + bike day, hardSessionIndex: ${hardSessionIndex})`);
+                logger.log(`     ✅ Result: HARD BIKE SESSION (hard day + bike day, hardSessionIndex: ${hardSessionIndex})`);
                 const bikeWorkoutTypes = ['tempo', 'intervals', 'aerobic_power'];
                 const bikeWorkoutType = bikeWorkoutTypes[hardSessionIndex % bikeWorkoutTypes.length];
                 const workoutDistance = calculateWorkoutDistance(bikeWorkoutType);
@@ -686,7 +687,7 @@ export class TrainingPlanGenerator {
                 // SKIP hard workouts during taper week (but NOT race week)
                 if (runningStatus === 'bikeOnly') {
                     // Bike-only mode: use bike intervals/tempo instead of running
-                    console.log(`     ✅ Result: HARD BIKE SESSION (bike-only mode, hardSessionIndex: ${hardSessionIndex})`);
+                    logger.log(`     ✅ Result: HARD BIKE SESSION (bike-only mode, hardSessionIndex: ${hardSessionIndex})`);
                     const bikeWorkoutTypes = ['tempo', 'intervals', 'aerobic_power'];
                     const bikeWorkoutType = bikeWorkoutTypes[hardSessionIndex % bikeWorkoutTypes.length];
                     const workoutDistance = calculateWorkoutDistance(bikeWorkoutType);
@@ -701,7 +702,7 @@ export class TrainingPlanGenerator {
                     hardSessionIndex++;
                 } else {
                     // Normal running hard sessions
-                    console.log(`     ✅ Result: HARD RUN SESSION (hardSessionIndex: ${hardSessionIndex})`);
+                    logger.log(`     ✅ Result: HARD RUN SESSION (hardSessionIndex: ${hardSessionIndex})`);
                     const workoutType = this.selectWorkoutType(hardSessionIndex, phase, template);
                     const workoutDistance = calculateWorkoutDistance(workoutType);
                     workouts.push({
@@ -715,7 +716,7 @@ export class TrainingPlanGenerator {
                 }
             } else if (preferredBikeDays.includes(day) && standUpBikeType) {
                 // BIKE DAY (user prefers bike on this day)
-                console.log(`     ✅ Result: BIKE DAY`);
+                logger.log(`     ✅ Result: BIKE DAY`);
                 const bikeWorkoutType = 'aerobic_base';
                 const workoutDistance = calculateWorkoutDistance('bike');
                 workouts.push({
@@ -730,7 +731,7 @@ export class TrainingPlanGenerator {
                 // EASY DAY (everything else that's an available day)
                 if (runningStatus === 'bikeOnly') {
                     // Bike-only mode: use easy bike rides
-                    console.log(`     ✅ Result: EASY BIKE RIDE (bike-only mode)`);
+                    logger.log(`     ✅ Result: EASY BIKE RIDE (bike-only mode)`);
                     const workoutDistance = calculateWorkoutDistance('recovery');
                     workouts.push({
                         day,
@@ -742,7 +743,7 @@ export class TrainingPlanGenerator {
                     });
                 } else {
                     // Normal easy runs
-                    console.log(`     ✅ Result: EASY RUN`);
+                    logger.log(`     ✅ Result: EASY RUN`);
                     const paceData = paces.paces || paces;
                     const workoutDistance = calculateWorkoutDistance('easy');
                     workouts.push({
