@@ -630,32 +630,21 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0a' }}>
-      {/* Hero Header with Gradient */}
+      {/* Hero Header - Dark Theme */}
       <div style={{
-        background: getWorkoutTypeGradient(currentWorkout.type),
+        background: '#1a1a1a',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         padding: '32px 0 48px 0',
         position: 'relative',
         overflow: 'hidden'
       }}>
-        {/* Decorative background pattern */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          opacity: 0.1,
-          background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.05) 10px, rgba(255,255,255,.05) 20px)'
-        }}></div>
-
         <div className="container" style={{ position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
             <button
               onClick={() => navigate(-1)}
               style={{
-                background: 'rgba(255, 255, 255, 0.2)',
-                backdropFilter: 'blur(10px)',
-                border: 'none',
+                background: '#2a2a2a',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
                 color: 'white',
                 fontSize: '1.5rem',
                 cursor: 'pointer',
@@ -663,8 +652,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                 borderRadius: '12px',
                 display: 'flex',
                 alignItems: 'center',
-                fontWeight: 'bold',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                fontWeight: 'bold'
               }}
             >
               ← Back
@@ -672,10 +660,9 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             <button
               onClick={() => window.location.reload()}
               style={{
-                background: 'rgba(34, 197, 94, 0.2)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(34, 197, 94, 0.4)',
-                color: '#22c55e',
+                background: '#2a2a2a',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#999',
                 fontSize: '0.9rem',
                 cursor: 'pointer',
                 padding: '8px 16px',
@@ -683,29 +670,21 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                 display: 'flex',
                 alignItems: 'center',
                 fontWeight: '600',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
                 gap: '6px'
               }}
               title="Reload workout data from libraries (useful after code changes)"
             >
-              🔄 Refresh
+              Refresh
             </button>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
-            <div style={{
-              fontSize: '4rem',
-              filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.2))'
-            }}>
-              {getWorkoutTypeEmoji(currentWorkout.type)}
-            </div>
             <div style={{ flex: 1 }}>
               <h1 style={{
                 margin: 0,
                 color: 'white',
                 fontSize: '2.5rem',
                 fontWeight: '800',
-                textShadow: '0 2px 8px rgba(0,0,0,0.2)',
                 letterSpacing: '-0.5px'
               }}>
                 {typeof currentWorkout.name === 'string' ? currentWorkout.name :
@@ -714,7 +693,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               </h1>
               <p style={{
                 margin: '8px 0 0 0',
-                color: 'rgba(255,255,255,0.95)',
+                color: '#999',
                 fontSize: '1.1rem',
                 fontWeight: '500'
               }}>
@@ -728,30 +707,28 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <span
               style={{
-                background: 'rgba(255, 255, 255, 0.25)',
-                backdropFilter: 'blur(10px)',
-                color: 'white',
+                background: '#2a2a2a',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#999',
                 padding: '8px 16px',
                 borderRadius: '20px',
                 fontSize: '0.9rem',
-                fontWeight: '600',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                fontWeight: '600'
               }}
             >
-              🎯 {currentWorkout.focus}
+              {currentWorkout.focus}
             </span>
             {currentWorkout.equipmentSpecific && userProfile?.standUpBikeType && (
               <span style={{
-                background: 'rgba(255, 184, 0, 0.3)',
-                backdropFilter: 'blur(10px)',
-                color: 'white',
+                background: '#2a2a2a',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#999',
                 padding: '8px 16px',
                 borderRadius: '20px',
                 fontSize: '0.9rem',
-                fontWeight: '600',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                fontWeight: '600'
               }}>
-                ⚡ {formatEquipmentName(userProfile.standUpBikeType)}
+                {formatEquipmentName(userProfile.standUpBikeType)}
               </span>
             )}
           </div>
@@ -768,14 +745,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         }}>
           {/* Pace Card */}
           <div style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
-            boxShadow: '0 8px 24px rgba(102, 126, 234, 0.3)',
-            border: '2px solid rgba(255, 255, 255, 0.1)'
+            border: '1px solid rgba(255, 255, 255, 0.1)'
           }}>
-            <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🏃</div>
-            <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+            <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Target Pace
             </div>
             <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
@@ -785,14 +760,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
           {/* Intensity Card */}
           <div style={{
-            background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+            background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
-            boxShadow: '0 8px 24px rgba(240, 147, 251, 0.3)',
-            border: '2px solid rgba(255, 255, 255, 0.1)'
+            border: '1px solid rgba(255, 255, 255, 0.1)'
           }}>
-            <div style={{ fontSize: '2rem', marginBottom: '8px' }}>💪</div>
-            <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+            <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Intensity
             </div>
             <div style={{ color: 'white', fontSize: '1.1rem', fontWeight: '700', lineHeight: '1.3' }}>
@@ -804,17 +777,15 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
           {/* Heart Rate Card */}
           <div style={{
-            background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+            background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
-            boxShadow: '0 8px 24px rgba(250, 112, 154, 0.3)',
-            border: '2px solid rgba(255, 255, 255, 0.1)'
+            border: '1px solid rgba(255, 255, 255, 0.1)'
           }}>
-            <div style={{ fontSize: '2rem', marginBottom: '8px' }}>❤️</div>
-            <div style={{ color: 'rgba(0,0,0,0.7)', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+            <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Heart Rate Zone
             </div>
-            <div style={{ color: '#1a1a1a', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
+            <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
               {typeof currentWorkout.heartRate === 'string' ? formatHeartRate(currentWorkout.heartRate) :
                typeof currentWorkout.heartRate === 'object' ? JSON.stringify(currentWorkout.heartRate) :
                '70-85% Max HR'}
@@ -826,20 +797,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             const calories = calorieCalculator.calculateWorkoutCalories(workoutData);
             return calories ? (
               <div style={{
-                background: 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)',
+                background: '#1a1a1a',
                 padding: '20px',
                 borderRadius: '16px',
-                boxShadow: '0 8px 24px rgba(255, 149, 0, 0.3)',
-                border: '2px solid rgba(255, 255, 255, 0.1)'
+                border: '1px solid rgba(255, 255, 255, 0.1)'
               }}>
-                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🔥</div>
-                <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+                <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
                   Expected Calorie Burn
                 </div>
                 <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
                   {calories.range} cal
                 </div>
-                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.75rem', marginTop: '6px', fontWeight: '500' }}>
+                <div style={{ color: '#666', fontSize: '0.75rem', marginTop: '6px', fontWeight: '500' }}>
                   Based on RunEQ equivalency
                 </div>
               </div>
@@ -850,24 +819,22 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* COMPLETED WORKOUT STATS - Show actual performance data */}
         {workoutData?.completed && completionData && (
           <div style={{
-            background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(0, 212, 255, 0.2) 100%)',
-            border: '2px solid rgba(0, 255, 136, 0.4)',
+            background: '#1a1a1a',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '20px',
             padding: '24px',
-            marginBottom: '24px',
-            boxShadow: '0 8px 32px rgba(0, 255, 136, 0.3)'
+            marginBottom: '24px'
           }}>
             <h2 style={{
               margin: '0 0 20px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.8rem',
               fontWeight: '800',
               display: 'flex',
               alignItems: 'center',
               gap: '12px'
             }}>
-              <span style={{ fontSize: '2rem' }}>✓</span>
-              {completionData.autoCompletedFromStrava ? '🔗 Synced from Strava' : 'Workout Completed'}
+              {completionData.autoCompletedFromStrava ? 'Synced from Strava' : 'Workout Completed'}
             </h2>
 
             {/* Performance Metrics Grid */}
@@ -879,19 +846,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             }}>
               {completionData.distance && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Distance
                   </div>
                   <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
                     {completionData.distance}
                   </div>
-                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
                     miles
                   </div>
                 </div>
@@ -899,19 +865,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.duration && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Duration
                   </div>
                   <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
                     {completionData.duration}
                   </div>
-                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
                     minutes
                   </div>
                 </div>
@@ -919,19 +884,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.pace && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Pace
                   </div>
                   <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
                     {completionData.pace.replace('/mi', '')}
                   </div>
-                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
                     per mile
                   </div>
                 </div>
@@ -939,19 +903,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.avgHeartRate && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Avg Heart Rate
                   </div>
                   <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
                     {completionData.avgHeartRate}
                   </div>
-                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
                     bpm
                   </div>
                 </div>
@@ -959,19 +922,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.maxHeartRate && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Max Heart Rate
                   </div>
                   <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
                     {completionData.maxHeartRate}
                   </div>
-                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
                     bpm
                   </div>
                 </div>
@@ -979,19 +941,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.cadence && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Cadence
                   </div>
                   <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
                     {Math.round(completionData.cadence)}
                   </div>
-                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
                     steps/min
                   </div>
                 </div>
@@ -999,19 +960,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.elevationGain && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Elevation Gain
                   </div>
                   <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
                     {completionData.elevationGain}
                   </div>
-                  <div style={{ color: '#AAA', fontSize: '0.85rem', marginTop: '4px' }}>
+                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
                     feet
                   </div>
                 </div>
@@ -1021,14 +981,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             {/* Notes Section */}
             {completionData.notes && (
               <div style={{
-                background: 'rgba(0, 0, 0, 0.3)',
-                backdropFilter: 'blur(10px)',
+                background: '#0a0a0a',
                 padding: '16px',
                 borderRadius: '12px',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
                 marginBottom: completionData.stravaActivityUrl ? '16px' : '0'
               }}>
-                <div style={{ color: '#999', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                   Notes
                 </div>
                 <div style={{ color: '#DDD', fontSize: '1rem', lineHeight: '1.6' }}>
@@ -1081,12 +1040,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
         {/* WORKOUT STRUCTURE - VISUAL BREAKDOWN */}
         <div style={{
-          background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-          border: '2px solid rgba(102, 126, 234, 0.3)',
+          background: '#1a1a1a',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '20px',
           padding: '24px',
-          marginBottom: '24px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+          marginBottom: '24px'
         }}>
           <h2 style={{
             margin: '0 0 20px 0',
@@ -1097,19 +1055,17 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             alignItems: 'center',
             gap: '12px'
           }}>
-            <span style={{ fontSize: '2rem' }}>📋</span>
             Workout Structure
           </h2>
 
           <div style={{
-            background: 'rgba(0, 0, 0, 0.4)',
-            backdropFilter: 'blur(10px)',
+            background: '#0a0a0a',
             padding: '20px',
             borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.05)',
             fontSize: '1.1rem',
             lineHeight: '2',
-            color: 'white',
+            color: '#ddd',
             fontWeight: '500',
             whiteSpace: 'pre-line'
           }}>
@@ -1120,7 +1076,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* DESCRIPTION */}
         {currentWorkout.description && (
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
@@ -1128,7 +1084,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           }}>
             <h3 style={{
               margin: '0 0 12px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.3rem',
               fontWeight: '700'
             }}>
@@ -1146,51 +1102,45 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Climate Adaptation */}
         {userProfile?.climate === 'hot_humid' && (
           <div style={{
-            background: 'linear-gradient(135deg, rgba(255, 184, 0, 0.15) 0%, rgba(255, 120, 0, 0.15) 100%)',
-            border: '2px solid rgba(255, 184, 0, 0.4)',
+            background: '#1a1a1a',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px',
-            boxShadow: '0 4px 16px rgba(255, 184, 0, 0.2)'
+            marginBottom: '24px'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
-              color: '#FFB800',
+              color: 'white',
               fontSize: '1.5rem',
               fontWeight: '800',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              <span style={{ fontSize: '1.8rem' }}>🌡️</span>
               Climate Adjustments
             </h3>
             <div style={{ display: 'grid', gap: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                <span style={{ fontSize: '1.5rem' }}>⏱️</span>
                 <div>
-                  <strong style={{ color: '#FFB800', display: 'block', marginBottom: '4px' }}>Pace:</strong>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Pace:</strong>
                   <span style={{ color: '#ddd' }}>Add 30-60 seconds per mile in high humidity</span>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                <span style={{ fontSize: '1.5rem' }}>💧</span>
                 <div>
-                  <strong style={{ color: '#FFB800', display: 'block', marginBottom: '4px' }}>Hydration:</strong>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Hydration:</strong>
                   <span style={{ color: '#ddd' }}>Drink before feeling thirsty</span>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                <span style={{ fontSize: '1.5rem' }}>🌅</span>
                 <div>
-                  <strong style={{ color: '#FFB800', display: 'block', marginBottom: '4px' }}>Timing:</strong>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Timing:</strong>
                   <span style={{ color: '#ddd' }}>Early morning (before 7am) or late evening recommended</span>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                <span style={{ fontSize: '1.5rem' }}>💪</span>
                 <div>
-                  <strong style={{ color: '#FFB800', display: 'block', marginBottom: '4px' }}>Effort:</strong>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Effort:</strong>
                   <span style={{ color: '#ddd' }}>Focus on effort level rather than exact pace</span>
                 </div>
               </div>
@@ -1200,23 +1150,21 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
         {/* Safety Notes */}
         <div style={{
-          background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 200, 100, 0.1) 100%)',
-          border: '2px solid rgba(0, 255, 136, 0.3)',
+          background: '#1a1a1a',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '16px',
           padding: '20px',
-          marginBottom: '24px',
-          boxShadow: '0 4px 16px rgba(0, 255, 136, 0.15)'
+          marginBottom: '24px'
         }}>
           <h3 style={{
             margin: '0 0 16px 0',
-            color: '#00FF88',
+            color: 'white',
             fontSize: '1.5rem',
             fontWeight: '800',
             display: 'flex',
             alignItems: 'center',
             gap: '10px'
           }}>
-            <span style={{ fontSize: '1.8rem' }}>✅</span>
             Safety & Execution Notes
           </h3>
           <div style={{ display: 'grid', gap: '12px' }}>
@@ -1226,7 +1174,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               'Stop if you feel pain or excessive fatigue'
             ]).map((note, index) => (
               <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '8px 0' }}>
-                <span style={{ color: '#00FF88', fontSize: '1.5rem', minWidth: '24px' }}>•</span>
+                <span style={{ color: '#666', fontSize: '1.5rem', minWidth: '24px' }}>•</span>
                 <span style={{ fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
                   {typeof note === 'string' ? note : JSON.stringify(note)}
                 </span>
@@ -1238,30 +1186,28 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Hill Requirements - only for hill workouts */}
         {currentWorkout.hillRequirement && (
           <div style={{
-            background: 'linear-gradient(135deg, rgba(79, 172, 254, 0.15) 0%, rgba(0, 242, 254, 0.15) 100%)',
-            border: '2px solid rgba(79, 172, 254, 0.4)',
+            background: '#1a1a1a',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px',
-            boxShadow: '0 4px 16px rgba(79, 172, 254, 0.2)'
+            marginBottom: '24px'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
-              color: '#4facfe',
+              color: 'white',
               fontSize: '1.5rem',
               fontWeight: '800',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              <span style={{ fontSize: '1.8rem' }}>⛰️</span>
               Hill Requirements
             </h3>
             <div style={{ display: 'grid', gap: '12px' }}>
               {currentWorkout.hillRequirement.description && (
                 <div>
-                  <strong style={{ color: '#4facfe', display: 'block', marginBottom: '8px', fontSize: '1.1rem' }}>
-                    📍 Description:
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '8px', fontSize: '1.1rem' }}>
+                    Description:
                   </strong>
                   <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
                     {currentWorkout.hillRequirement.description}
@@ -1270,7 +1216,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.hillRequirement.grade && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <strong style={{ color: '#4facfe', fontSize: '1.1rem' }}>📈 Grade:</strong>
+                  <strong style={{ color: '#999', fontSize: '1.1rem' }}>Grade:</strong>
                   <span style={{ fontSize: '1rem', color: '#ddd' }}>
                     {currentWorkout.hillRequirement.grade}
                   </span>
@@ -1278,7 +1224,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.hillRequirement.distance && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <strong style={{ color: '#4facfe', fontSize: '1.1rem' }}>📏 Distance:</strong>
+                  <strong style={{ color: '#999', fontSize: '1.1rem' }}>Distance:</strong>
                   <span style={{ fontSize: '1rem', color: '#ddd' }}>
                     {currentWorkout.hillRequirement.distance}
                   </span>
@@ -1291,7 +1237,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Terrain Instructions */}
         {currentWorkout.terrainInstructions && (
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
@@ -1299,14 +1245,14 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           }}>
             <h3 style={{
               margin: '0 0 12px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.3rem',
               fontWeight: '700',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              🏞️ Terrain Instructions
+              Terrain Instructions
             </h3>
             {typeof currentWorkout.terrainInstructions === 'string' ? (
               <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
@@ -1316,7 +1262,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               <div style={{ display: 'grid', gap: '16px' }}>
                 {Object.entries(currentWorkout.terrainInstructions).map(([key, value]) => (
                   <div key={key}>
-                    <strong style={{ color: '#00FF88', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
+                    <strong style={{ color: '#999', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
                       {key.replace(/([A-Z])/g, ' $1').trim()}:
                     </strong>
                     {typeof value === 'string' ? (
@@ -1342,7 +1288,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Benefits */}
         {currentWorkout.benefits && (
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
@@ -1350,14 +1296,14 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           }}>
             <h3 style={{
               margin: '0 0 12px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.3rem',
               fontWeight: '700',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              💪 Benefits
+              Benefits
             </h3>
             <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
               {currentWorkout.benefits}
@@ -1368,7 +1314,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Progression Guidance */}
         {currentWorkout.progression && (
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
@@ -1376,14 +1322,14 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.3rem',
               fontWeight: '700',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              📈 Progression
+              Progression
             </h3>
             {typeof currentWorkout.progression === 'string' ? (
               <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
@@ -1393,7 +1339,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               <div style={{ display: 'grid', gap: '16px' }}>
                 {Object.entries(currentWorkout.progression).map(([key, value]) => (
                   <div key={key}>
-                    <strong style={{ color: '#00FF88', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
+                    <strong style={{ color: '#999', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
                       {key.replace(/([A-Z])/g, ' $1').trim()}:
                     </strong>
                     <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>{value}</p>
@@ -1407,7 +1353,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Variations */}
         {currentWorkout.variations && Array.isArray(currentWorkout.variations) && currentWorkout.variations.length > 0 && (
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
@@ -1415,19 +1361,19 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.3rem',
               fontWeight: '700',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              🔄 Variations
+              Variations
             </h3>
             <div style={{ display: 'grid', gap: '12px' }}>
               {currentWorkout.variations.map((variation, index) => (
                 <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '8px 0' }}>
-                  <span style={{ color: '#00FF88', fontSize: '1.5rem', minWidth: '24px' }}>•</span>
+                  <span style={{ color: '#666', fontSize: '1.5rem', minWidth: '24px' }}>•</span>
                   <span style={{ fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>{variation}</span>
                 </div>
               ))}
@@ -1438,7 +1384,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Examples */}
         {currentWorkout.examples && Array.isArray(currentWorkout.examples) && currentWorkout.examples.length > 0 && (
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
@@ -1446,19 +1392,19 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.3rem',
               fontWeight: '700',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              📝 Examples
+              Examples
             </h3>
             <div style={{ display: 'grid', gap: '12px' }}>
               {currentWorkout.examples.map((example, index) => (
                 <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '8px 0' }}>
-                  <span style={{ color: '#00FF88', fontSize: '1.5rem', minWidth: '24px' }}>•</span>
+                  <span style={{ color: '#666', fontSize: '1.5rem', minWidth: '24px' }}>•</span>
                   <span style={{ fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>{example}</span>
                 </div>
               ))}
@@ -1469,7 +1415,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Track Intervals - for interval workouts */}
         {currentWorkout.trackIntervals && (
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
@@ -1477,14 +1423,14 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.3rem',
               fontWeight: '700',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              🏃 Track Intervals
+              Track Intervals
             </h3>
             {typeof currentWorkout.trackIntervals === 'string' ? (
               <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
@@ -1494,14 +1440,14 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               <div style={{ display: 'grid', gap: '16px' }}>
                 {Object.entries(currentWorkout.trackIntervals).map(([key, value]) => (
                   <div key={key}>
-                    <strong style={{ color: '#00FF88', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
+                    <strong style={{ color: '#999', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
                       {key.replace(/([A-Z])/g, ' $1').trim()}:
                     </strong>
                     {typeof value === 'object' ? (
                       <div style={{ paddingLeft: '12px' }}>
                         {Object.entries(value).map(([subKey, subValue]) => (
                           <p key={subKey} style={{ margin: '4px 0', fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
-                            <strong style={{ color: '#00D4FF' }}>{subKey}:</strong> {typeof subValue === 'string' ? subValue : JSON.stringify(subValue)}
+                            <strong style={{ color: '#999' }}>{subKey}:</strong> {typeof subValue === 'string' ? subValue : JSON.stringify(subValue)}
                           </p>
                         ))}
                       </div>
@@ -1520,7 +1466,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Fueling - for long runs */}
         {currentWorkout.fueling && (
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
@@ -1528,14 +1474,14 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.3rem',
               fontWeight: '700',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              🍎 Fueling
+              Fueling
             </h3>
             {typeof currentWorkout.fueling === 'string' ? (
               <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
@@ -1545,7 +1491,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               <div style={{ display: 'grid', gap: '16px' }}>
                 {Object.entries(currentWorkout.fueling).map(([key, value]) => (
                   <div key={key}>
-                    <strong style={{ color: '#00FF88', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
+                    <strong style={{ color: '#999', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
                       {key.replace(/([A-Z])/g, ' $1').trim()}:
                     </strong>
                     <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>{value}</p>
@@ -1559,12 +1505,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* RunEQ Options */}
         {currentWorkout.runEqOptions && (
           <div style={{
-            background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%)',
-            border: '2px solid rgba(102, 126, 234, 0.4)',
+            background: '#1a1a1a',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '20px',
             padding: '24px',
-            marginBottom: '24px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+            marginBottom: '24px'
           }}>
             <h3 style={{
               margin: '0 0 20px 0',
@@ -1575,19 +1520,17 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               alignItems: 'center',
               gap: '12px'
             }}>
-              <span style={{ fontSize: '2rem' }}>🔄</span>
               RunEQ Options - 4 Ways to Complete This Workout
             </h3>
             <div style={{ display: 'grid', gap: '16px' }}>
               {currentWorkout.runEqOptions.optionA && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <strong style={{ color: '#00FF88', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
+                  <strong style={{ color: '#999', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
                     Option A:
                   </strong>
                   <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
@@ -1597,13 +1540,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.runEqOptions.optionB && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <strong style={{ color: '#00FF88', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
+                  <strong style={{ color: '#999', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
                     Option B:
                   </strong>
                   <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
@@ -1613,13 +1555,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.runEqOptions.optionC && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <strong style={{ color: '#00FF88', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
+                  <strong style={{ color: '#999', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
                     Option C:
                   </strong>
                   <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
@@ -1629,13 +1570,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.runEqOptions.optionD && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  backdropFilter: 'blur(10px)',
+                  background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}>
-                  <strong style={{ color: '#00FF88', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
+                  <strong style={{ color: '#999', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
                     Option D:
                   </strong>
                   <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
@@ -1645,14 +1585,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.runEqOptions.recommendation && (
                 <div style={{
-                  background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(0, 200, 100, 0.2) 100%)',
+                  background: '#2a2a2a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '2px solid rgba(0, 255, 136, 0.4)',
-                  boxShadow: '0 4px 16px rgba(0, 255, 136, 0.2)'
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
                 }}>
-                  <strong style={{ color: '#00FF88', fontSize: '1.2rem', display: 'block', marginBottom: '8px' }}>
-                    💡 Recommended for you:
+                  <strong style={{ color: 'white', fontSize: '1.2rem', display: 'block', marginBottom: '8px' }}>
+                    Recommended for you:
                   </strong>
                   <p style={{ margin: 0, fontSize: '1.05rem', lineHeight: '1.6', color: 'white', fontWeight: '500' }}>
                     {currentWorkout.runEqOptions.recommendation}
@@ -1666,23 +1605,21 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Coaching Guidance */}
         {currentWorkout.coachingGuidance && (
           <div style={{
-            background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 200, 100, 0.1) 100%)',
-            border: '2px solid rgba(0, 255, 136, 0.3)',
+            background: '#1a1a1a',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px',
-            boxShadow: '0 4px 16px rgba(0, 255, 136, 0.15)'
+            marginBottom: '24px'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
-              color: '#00FF88',
+              color: 'white',
               fontSize: '1.5rem',
               fontWeight: '800',
               display: 'flex',
               alignItems: 'center',
               gap: '10px'
             }}>
-              <span style={{ fontSize: '1.8rem' }}>🎯</span>
               Coaching Guidance
             </h3>
             {typeof currentWorkout.coachingGuidance === 'string' ? (
@@ -1693,7 +1630,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               <div style={{ display: 'grid', gap: '16px' }}>
                 {Object.entries(currentWorkout.coachingGuidance).map(([key, value]) => (
                   <div key={key}>
-                    <strong style={{ color: '#00FF88', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
+                    <strong style={{ color: '#999', textTransform: 'capitalize', display: 'block', marginBottom: '6px', fontSize: '1.1rem' }}>
                       {key.replace(/([A-Z])/g, ' $1').trim()}:
                     </strong>
                     <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>{value}</p>
@@ -1706,26 +1643,24 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
         {/* Action Buttons */}
         <div style={{
-          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.04) 100%)',
-          border: '2px solid rgba(255, 255, 255, 0.15)',
+          background: '#1a1a1a',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '20px',
           padding: '24px',
-          marginBottom: '24px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+          marginBottom: '24px'
         }}>
           <button
             onClick={handleSomethingElse}
             style={{
               width: '100%',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              border: 'none',
+              background: '#2a2a2a',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
               color: 'white',
               fontSize: '1.2rem',
               fontWeight: '700',
               padding: '18px 24px',
               borderRadius: '16px',
               cursor: 'pointer',
-              boxShadow: '0 8px 24px rgba(102, 126, 234, 0.4)',
               transition: 'all 0.3s ease',
               display: 'flex',
               alignItems: 'center',
@@ -1733,15 +1668,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               gap: '12px'
             }}
             onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 12px 32px rgba(102, 126, 234, 0.5)';
+              e.currentTarget.style.background = '#3a3a3a';
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 8px 24px rgba(102, 126, 234, 0.4)';
+              e.currentTarget.style.background = '#2a2a2a';
             }}
           >
-            <span style={{ fontSize: '1.5rem' }}>🔄</span>
             Something Else (Show Alternatives)
           </button>
 
@@ -1749,12 +1681,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             marginTop: '20px',
             textAlign: 'center',
             padding: '16px',
-            background: 'rgba(0, 0, 0, 0.2)',
+            background: '#0a0a0a',
             borderRadius: '12px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
+            border: '1px solid rgba(255, 255, 255, 0.05)'
           }}>
-            <p style={{ margin: 0, fontSize: '0.95rem', color: '#bbb', lineHeight: '1.6' }}>
-              💡 <strong style={{ color: 'white' }}>Need something different?</strong><br/>
+            <p style={{ margin: 0, fontSize: '0.95rem', color: '#666', lineHeight: '1.6' }}>
+              <strong style={{ color: '#999' }}>Need something different?</strong><br/>
               Click above for all alternatives including contextual adaptations (too hot, too tired, time constraints, etc.)
             </p>
           </div>
