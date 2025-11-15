@@ -471,10 +471,15 @@ export class TrainingPlanGenerator {
             };
         }
 
-        // Determine current phase
+        // Determine current phase and calculate week within phase
         const currentPhase = periodization.find(p =>
             weekNumber >= p.startWeek && weekNumber <= p.endWeek
         );
+
+        // Add week-in-phase tracking for smarter workout selection
+        if (currentPhase) {
+            currentPhase.weekInPhase = weekNumber - currentPhase.startWeek + 1;
+        }
 
         // Calculate week-specific paces using PROGRESSIVE BLENDING
         let weekPaces;
@@ -762,20 +767,62 @@ export class TrainingPlanGenerator {
 
     /**
      * Intelligently select workout types based on phase and training focus
+     * Uses WEEK-AWARE distribution to ensure variety throughout training
      */
     selectWorkoutType(workoutIndex, phase, template) {
         const phaseInfo = this.trainingPhases[phase.phase];
-        
-        // Rotate workout types based on training phase emphasis
-        const workoutRotation = {
-            base: ["tempo", "hills", "easy"],
-            build: ["tempo", "intervals", "hills"],
-            peak: ["intervals", "tempo", "hills"], 
-            taper: ["tempo", "easy", "intervals"]
-        };
 
-        const rotation = workoutRotation[phase.phase];
-        return rotation[workoutIndex % rotation.length];
+        // SMARTER APPROACH: Distribute workouts based on week within phase
+        // This ensures intervals appear early even in base phase for neuromuscular development
+        const weekInPhase = phase.weekInPhase || 1; // Week number within current phase
+        const totalPhaseWeeks = (phase.endWeek - phase.startWeek) + 1;
+        const phaseProgress = weekInPhase / totalPhaseWeeks; // 0.0 to 1.0
+
+        // Define workout distributions that evolve within each phase
+        let workoutRotation;
+
+        switch (phase.phase) {
+            case "base":
+                // Base: Start aerobic-focused, gradually introduce intervals
+                // Early base (weeks 1-3 of phase): tempo, hills, tempo
+                // Mid base (weeks 4-5): tempo, hills, intervals
+                // Late base (weeks 6+): tempo, intervals, hills
+                if (weekInPhase <= 3) {
+                    workoutRotation = ["tempo", "hills", "tempo"];
+                } else if (weekInPhase <= 5) {
+                    workoutRotation = ["tempo", "hills", "intervals"];
+                } else {
+                    workoutRotation = ["tempo", "intervals", "hills"];
+                }
+                break;
+
+            case "build":
+                // Build: Balanced tempo and intervals with some hills
+                // Prioritize threshold and VO2 max development
+                if (phaseProgress < 0.5) {
+                    workoutRotation = ["tempo", "intervals", "hills"];
+                } else {
+                    workoutRotation = ["intervals", "tempo", "hills"];
+                }
+                break;
+
+            case "peak":
+                // Peak: Heavy intervals with some tempo for threshold maintenance
+                // Race-specific speed work
+                workoutRotation = ["intervals", "tempo", "intervals"];
+                break;
+
+            case "taper":
+                // Taper: Maintain sharpness with reduced volume
+                // Keep intensity but reduce frequency
+                workoutRotation = ["tempo", "intervals"];
+                break;
+
+            default:
+                workoutRotation = ["tempo", "intervals", "hills"];
+        }
+
+        return workoutRotation[workoutIndex % workoutRotation.length];
     }
 
     /**

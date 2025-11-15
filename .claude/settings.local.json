@@ -18,7 +18,9 @@
       "Bash(git fetch:*)",
       "Bash(git pull:*)",
       "Bash(git ls-tree:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(.gradlew.bat --version)",
+      "Bash(./gradlew:*)"
     ],
     "deny": [],
     "ask": []
