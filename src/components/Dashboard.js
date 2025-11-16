@@ -12,6 +12,7 @@ import { HillWorkoutLibrary } from '../lib/hill-workout-library.js';
 import WorkoutOptionsService from '../services/WorkoutOptionsService.js';
 import BrickWorkoutService from '../services/brickWorkoutService.js';
 import SomethingElseModal from './SomethingElseModal';
+import ManagePlanModal from './ManagePlanModal';
 import { formatTrainingSystem, formatEquipmentName, formatPhase, titleCase } from '../utils/typography';
 import { calorieCalculator } from '../lib/calorie-calculator.js';
 import StravaService from '../services/StravaService';
@@ -20,6 +21,7 @@ import logger from '../utils/logger';
 
 function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData }) {
   const navigate = useNavigate();
+  const [showManagePlanModal, setShowManagePlanModal] = useState(false);
   
   // Calculate the actual current week based on training plan start date
   const calculateCurrentWeek = () => {
@@ -1740,6 +1742,22 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 🔄 Refresh Plan
               </button>
 
+              <button
+                onClick={() => setShowManagePlanModal(true)}
+                style={{
+                  background: 'rgba(59, 130, 246, 0.1)',
+                  color: '#3b82f6',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  fontSize: '0.8rem',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+                title="Adjust training schedule, days, and preferences"
+              >
+                ⚙️ Manage Plan
+              </button>
+
               {/* Connect Strava Button */}
               {userProfile?.stravaConnected ? (
                 <>
@@ -2831,6 +2849,15 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         onWorkoutSelect={handleWorkoutReplacement}
         weather={null} // TODO: Add weather API integration
         mode={somethingElseModal.mode || 'replace'} // Pass mode to modal
+      />
+
+      {/* Manage Plan Modal */}
+      <ManagePlanModal
+        isOpen={showManagePlanModal}
+        onClose={() => setShowManagePlanModal(false)}
+        userProfile={userProfile}
+        trainingPlan={trainingPlan}
+        currentWeek={currentWeek}
       />
 
       {/* Workout Completion Modal */}
