@@ -1724,7 +1724,8 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
               >
                 Next →
               </button>
-              <button
+              {/* Removed Refresh Plan button - replaced by Manage Plan feature */}
+              {/* <button
                 onClick={() => {
                   if (window.confirm('Update your training plan with the latest features? This will regenerate workouts using current code while keeping your profile.')) {
                     refreshTrainingPlan();
@@ -1740,7 +1741,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 }}
               >
                 🔄 Refresh Plan
-              </button>
+              </button> */}
 
               <button
                 onClick={() => setShowManagePlanModal(true)}
