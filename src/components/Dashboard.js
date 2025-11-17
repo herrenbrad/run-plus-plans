@@ -434,48 +434,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     setWorkoutCompletions(completedWorkouts);
   }, [completedWorkouts]);
 
-  // TEMPORARY: Delete all completions (for debugging)
-  const handleDeleteAllCompletions = async () => {
-    if (!window.confirm('Delete ALL workout completions? This cannot be undone!')) {
-      return;
-    }
-
-    try {
-      const { doc, updateDoc, deleteField, getDoc } = await import('firebase/firestore');
-      const { db } = await import('../firebase/config');
-      const userRef = doc(db, 'users', auth.currentUser.uid);
-
-      logger.log('🗑️ Before delete - checking Firebase...');
-      const beforeDoc = await getDoc(userRef);
-      logger.log('  completedWorkouts:', beforeDoc.data().completedWorkouts);
-
-      // Use deleteField to completely remove the field
-      await updateDoc(userRef, {
-        completedWorkouts: deleteField()
-      });
-
-      logger.log('✅ Delete command sent to Firebase');
-
-      // Verify deletion
-      const afterDoc = await getDoc(userRef);
-      logger.log('🔍 After delete - checking Firebase...');
-      logger.log('  completedWorkouts:', afterDoc.data().completedWorkouts);
-
-      if (afterDoc.data().completedWorkouts) {
-        logger.log('⚠️ WARNING: completedWorkouts still exists after delete!');
-      } else {
-        logger.log('✅ Confirmed: completedWorkouts field removed from Firestore');
-      }
-
-      // Reload page - use "Sync Now" button manually to re-sync
-      logger.log('🔄 Reloading page - use "Sync Now" button to re-sync from Strava');
-      window.location.reload();
-    } catch (error) {
-      console.error('❌ Error deleting completions:', error);
-      alert('Error deleting completions: ' + error.message);
-    }
-  };
-
   // Manual Strava sync function
   const handleManualStravaSync = async () => {
     logger.log('🔘 BUTTON CLICKED - handleManualStravaSync called');
@@ -1845,22 +1803,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                     title="Manually sync your Strava activities"
                   >
                     {stravaSyncing ? '⏳ Syncing...' : '🔄 Sync Now'}
-                  </button>
-                  <button
-                    onClick={handleDeleteAllCompletions}
-                    style={{
-                      background: 'rgba(239, 68, 68, 0.1)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      fontSize: '0.8rem',
-                      padding: '6px 12px',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      marginLeft: '8px'
-                    }}
-                    title="DEBUG: Delete all workout completions"
-                  >
-                    🗑️ Clear All
                   </button>
                 </>
               ) : (
