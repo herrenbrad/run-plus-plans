@@ -67,9 +67,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
           // Build workout key based on workout index (for two-a-days)
           const workoutIndex = workoutData.workoutIndex || 0;
-          const workoutKey = workoutIndex > 0
-            ? `${currentWeekNumber}-${workoutData.day}-${workoutIndex}`
-            : `${currentWeekNumber}-${workoutData.day}`;
+          const workoutKey = `${currentWeekNumber}-${workoutData.day}-${workoutIndex}`;
 
           if (completedWorkouts[workoutKey]) {
             setCompletionData(completedWorkouts[workoutKey]);

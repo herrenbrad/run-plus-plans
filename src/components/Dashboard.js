@@ -434,6 +434,48 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     setWorkoutCompletions(completedWorkouts);
   }, [completedWorkouts]);
 
+  // TEMPORARY: Delete all completions (for debugging)
+  const handleDeleteAllCompletions = async () => {
+    if (!window.confirm('Delete ALL workout completions? This cannot be undone!')) {
+      return;
+    }
+
+    try {
+      const { doc, updateDoc, deleteField, getDoc } = await import('firebase/firestore');
+      const { db } = await import('../firebase/config');
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+
+      logger.log('🗑️ Before delete - checking Firebase...');
+      const beforeDoc = await getDoc(userRef);
+      logger.log('  completedWorkouts:', beforeDoc.data().completedWorkouts);
+
+      // Use deleteField to completely remove the field
+      await updateDoc(userRef, {
+        completedWorkouts: deleteField()
+      });
+
+      logger.log('✅ Delete command sent to Firebase');
+
+      // Verify deletion
+      const afterDoc = await getDoc(userRef);
+      logger.log('🔍 After delete - checking Firebase...');
+      logger.log('  completedWorkouts:', afterDoc.data().completedWorkouts);
+
+      if (afterDoc.data().completedWorkouts) {
+        logger.log('⚠️ WARNING: completedWorkouts still exists after delete!');
+      } else {
+        logger.log('✅ Confirmed: completedWorkouts field removed from Firestore');
+      }
+
+      // Reload page - use "Sync Now" button manually to re-sync
+      logger.log('🔄 Reloading page - use "Sync Now" button to re-sync from Strava');
+      window.location.reload();
+    } catch (error) {
+      console.error('❌ Error deleting completions:', error);
+      alert('Error deleting completions: ' + error.message);
+    }
+  };
+
   // Manual Strava sync function
   const handleManualStravaSync = async () => {
     logger.log('🔘 BUTTON CLICKED - handleManualStravaSync called');
@@ -483,60 +525,61 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     }
   };
 
+  // DISABLED: Auto-sync was interfering with testing. Use "Sync Now" button instead.
   // Auto-sync Strava activities on dashboard load
-  useEffect(() => {
-    const syncStrava = async () => {
-      if (!userProfile?.stravaConnected || !auth.currentUser || !trainingPlan) {
-        return;
-      }
+  // useEffect(() => {
+  //   const syncStrava = async () => {
+  //     if (!userProfile?.stravaConnected || !auth.currentUser || !trainingPlan) {
+  //       return;
+  //     }
 
-      // Check if we've synced recently (within last hour)
-      const lastSync = localStorage.getItem('runeq_stravaLastSync');
-      if (lastSync) {
-        const lastSyncTime = new Date(lastSync);
-        const now = new Date();
-        const hoursSinceSync = (now - lastSyncTime) / (1000 * 60 * 60);
+  //     // Check if we've synced recently (within last hour)
+  //     const lastSync = localStorage.getItem('runeq_stravaLastSync');
+  //     if (lastSync) {
+  //       const lastSyncTime = new Date(lastSync);
+  //       const now = new Date();
+  //       const hoursSinceSync = (now - lastSyncTime) / (1000 * 60 * 60);
 
-        if (hoursSinceSync < 1) {
-          logger.log('⏭️ Skipping Strava sync - synced recently');
-          return;
-        }
-      }
+  //       if (hoursSinceSync < 1) {
+  //         logger.log('⏭️ Skipping Strava sync - synced recently');
+  //         return;
+  //       }
+  //     }
 
-      logger.log('🔄 Auto-syncing Strava activities...');
+  //     logger.log('🔄 Auto-syncing Strava activities...');
 
-      try {
-        const result = await StravaSyncService.syncActivities(
-          auth.currentUser.uid,
-          userProfile,
-          trainingPlan,
-          currentWeek
-        );
+  //     try {
+  //       const result = await StravaSyncService.syncActivities(
+  //         auth.currentUser.uid,
+  //         userProfile,
+  //         trainingPlan,
+  //         currentWeek
+  //       );
 
-        if (result.success) {
-          logger.log('✅ Strava sync successful:', result);
+  //       if (result.success) {
+  //         logger.log('✅ Strava sync successful:', result);
 
-          // Update last sync time
-          localStorage.setItem('runeq_stravaLastSync', new Date().toISOString());
+  //         // Update last sync time
+  //         localStorage.setItem('runeq_stravaLastSync', new Date().toISOString());
 
-          // Refresh the page to show updated completions
-          if (result.workoutsCompleted > 0) {
-            logger.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
-            window.location.reload();
-          }
-        } else {
-          console.warn('⚠️ Strava sync failed:', result.error);
-        }
-      } catch (error) {
-        console.error('❌ Strava sync error:', error);
-      }
-    };
+  //         // Refresh the page to show updated completions
+  //         if (result.workoutsCompleted > 0) {
+  //           logger.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
+  //           window.location.reload();
+  //         }
+  //       } else {
+  //         console.warn('⚠️ Strava sync failed:', result.error);
+  //       }
+  //     } catch (error) {
+  //       console.error('❌ Strava sync error:', error);
+  //     }
+  //   };
 
-    // Run sync after a short delay to avoid blocking initial render
-    const syncTimeout = setTimeout(syncStrava, 2000);
+  //   // Run sync after a short delay to avoid blocking initial render
+  //   const syncTimeout = setTimeout(syncStrava, 2000);
 
-    return () => clearTimeout(syncTimeout);
-  }, [userProfile?.stravaConnected, auth.currentUser, trainingPlan, currentWeek]);
+  //   return () => clearTimeout(syncTimeout);
+  // }, [userProfile?.stravaConnected, auth.currentUser, trainingPlan, currentWeek]);
 
   // Initialize workout libraries
   const tempoLibrary = new TempoWorkoutLibrary();
@@ -1390,7 +1433,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         index++;
       } else if (index === 0) {
         // No modified workout at index 0, use original
-        const completionData = workoutCompletions[dayKey];
+        const completionData = workoutCompletions[workoutKey];
         workouts.push({
           ...originalWorkout,
           completed: completionData?.completed || false,
@@ -1803,6 +1846,22 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                   >
                     {stravaSyncing ? '⏳ Syncing...' : '🔄 Sync Now'}
                   </button>
+                  <button
+                    onClick={handleDeleteAllCompletions}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      color: '#ef4444',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      fontSize: '0.8rem',
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      marginLeft: '8px'
+                    }}
+                    title="DEBUG: Delete all workout completions"
+                  >
+                    🗑️ Clear All
+                  </button>
                 </>
               ) : (
                 <button
@@ -2065,7 +2124,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
 
                     {/* Completed Workout Stats - Show Strava-synced data */}
                     {workout.completed && (() => {
-                      const workoutKey = workout.workoutIndex > 0 ? `${currentWeek}-${workout.day}-${workout.workoutIndex}` : `${currentWeek}-${workout.day}`;
+                      const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
                       const completionData = workoutCompletions[workoutKey];
 
                       if (!completionData) return null;

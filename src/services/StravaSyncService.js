@@ -77,9 +77,12 @@ class StravaSyncService {
         const weekData = trainingPlan.weeks[weekNum - 1];
         if (weekData && weekData.workouts) {
           weekData.workouts.forEach(workout => {
+            // workoutIndex is always 0 for primary planned workouts
+            // (index 1+ is for "Something Else" additional workouts added by user)
             allWorkouts.push({
               ...workout,
-              weekNumber: weekNum
+              weekNumber: weekNum,
+              workoutIndex: 0
             });
           });
         }
@@ -128,7 +131,8 @@ class StravaSyncService {
         const completed = await this.completeWorkout(
           userId,
           match.workout,
-          match.activity
+          match.activity,
+          accessToken  // Pass access token so we can fetch detailed data
         );
         if (completed) completedCount++;
       }
@@ -179,8 +183,17 @@ class StravaSyncService {
     const isRunActivity = runTypes.includes(activity.type);
 
     for (const workout of workouts) {
-      // Skip if already completed
-      const workoutKey = `${workout.weekNumber}-${workout.day}`;
+      // Skip if already completed - check with workoutIndex
+      const workoutKey = `${workout.weekNumber}-${workout.day}-${workout.workoutIndex || 0}`;
+
+      logger.log(`  🔑 Generated workout key: ${workoutKey}`, {
+        weekNumber: workout.weekNumber,
+        day: workout.day,
+        workoutIndex: workout.workoutIndex,
+        hasWorkoutIndex: workout.hasOwnProperty('workoutIndex')
+      });
+      logger.log(`  📋 Completed workouts keys:`, completedWorkouts.map(cw => cw.key));
+
       if (completedWorkouts.some(cw => cw.key === workoutKey)) {
         logger.log(`  ⏭️ Skipping ${workout.day} - already completed`);
         continue;
@@ -272,14 +285,34 @@ class StravaSyncService {
    * Mark workout as complete with Strava data
    * @param {string} userId - Firebase user ID
    * @param {object} workout - RunEQ workout
-   * @param {object} stravaActivity - Strava activity data
+   * @param {object} stravaActivity - Strava activity data (summary from list)
+   * @param {string} accessToken - Strava access token for fetching detailed data
    * @returns {Promise<boolean>} Success status
    */
-  async completeWorkout(userId, workout, stravaActivity) {
+  async completeWorkout(userId, workout, stravaActivity, accessToken) {
     try {
-      const completionData = StravaService.convertToRunEQCompletion(stravaActivity);
+      logger.log(`📥 Fetching detailed activity data for ${stravaActivity.id}...`);
 
-      const workoutKey = `${workout.weekNumber}-${workout.day}`;
+      // Fetch detailed activity data (includes laps, splits, suffer score, etc.)
+      const detailedActivity = await StravaService.getActivity(accessToken, stravaActivity.id);
+      logger.log(`  ✅ Got detailed activity data`);
+
+      // Fetch activity streams (elevation, heart rate over time, etc.)
+      let streams = null;
+      try {
+        streams = await StravaService.getActivityStreams(accessToken, stravaActivity.id);
+        if (streams) {
+          logger.log(`  ✅ Got activity streams (elevation profile, HR data, etc.)`);
+        }
+      } catch (error) {
+        logger.log(`  ⚠️ Could not fetch streams (not critical):`, error.message);
+      }
+
+      // Convert to RunEQ completion format with all the detailed data
+      const completionData = StravaService.convertToRunEQCompletion(detailedActivity, streams);
+
+      // Match the key format used by Dashboard: weekNumber-day-workoutIndex
+      const workoutKey = `${workout.weekNumber}-${workout.day}-${workout.workoutIndex || 0}`;
 
       const { doc, updateDoc, arrayUnion } = await import('firebase/firestore');
       const { db } = await import('../firebase/config');
@@ -289,12 +322,20 @@ class StravaSyncService {
       await updateDoc(userRef, {
         [`completedWorkouts.${workoutKey}`]: {
           completedAt: new Date().toISOString(),
+          completed: true,
           ...completionData,
           autoCompletedFromStrava: true,
         }
       });
 
       logger.log(`✅ Auto-completed workout: ${workoutKey}`);
+      if (completionData.laps) {
+        logger.log(`  📊 Stored ${completionData.laps.length} lap splits`);
+      }
+      if (completionData.streams) {
+        logger.log(`  📈 Stored elevation and HR profile data`);
+      }
+
       return true;
     } catch (error) {
       console.error(`❌ Error completing workout:`, error);

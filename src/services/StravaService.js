@@ -144,6 +144,39 @@ class StravaService {
   }
 
   /**
+   * Get activity streams (time-series data)
+   * @param {string} accessToken - Valid Strava access token
+   * @param {number} activityId - Strava activity ID
+   * @param {string[]} keys - Stream types to fetch (e.g., ['time', 'altitude', 'heartrate'])
+   * @returns {Promise<object>} Stream data
+   */
+  async getActivityStreams(accessToken, activityId, keys = ['time', 'distance', 'altitude', 'heartrate', 'cadence', 'watts', 'temp', 'moving', 'grade_smooth']) {
+    const keysParam = keys.join(',');
+    const response = await fetch(
+      `${STRAVA_CONFIG.apiBaseUrl}/activities/${activityId}/streams?keys=${keysParam}&key_by_type=true`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('STRAVA_TOKEN_EXPIRED');
+      }
+      // Streams might not be available for all activities (e.g., manual entries)
+      if (response.status === 404) {
+        logger.log('⚠️ No stream data available for this activity');
+        return null;
+      }
+      throw new Error(`Failed to fetch activity streams: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
    * Get authenticated athlete profile
    * @param {string} accessToken - Valid Strava access token
    * @returns {Promise<object>} Athlete profile data
@@ -223,10 +256,11 @@ class StravaService {
 
   /**
    * Convert Strava activity to RunEQ workout completion data
-   * @param {object} stravaActivity - Strava activity object
+   * @param {object} stravaActivity - Strava activity object (from getActivity for detailed data)
+   * @param {object} streams - Optional activity streams data
    * @returns {object} RunEQ-compatible workout completion data
    */
-  convertToRunEQCompletion(stravaActivity) {
+  convertToRunEQCompletion(stravaActivity, streams = null) {
     // Convert Strava meters to miles
     const distanceMiles = stravaActivity.distance / 1609.34;
 
@@ -243,7 +277,22 @@ class StravaService {
       pace = `${paceMinutes}:${paceSecondsPart.toString().padStart(2, '0')}/mi`;
     }
 
-    return {
+    // Process laps/splits if available
+    let laps = null;
+    if (stravaActivity.splits_metric && stravaActivity.splits_metric.length > 0) {
+      laps = stravaActivity.splits_metric.map((split, index) => ({
+        lap: index + 1,
+        distance: (split.distance / 1000).toFixed(2) + ' km', // Strava gives splits in km
+        distanceMiles: (split.distance / 1609.34).toFixed(2),
+        time: this.formatTime(split.moving_time),
+        pace: split.average_speed ? this.calculatePaceFromSpeed(split.average_speed) : null,
+        elevationGain: split.elevation_difference ? Math.round(split.elevation_difference * 3.28084) : null, // meters to feet
+        avgHeartRate: split.average_heartrate || null
+      }));
+    }
+
+    // Build completion data
+    const completionData = {
       distance: distanceMiles.toFixed(2),
       duration: durationMinutes,
       pace: pace,
@@ -255,6 +304,88 @@ class StravaService {
       stravaActivityId: stravaActivity.id,
       stravaActivityUrl: `https://www.strava.com/activities/${stravaActivity.id}`,
     };
+
+    // Add detailed data if available
+    if (laps) {
+      completionData.laps = laps;
+    }
+
+    // Add suffer score (Strava's training effect equivalent)
+    if (stravaActivity.suffer_score) {
+      completionData.sufferScore = stravaActivity.suffer_score;
+    }
+
+    // Add device/sensor data if available
+    if (stravaActivity.device_name) {
+      completionData.device = stravaActivity.device_name;
+    }
+
+    // Add calories if available
+    if (stravaActivity.calories) {
+      completionData.calories = stravaActivity.calories;
+    }
+
+    // Add stream data if provided (for elevation profile, HR zones, etc.)
+    if (streams) {
+      completionData.streams = this.processStreams(streams);
+    }
+
+    return completionData;
+  }
+
+  /**
+   * Process activity streams into useful format
+   * @param {object} streams - Raw stream data from Strava
+   * @returns {object} Processed stream data
+   */
+  processStreams(streams) {
+    const processed = {};
+
+    // Store altitude profile (for elevation chart)
+    if (streams.altitude) {
+      processed.elevation = streams.altitude.data;
+    }
+
+    // Store heart rate data (for HR zone analysis)
+    if (streams.heartrate) {
+      processed.heartRate = streams.heartrate.data;
+    }
+
+    // Store distance markers (for syncing with time)
+    if (streams.distance) {
+      processed.distance = streams.distance.data;
+    }
+
+    // Store time array
+    if (streams.time) {
+      processed.time = streams.time.data;
+    }
+
+    return processed;
+  }
+
+  /**
+   * Format seconds into MM:SS
+   * @param {number} seconds - Time in seconds
+   * @returns {string} Formatted time
+   */
+  formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Calculate pace from speed (m/s)
+   * @param {number} speed - Speed in meters per second
+   * @returns {string} Pace in min/mile
+   */
+  calculatePaceFromSpeed(speed) {
+    if (!speed || speed === 0) return null;
+    const paceSeconds = 1609.34 / speed; // seconds per mile
+    const paceMinutes = Math.floor(paceSeconds / 60);
+    const paceSecondsPart = Math.round(paceSeconds % 60);
+    return `${paceMinutes}:${paceSecondsPart.toString().padStart(2, '0')}/mi`;
   }
 }
 
