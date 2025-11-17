@@ -278,8 +278,21 @@ class StravaService {
     }
 
     // Process laps/splits if available
+    // Prefer splits_standard (miles) for US runners, fallback to splits_metric (km)
     let laps = null;
-    if (stravaActivity.splits_metric && stravaActivity.splits_metric.length > 0) {
+    if (stravaActivity.splits_standard && stravaActivity.splits_standard.length > 0) {
+      // Use mile-based splits (standard for US)
+      laps = stravaActivity.splits_standard.map((split, index) => ({
+        lap: index + 1,
+        distance: (split.distance / 1609.34).toFixed(2) + ' mi', // Strava gives splits in meters
+        distanceMiles: (split.distance / 1609.34).toFixed(2),
+        time: this.formatTime(split.moving_time),
+        pace: split.average_speed ? this.calculatePaceFromSpeed(split.average_speed) : null,
+        elevationGain: split.elevation_difference ? Math.round(split.elevation_difference * 3.28084) : null, // meters to feet
+        avgHeartRate: split.average_heartrate || null
+      }));
+    } else if (stravaActivity.splits_metric && stravaActivity.splits_metric.length > 0) {
+      // Fallback to KM-based splits
       laps = stravaActivity.splits_metric.map((split, index) => ({
         lap: index + 1,
         distance: (split.distance / 1000).toFixed(2) + ' km', // Strava gives splits in km

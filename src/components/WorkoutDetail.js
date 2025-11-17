@@ -5,6 +5,7 @@ import { formatEquipmentName, formatHeartRate, formatIntensity } from '../utils/
 import { auth } from '../firebase/config';
 import FirestoreService from '../services/FirestoreService';
 import { calorieCalculator } from '../lib/calorie-calculator.js';
+import AICoachService from '../services/AICoachService';
 
 function WorkoutDetail({ userProfile, trainingPlan }) {
   const navigate = useNavigate();
@@ -16,6 +17,9 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
   });
   const [modifiedWorkout, setModifiedWorkout] = useState(null);
   const [completionData, setCompletionData] = useState(null);
+  const [coachingAnalysis, setCoachingAnalysis] = useState(null);
+  const [loadingCoaching, setLoadingCoaching] = useState(false);
+  const [coachingError, setCoachingError] = useState(null);
 
   // Get workout data from navigation state (passed from Dashboard) or fall back to training plan
   const workoutFromState = location.state?.workout;
@@ -624,7 +628,105 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     handleCloseSomethingElse();
   };
 
+  const handleGetCoaching = async () => {
+    if (!completionData) {
+      alert('No workout data available for analysis');
+      return;
+    }
 
+    // Check if API key is set (for local dev)
+    const apiKey = prompt('Enter your Anthropic API key (local dev only):');
+    if (!apiKey) return;
+
+    setLoadingCoaching(true);
+    setCoachingError(null);
+
+    try {
+      // Initialize AI Coach service with API key
+      AICoachService.initialize(apiKey);
+
+      // Determine actual workout type from completion data
+      // Strava stores the activity type, we need to check it properly
+      let actualWorkoutType = 'Run'; // default
+
+      // Check if we have lap data with pace (indicates running)
+      if (completionData.laps && completionData.laps.length > 0 && completionData.laps[0].pace) {
+        actualWorkoutType = 'Run';
+      }
+      // Check if we have overall pace in completion data
+      else if (completionData.pace && completionData.pace.includes('/mi')) {
+        actualWorkoutType = 'Run';
+      }
+      // If no pace data, it's likely a bike ride
+      else if (completionData.laps && completionData.laps.length > 0 && !completionData.laps[0].pace) {
+        actualWorkoutType = 'Ride';
+      }
+
+      // Build workout data for analysis
+      const workoutDataForAI = {
+        type: actualWorkoutType,
+        distance: completionData.distance,
+        duration: completionData.duration,
+        pace: completionData.pace,
+        elevationGain: completionData.elevationGain,
+        avgHeartRate: completionData.avgHeartRate,
+        maxHeartRate: completionData.maxHeartRate,
+        laps: completionData.laps,
+        // Pass stand-up bike type ONLY if this is actually a Ride
+        standUpBikeType: actualWorkoutType === 'Ride' ? userProfileFromState?.standUpBikeType : null
+      };
+
+      // DEBUG: Log what we're sending to the AI
+      console.log('🔍 AI Coach Debug:', {
+        actualWorkoutType,
+        stravaUrl: completionData.stravaActivityUrl,
+        standUpBikeType: workoutDataForAI.standUpBikeType,
+        fullData: workoutDataForAI
+      });
+
+      // Build upcoming workouts context
+      let upcomingWorkouts = null;
+      if (trainingPlan && weekDataFromState) {
+        const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        const currentDayIndex = daysOfWeek.indexOf(day.toLowerCase());
+        const nextFewDays = [];
+
+        // Get next 3-4 workouts from current week
+        for (let i = currentDayIndex + 1; i < Math.min(currentDayIndex + 4, daysOfWeek.length); i++) {
+          const dayName = daysOfWeek[i];
+          const workout = weekDataFromState.workouts?.[dayName];
+          if (workout && workout.name) {
+            const dayLabel = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+            nextFewDays.push(`${dayLabel}: ${workout.name}`);
+          }
+        }
+
+        if (nextFewDays.length > 0) {
+          upcomingWorkouts = nextFewDays.join(', ');
+        }
+      }
+
+      // Build context options
+      const contextOptions = {
+        prescribedWorkout: currentWorkout.name ?
+          `${currentWorkout.name}: ${currentWorkout.description}` :
+          null,
+        trainingContext: trainingPlan ?
+          `Week ${currentWeekNumber} of ${trainingPlan.weeks?.length || 'N/A'} week training plan for ${trainingPlan.goalRace || 'race'}` :
+          null,
+        upcomingWorkouts: upcomingWorkouts
+      };
+
+      // Get AI analysis
+      const analysis = await AICoachService.analyzeWorkout(workoutDataForAI, contextOptions);
+      setCoachingAnalysis(analysis);
+    } catch (error) {
+      console.error('Error getting coaching analysis:', error);
+      setCoachingError(error.message || 'Failed to get coaching analysis');
+    } finally {
+      setLoadingCoaching(false);
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0a' }}>
@@ -746,7 +848,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
+            border: '2px solid #00D4FF'
           }}>
             <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Target Pace
@@ -761,7 +863,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
+            border: '2px solid #00D4FF'
           }}>
             <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Intensity
@@ -778,7 +880,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
+            border: '2px solid #00D4FF'
           }}>
             <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Heart Rate Zone
@@ -847,16 +949,22 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: '2px solid #00D4FF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: '110px'
                 }}>
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Distance
                   </div>
-                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
-                    {completionData.distance}
-                  </div>
-                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
-                    miles
+                  <div>
+                    <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800', lineHeight: '1' }}>
+                      {completionData.distance}
+                    </div>
+                    <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
+                      miles
+                    </div>
                   </div>
                 </div>
               )}
@@ -866,16 +974,22 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: '2px solid #00D4FF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: '110px'
                 }}>
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Duration
                   </div>
-                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
-                    {completionData.duration}
-                  </div>
-                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
-                    minutes
+                  <div>
+                    <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800', lineHeight: '1' }}>
+                      {completionData.duration}
+                    </div>
+                    <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
+                      minutes
+                    </div>
                   </div>
                 </div>
               )}
@@ -885,16 +999,22 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: '2px solid #00D4FF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: '110px'
                 }}>
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Pace
                   </div>
-                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
-                    {completionData.pace.replace('/mi', '')}
-                  </div>
-                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
-                    per mile
+                  <div>
+                    <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800', lineHeight: '1' }}>
+                      {completionData.pace.replace('/mi', '')}
+                    </div>
+                    <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
+                      per mile
+                    </div>
                   </div>
                 </div>
               )}
@@ -904,16 +1024,22 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: '2px solid #00D4FF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: '110px'
                 }}>
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Avg Heart Rate
                   </div>
-                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
-                    {completionData.avgHeartRate}
-                  </div>
-                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
-                    bpm
+                  <div>
+                    <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800', lineHeight: '1' }}>
+                      {completionData.avgHeartRate}
+                    </div>
+                    <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
+                      bpm
+                    </div>
                   </div>
                 </div>
               )}
@@ -923,16 +1049,22 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: '2px solid #00D4FF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: '110px'
                 }}>
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Max Heart Rate
                   </div>
-                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
-                    {completionData.maxHeartRate}
-                  </div>
-                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
-                    bpm
+                  <div>
+                    <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800', lineHeight: '1' }}>
+                      {completionData.maxHeartRate}
+                    </div>
+                    <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
+                      bpm
+                    </div>
                   </div>
                 </div>
               )}
@@ -942,16 +1074,22 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: '2px solid #00D4FF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: '110px'
                 }}>
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Cadence
                   </div>
-                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
-                    {Math.round(completionData.cadence)}
-                  </div>
-                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
-                    steps/min
+                  <div>
+                    <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800', lineHeight: '1' }}>
+                      {Math.round(completionData.cadence)}
+                    </div>
+                    <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
+                      steps/min
+                    </div>
                   </div>
                 </div>
               )}
@@ -961,16 +1099,22 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   background: '#0a0a0a',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: '2px solid #00D4FF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: '110px'
                 }}>
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Elevation Gain
                   </div>
-                  <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800' }}>
-                    {completionData.elevationGain}
-                  </div>
-                  <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
-                    feet
+                  <div>
+                    <div style={{ color: 'white', fontSize: '1.8rem', fontWeight: '800', lineHeight: '1' }}>
+                      {completionData.elevationGain}
+                    </div>
+                    <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '4px' }}>
+                      feet
+                    </div>
                   </div>
                 </div>
               )}
@@ -1031,6 +1175,100 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   <span style={{ fontSize: '1.2rem' }}>🔗</span>
                   View Full Activity on Strava
                 </a>
+              </div>
+            )}
+
+            {/* AI Coaching Button */}
+            {completionData.laps && completionData.laps.length > 0 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                paddingTop: '16px',
+                marginTop: '16px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.05)'
+              }}>
+                <button
+                  onClick={handleGetCoaching}
+                  disabled={loadingCoaching}
+                  style={{
+                    background: loadingCoaching ? '#1a1a1a' : 'linear-gradient(135deg, #00D4FF 0%, #0099CC 100%)',
+                    color: 'white',
+                    padding: '14px 28px',
+                    borderRadius: '12px',
+                    fontSize: '1.05rem',
+                    fontWeight: '700',
+                    border: 'none',
+                    cursor: loadingCoaching ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    boxShadow: loadingCoaching ? 'none' : '0 4px 12px rgba(0, 212, 255, 0.4)',
+                    transition: 'all 0.2s',
+                    opacity: loadingCoaching ? 0.6 : 1
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loadingCoaching) {
+                      e.target.style.transform = 'translateY(-2px)';
+                      e.target.style.boxShadow = '0 6px 16px rgba(0, 212, 255, 0.6)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!loadingCoaching) {
+                      e.target.style.transform = 'translateY(0)';
+                      e.target.style.boxShadow = '0 4px 12px rgba(0, 212, 255, 0.4)';
+                    }
+                  }}
+                >
+                  <span style={{ fontSize: '1.3rem' }}>{loadingCoaching ? '⏳' : '🤖'}</span>
+                  {loadingCoaching ? 'Analyzing Workout...' : 'Get Coaching'}
+                </button>
+              </div>
+            )}
+
+            {/* AI Coaching Analysis Display */}
+            {coachingAnalysis && (
+              <div style={{
+                marginTop: '20px',
+                background: 'linear-gradient(135deg, #1a2a3a 0%, #0f1f2f 100%)',
+                padding: '24px',
+                borderRadius: '16px',
+                border: '2px solid #00D4FF'
+              }}>
+                <h4 style={{
+                  margin: '0 0 16px 0',
+                  color: '#00D4FF',
+                  fontSize: '1.4rem',
+                  fontWeight: '800',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  <span style={{ fontSize: '1.5rem' }}>💡</span>
+                  Workout Insights
+                </h4>
+                <div style={{
+                  color: '#DDD',
+                  fontSize: '1.05rem',
+                  lineHeight: '1.8',
+                  whiteSpace: 'pre-line'
+                }}>
+                  {coachingAnalysis}
+                </div>
+              </div>
+            )}
+
+            {/* Coaching Error Display */}
+            {coachingError && (
+              <div style={{
+                marginTop: '20px',
+                background: '#2a1a1a',
+                padding: '20px',
+                borderRadius: '12px',
+                border: '1px solid #e53e3e'
+              }}>
+                <div style={{ color: '#e53e3e', fontSize: '1rem', fontWeight: '600' }}>
+                  Error getting coaching analysis: {coachingError}
+                </div>
               </div>
             )}
           </div>
