@@ -2346,7 +2346,12 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                       {/* Show adventure options for adventure/flexible users */}
                       {(userProfile?.trainingStyle === 'adventure' ||
                         (userProfile?.trainingStyle === 'flexible' && ['tempo', 'intervals', 'longRun', 'hills'].includes(workout.type))) &&
-                       ['tempo', 'intervals', 'longRun', 'hills', 'easy'].includes(workout.type) && (
+                       ['tempo', 'intervals', 'longRun', 'hills', 'easy'].includes(workout.type) &&
+                       !(() => {
+                         const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+                         const completionData = workoutCompletions[workoutKey];
+                         return completionData?.autoCompletedFromStrava;
+                       })() && (
                         <button
                           className="btn btn-primary"
                           style={{ fontSize: '0.8rem', padding: '8px 12px', background: '#4299e1', border: '1px solid #4299e1', textAlign: 'center' }}
@@ -2368,7 +2373,12 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                       )}
                       
                       {/* Show brick option prominently for Sunday long runs when user has equipment */}
-                      {(workout.type === 'longRun' || workout.type === 'brickLongRun') && userProfile?.standUpBikeType && workout.day === 'Sunday' && (
+                      {(workout.type === 'longRun' || workout.type === 'brickLongRun') && userProfile?.standUpBikeType && workout.day === 'Sunday' &&
+                       !(() => {
+                         const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+                         const completionData = workoutCompletions[workoutKey];
+                         return completionData?.autoCompletedFromStrava;
+                       })() && (
                         <button
                           className="btn"
                           style={{
@@ -2399,7 +2409,12 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                       )}
                       
                       {/* Show standard brick option for non-Sunday long runs */}
-                      {(workout.type === 'longRun' || workout.type === 'brickLongRun') && userProfile?.standUpBikeType && workout.day !== 'Sunday' && (
+                      {(workout.type === 'longRun' || workout.type === 'brickLongRun') && userProfile?.standUpBikeType && workout.day !== 'Sunday' &&
+                       !(() => {
+                         const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+                         const completionData = workoutCompletions[workoutKey];
+                         return completionData?.autoCompletedFromStrava;
+                       })() && (
                         <button
                           className="btn btn-success"
                           style={{
@@ -2428,36 +2443,43 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                           {workout.type === 'brickLongRun' ? '🏃 Run Only' : '🧱 Make Brick'}
                         </button>
                       )}
-                      
-                      <button
-                        className="btn"
-                        style={{
-                          fontSize: '0.8rem',
-                          padding: '8px 14px',
-                          textAlign: 'center',
-                          background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(0, 255, 136, 0.2) 100%)',
-                          border: '2px solid rgba(0, 212, 255, 0.5)',
-                          color: '#00D4FF',
-                          fontWeight: '600',
-                          transition: 'all 0.3s ease'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.35) 0%, rgba(0, 255, 136, 0.3) 100%)';
-                          e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.8)';
-                          e.currentTarget.style.transform = 'translateY(-1px)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(0, 255, 136, 0.2) 100%)';
-                          e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.5)';
-                          e.currentTarget.style.transform = 'translateY(0)';
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSomethingElse(workout);
-                        }}
-                      >
-                        Life Adaptations
-                      </button>
+
+                      {/* Life Adaptations - hide if synced from Strava */}
+                      {!(() => {
+                        const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
+                        const completionData = workoutCompletions[workoutKey];
+                        return completionData?.autoCompletedFromStrava;
+                      })() && (
+                        <button
+                          className="btn"
+                          style={{
+                            fontSize: '0.8rem',
+                            padding: '8px 14px',
+                            textAlign: 'center',
+                            background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(0, 255, 136, 0.2) 100%)',
+                            border: '2px solid rgba(0, 212, 255, 0.5)',
+                            color: '#00D4FF',
+                            fontWeight: '600',
+                            transition: 'all 0.3s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.35) 0%, rgba(0, 255, 136, 0.3) 100%)';
+                            e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.8)';
+                            e.currentTarget.style.transform = 'translateY(-1px)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(0, 255, 136, 0.2) 100%)';
+                            e.currentTarget.style.border = '2px solid rgba(0, 212, 255, 0.5)';
+                            e.currentTarget.style.transform = 'translateY(0)';
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSomethingElse(workout);
+                          }}
+                        >
+                          Life Adaptations
+                        </button>
+                      )}
 
                       {/* Revert to Original button for replaced workouts */}
                       {workout.replacementReason && workoutIdx === 0 && (
