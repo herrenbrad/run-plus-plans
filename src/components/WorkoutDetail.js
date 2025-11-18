@@ -192,8 +192,10 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
   const transformWorkoutData = (workoutData) => {
     if (!workoutData) return null;
 
-    // FIX: Use workoutData.workout if workoutDetails doesn't exist (intervals store data in workout)
-    const workoutLib = workoutData.workoutDetails || workoutData.workout;
+    // CROSS-TRAINING: Data is stored flat at top level (name, description, structure, etc.)
+    // REGULAR WORKOUTS: Data is nested under workoutData.workout or workoutData.workoutDetails
+    const isCrossTraining = workoutData.type === 'cross-training';
+    const workoutLib = isCrossTraining ? workoutData : (workoutData.workoutDetails || workoutData.workout);
     const workoutType = workoutData.type;
 
     // DEBUG: Log what we're working with
@@ -244,8 +246,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     // Extract structure from workout library - handle different formats
     let structure = null;
 
-    // Check for bike workout structure first (from new TEMPO_BIKE, INTERVAL_BIKE, etc. categories)
-    if (workoutData.workout?.structure) {
+    // Cross-training workouts have structure at top level
+    if (isCrossTraining && workoutLib?.structure) {
+      structure = workoutLib.structure;
+    } else if (workoutData.workout?.structure) {
+      // Check for bike workout structure (from new TEMPO_BIKE, INTERVAL_BIKE, etc. categories)
       structure = workoutData.workout.structure;
     } else if (workoutLib?.workout) {
       // Hill workouts have workout.warmup/main/recovery/cooldown
@@ -313,14 +318,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     }
 
     // Extract intensity from library if available
-    // Check bike workout effort object first
-    const actualIntensity = workoutData.workout?.effort?.perceived ||
+    // For cross-training, check effort.perceived or intensity field
+    // For bike workouts, check workout.effort object
+    const actualIntensity = (isCrossTraining && workoutLib?.effort?.perceived) ||
+                           workoutData.workout?.effort?.perceived ||
                            workoutLib?.intensity ||
                            intensityInfo.intensity;
 
     // Extract heart rate from library if available
-    // Check bike workout effort object first
-    const actualHeartRate = workoutData.workout?.effort?.heartRate ||
+    // For cross-training, check effort.heartRate
+    // For bike workouts, check workout.effort object
+    const actualHeartRate = (isCrossTraining && workoutLib?.effort?.heartRate) ||
+                           workoutData.workout?.effort?.heartRate ||
                            workoutLib?.heartRate ||
                            intensityInfo.heartRate;
 
@@ -384,7 +393,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     }
 
     // Calculate total duration based on distance and pace (if available)
-    let calculatedDuration = workoutData.workout?.duration || workoutLib?.duration || '30-45 minutes';
+    // For cross-training, duration is at top level
+    let calculatedDuration = (isCrossTraining && workoutLib?.duration) ||
+                            workoutData.workout?.duration ||
+                            workoutLib?.duration ||
+                            '30-45 minutes';
 
     // For running workouts with distance and easy pace, calculate specific duration
     if (workoutType === 'longRun' || workoutType === 'easy') {
@@ -424,18 +437,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
     // Build comprehensive workout object
     const transformedWorkout = {
-      name: workoutData.workout?.name || workoutLib?.name || 'Workout',
+      name: workoutLib?.name || 'Workout',
       type: workoutData.type || 'easy',
       focus: workoutData.focus || workoutLib?.focus || 'Recovery',
       duration: calculatedDuration,
-      description: workoutData.workout?.description || workoutLib?.description || 'Standard workout',
+      description: workoutLib?.description || 'Standard workout',
       structure: structure,
       equipmentSpecific: workoutData.equipmentSpecific || false,
       intensity: actualIntensity,
       heartRate: actualHeartRate,
       paceGuidance: paceGuidance,
       safetyNotes: safetyNotes,
-      alternatives: workoutData.workout?.alternatives || workoutLib?.alternatives || {
+      alternatives: workoutLib?.alternatives || {
         tooHot: 'Move indoors or adjust timing',
         tooTired: 'Easy recovery pace instead',
         timeConstraint: 'Reduce duration but maintain intensity',
@@ -445,13 +458,19 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       hillRequirement: workoutLib?.hillRequirement,
       terrainInstructions: workoutLib?.terrainInstructions,
       progression: workoutLib?.progression,
-      benefits: workoutData.workout?.benefits || workoutLib?.benefits || generateBenefitsFallback(workoutType, workoutData.workout?.name || workoutLib?.name),
+      benefits: workoutLib?.benefits || generateBenefitsFallback(workoutType, workoutLib?.name),
       variations: workoutLib?.variations,
       examples: workoutLib?.examples,
       trackIntervals: workoutLib?.trackIntervals,
       fueling: workoutLib?.fueling,
       runEqOptions: workoutData.runEqOptions,
-      coachingGuidance: workoutData.coachingGuidance
+      coachingGuidance: workoutData.coachingGuidance,
+      // Cross-training specific fields
+      technique: workoutLib?.technique,
+      effort: workoutLib?.effort,
+      coachingTips: workoutLib?.coachingTips,
+      settings: workoutLib?.settings,
+      crossTrainingType: workoutData.crossTrainingType
     };
 
     return transformedWorkout;
@@ -791,6 +810,45 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                  typeof currentWorkout.name === 'object' ? JSON.stringify(currentWorkout.name) :
                  'Workout'}
               </h1>
+
+              {/* CROSS-TRAINING EQUIPMENT INDICATOR */}
+              {currentWorkout.crossTrainingType && (() => {
+                const equipmentInfo = {
+                  'pool': { emoji: '🏊', color: '#3b82f6', label: 'Pool / Aqua Running' },
+                  'aquaRunning': { emoji: '🏊', color: '#3b82f6', label: 'Aqua Running' },
+                  'rowing': { emoji: '🚣', color: '#22c55e', label: 'Rowing Machine' },
+                  'elliptical': { emoji: '⚡', color: '#f59e0b', label: 'Elliptical' },
+                  'swimming': { emoji: '🏊‍♂️', color: '#06b6d4', label: 'Swimming' },
+                  'stationaryBike': { emoji: '🚴‍♀️', color: '#8b5cf6', label: 'Stationary Bike' },
+                  'standUpBike': { emoji: '🚴', color: '#ec4899', label: 'Stand-Up Bike' },
+                  'cyclete': { emoji: '🚴', color: '#ec4899', label: 'Cyclete' },
+                  'elliptigo': { emoji: '🚴', color: '#ec4899', label: 'ElliptiGO' }
+                };
+                const info = equipmentInfo[currentWorkout.crossTrainingType] || { emoji: '🏃', color: '#999', label: 'Cross-Training' };
+                return (
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    background: `linear-gradient(135deg, ${info.color}15 0%, ${info.color}25 100%)`,
+                    border: `2px solid ${info.color}`,
+                    borderRadius: '12px',
+                    padding: '12px 20px',
+                    marginTop: '16px'
+                  }}>
+                    <span style={{ fontSize: '2rem' }}>{info.emoji}</span>
+                    <div>
+                      <div style={{ color: info.color, fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Cross-Training Workout
+                      </div>
+                      <div style={{ color: 'white', fontSize: '1.3rem', fontWeight: '800', marginTop: '2px' }}>
+                        {info.label}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <p style={{
                 margin: '8px 0 0 0',
                 color: '#999',
@@ -1330,6 +1388,245 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               {typeof currentWorkout.description === 'string' ? currentWorkout.description :
                typeof currentWorkout.description === 'object' ? JSON.stringify(currentWorkout.description) :
                'Standard workout description'}
+            </p>
+          </div>
+        )}
+
+        {/* BENEFITS - Cross-Training Workouts */}
+        {currentWorkout.benefits && (
+          <div style={{
+            background: '#1a1a1a',
+            border: '2px solid rgba(34, 197, 94, 0.3)',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px'
+          }}>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              color: '#22c55e',
+              fontSize: '1.3rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>💪</span> Benefits
+            </h3>
+            <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
+              {typeof currentWorkout.benefits === 'string' ? currentWorkout.benefits :
+               Array.isArray(currentWorkout.benefits) ? currentWorkout.benefits.join(', ') :
+               typeof currentWorkout.benefits === 'object' ? JSON.stringify(currentWorkout.benefits) :
+               'Training adaptation'}
+            </p>
+          </div>
+        )}
+
+        {/* TECHNIQUE - Cross-Training Workouts */}
+        {currentWorkout.technique && (
+          <div style={{
+            background: '#1a1a1a',
+            border: '2px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px'
+          }}>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              color: '#3b82f6',
+              fontSize: '1.3rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>🎯</span> Technique
+            </h3>
+            <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
+              {typeof currentWorkout.technique === 'string' ? currentWorkout.technique :
+               typeof currentWorkout.technique === 'object' ? JSON.stringify(currentWorkout.technique) :
+               'Maintain good form'}
+            </p>
+          </div>
+        )}
+
+        {/* EFFORT ZONES - Cross-Training Workouts */}
+        {currentWorkout.effort && typeof currentWorkout.effort === 'object' && (
+          <div style={{
+            background: '#1a1a1a',
+            border: '2px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px'
+          }}>
+            <h3 style={{
+              margin: '0 0 16px 0',
+              color: '#ef4444',
+              fontSize: '1.3rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>❤️</span> Effort Guidelines
+            </h3>
+            <div style={{ display: 'grid', gap: '12px' }}>
+              {currentWorkout.effort.heartRate && (
+                <div>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Heart Rate:</strong>
+                  <span style={{ color: '#ddd', fontSize: '1rem' }}>{currentWorkout.effort.heartRate}</span>
+                </div>
+              )}
+              {currentWorkout.effort.perceived && (
+                <div>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Perceived Effort:</strong>
+                  <span style={{ color: '#ddd', fontSize: '1rem' }}>{currentWorkout.effort.perceived}</span>
+                </div>
+              )}
+              {currentWorkout.effort.cadence && (
+                <div>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Cadence:</strong>
+                  <span style={{ color: '#ddd', fontSize: '1rem' }}>{currentWorkout.effort.cadence}</span>
+                </div>
+              )}
+              {currentWorkout.effort.strokeRate && (
+                <div>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Stroke Rate:</strong>
+                  <span style={{ color: '#ddd', fontSize: '1rem' }}>{currentWorkout.effort.strokeRate}</span>
+                </div>
+              )}
+              {currentWorkout.effort.legTurnover && (
+                <div>
+                  <strong style={{ color: '#999', display: 'block', marginBottom: '4px' }}>Leg Turnover:</strong>
+                  <span style={{ color: '#ddd', fontSize: '1rem' }}>{currentWorkout.effort.legTurnover}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* EQUIPMENT SETTINGS - Cross-Training Workouts */}
+        {currentWorkout.settings && typeof currentWorkout.settings === 'object' && (
+          <div style={{
+            background: '#1a1a1a',
+            border: '2px solid rgba(168, 85, 247, 0.3)',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px'
+          }}>
+            <h3 style={{
+              margin: '0 0 16px 0',
+              color: '#a855f7',
+              fontSize: '1.3rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>⚙️</span> Equipment Settings
+            </h3>
+            <div style={{ display: 'grid', gap: '16px' }}>
+              {currentWorkout.settings.intervals && (
+                <div>
+                  <strong style={{ color: '#a855f7', fontSize: '1rem', display: 'block', marginBottom: '8px' }}>Intervals:</strong>
+                  <div style={{ paddingLeft: '12px', display: 'grid', gap: '6px' }}>
+                    {currentWorkout.settings.intervals.strokeRate && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Stroke Rate:</span> {currentWorkout.settings.intervals.strokeRate} spm
+                      </div>
+                    )}
+                    {currentWorkout.settings.intervals.pace && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Pace:</span> {currentWorkout.settings.intervals.pace}
+                      </div>
+                    )}
+                    {currentWorkout.settings.intervals.resistance && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Resistance:</span> {currentWorkout.settings.intervals.resistance}
+                      </div>
+                    )}
+                    {currentWorkout.settings.intervals.incline && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Incline:</span> {currentWorkout.settings.intervals.incline}
+                      </div>
+                    )}
+                    {currentWorkout.settings.intervals.cadence && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Cadence:</span> {currentWorkout.settings.intervals.cadence}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {currentWorkout.settings.recovery && (
+                <div>
+                  <strong style={{ color: '#a855f7', fontSize: '1rem', display: 'block', marginBottom: '8px' }}>Recovery:</strong>
+                  <div style={{ paddingLeft: '12px', display: 'grid', gap: '6px' }}>
+                    {currentWorkout.settings.recovery.strokeRate && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Stroke Rate:</span> {currentWorkout.settings.recovery.strokeRate} spm
+                      </div>
+                    )}
+                    {currentWorkout.settings.recovery.pace && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Pace:</span> {currentWorkout.settings.recovery.pace}
+                      </div>
+                    )}
+                    {currentWorkout.settings.recovery.resistance && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Resistance:</span> {currentWorkout.settings.recovery.resistance}
+                      </div>
+                    )}
+                    {currentWorkout.settings.recovery.incline && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Incline:</span> {currentWorkout.settings.recovery.incline}
+                      </div>
+                    )}
+                    {currentWorkout.settings.recovery.cadence && (
+                      <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                        <span style={{ color: '#999' }}>Cadence:</span> {currentWorkout.settings.recovery.cadence}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {currentWorkout.settings.heartRate && (
+                <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                  <strong style={{ color: '#999' }}>Heart Rate:</strong> {currentWorkout.settings.heartRate}
+                </div>
+              )}
+              {currentWorkout.settings.power && (
+                <div style={{ color: '#ddd', fontSize: '0.95rem' }}>
+                  <strong style={{ color: '#999' }}>Power:</strong> {currentWorkout.settings.power}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* COACHING TIPS - Cross-Training Workouts */}
+        {currentWorkout.coachingTips && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
+            border: '2px solid rgba(139, 92, 246, 0.3)',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px'
+          }}>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              color: '#8b5cf6',
+              fontSize: '1.3rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>💡</span> Coaching Tips
+            </h3>
+            <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
+              {typeof currentWorkout.coachingTips === 'string' ? currentWorkout.coachingTips :
+               typeof currentWorkout.coachingTips === 'object' ? JSON.stringify(currentWorkout.coachingTips) :
+               'Execute as prescribed'}
             </p>
           </div>
         )}

@@ -13,6 +13,7 @@ import WorkoutOptionsService from '../services/WorkoutOptionsService.js';
 import BrickWorkoutService from '../services/brickWorkoutService.js';
 import SomethingElseModal from './SomethingElseModal';
 import ManagePlanModal from './ManagePlanModal';
+import InjuryRecoveryModal from './InjuryRecoveryModal';
 import { formatTrainingSystem, formatEquipmentName, formatPhase, titleCase } from '../utils/typography';
 import { calorieCalculator } from '../lib/calorie-calculator.js';
 import StravaService from '../services/StravaService';
@@ -22,6 +23,7 @@ import logger from '../utils/logger';
 function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData }) {
   const navigate = useNavigate();
   const [showManagePlanModal, setShowManagePlanModal] = useState(false);
+  const [showInjuryRecoveryModal, setShowInjuryRecoveryModal] = useState(false);
   
   // Calculate the actual current week based on training plan start date
   const calculateCurrentWeek = () => {
@@ -1760,6 +1762,53 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 ⚙️ Manage Plan
               </button>
 
+              {/* Show either Report Injury or Cancel Recovery based on status */}
+              {trainingPlan?.injuryRecoveryActive ? (
+                <button
+                  onClick={async () => {
+                    if (window.confirm('Cancel injury recovery protocol and restore your original training plan?')) {
+                      try {
+                        const trainingPlanService = new TrainingPlanService();
+                        const restoredPlan = trainingPlanService.cancelInjuryRecovery(trainingPlan);
+                        await FirestoreService.saveTrainingPlan(auth.currentUser.uid, restoredPlan);
+                        window.location.reload();
+                      } catch (error) {
+                        logger.error('Error canceling injury recovery:', error);
+                        alert('Error restoring plan. Please try again.');
+                      }
+                    }
+                  }}
+                  style={{
+                    background: 'rgba(34, 197, 94, 0.1)',
+                    color: '#22c55e',
+                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                    fontSize: '0.8rem',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                  title="Cancel injury recovery and restore original plan"
+                >
+                  ✓ Cancel Recovery Protocol
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowInjuryRecoveryModal(true)}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    fontSize: '0.8rem',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                  title="Modify plan for injury recovery with cross-training"
+                >
+                  🏥 Report Injury
+                </button>
+              )}
+
               {/* Connect Strava Button */}
               {userProfile?.stravaConnected ? (
                 <>
@@ -1929,8 +1978,43 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
               <div>
                 <h3 style={{ margin: '0 0 4px 0', color: '#c05621' }}>Climate Adjustment Active</h3>
                 <p style={{ margin: 0, fontSize: '0.9rem', color: '#744210' }}>
-                  Paces automatically adjusted for {userProfile.climate.replace('_', ' ')} conditions. 
+                  Paces automatically adjusted for {userProfile.climate.replace('_', ' ')} conditions.
                   Add 30-60 seconds per mile to easy runs when very humid.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Injury Recovery Alert */}
+        {currentWeekData.weekType === 'injury-recovery' && (
+          <div className="card" style={{ marginBottom: '20px', background: 'rgba(239, 68, 68, 0.15)', border: '2px solid rgba(239, 68, 68, 0.5)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '1.5rem' }}>🏥</span>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: '0 0 4px 0', color: '#ef4444' }}>Injury Recovery Protocol Active</h3>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: '#dc2626' }}>
+                  No running this week. You're cross-training to maintain fitness while healing.
+                  {userProfile?.injuryRecovery && (
+                    <span>
+                      {' '}Return to running: Week {userProfile.injuryRecovery.returnToRunningWeek}.
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Return to Running Alert */}
+        {currentWeekData.weekType === 'return-to-running' && (
+          <div className="card" style={{ marginBottom: '20px', background: 'rgba(34, 197, 94, 0.15)', border: '2px solid rgba(34, 197, 94, 0.5)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '1.5rem' }}>🎯</span>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: '0 0 4px 0', color: '#22c55e' }}>Return to Running Week</h3>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: '#16a34a' }}>
+                  Gradual return to running mixed with cross-training. Listen to your body and ease back into it.
                 </p>
               </div>
             </div>
@@ -2008,6 +2092,26 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                       {(workout.type === 'brick' || workout.type === 'brickLongRun') && (
                         <span style={{ fontSize: '1rem', color: '#ff6b6b' }} title="Brick workout (Run + Bike combination)">🧱</span>
                       )}
+                      {workout.type === 'cross-training' && (() => {
+                        // Show equipment-specific badge for cross-training workouts
+                        const badges = {
+                          'pool': { emoji: '🏊', color: '#3b82f6', label: 'Pool / Aqua Running' },
+                          'aquaRunning': { emoji: '🏊', color: '#3b82f6', label: 'Aqua Running' },
+                          'rowing': { emoji: '🚣', color: '#22c55e', label: 'Rowing Machine' },
+                          'elliptical': { emoji: '⚡', color: '#f59e0b', label: 'Elliptical' },
+                          'swimming': { emoji: '🏊‍♂️', color: '#06b6d4', label: 'Swimming' },
+                          'stationaryBike': { emoji: '🚴‍♀️', color: '#8b5cf6', label: 'Stationary Bike' },
+                          'standUpBike': { emoji: '🚴', color: '#ec4899', label: 'Stand-Up Bike' },
+                          'cyclete': { emoji: '🚴', color: '#ec4899', label: 'Cyclete' },
+                          'elliptigo': { emoji: '🚴', color: '#ec4899', label: 'ElliptiGO' }
+                        };
+                        const badge = badges[workout.crossTrainingType] || { emoji: '🏃', color: '#999', label: 'Cross-Training' };
+                        return (
+                          <span style={{ fontSize: '1rem', color: badge.color }} title={badge.label}>
+                            {badge.emoji}
+                          </span>
+                        );
+                      })()}
                       {workout.completed && (
                         <span style={{ color: '#00FF88', fontSize: '1.2rem' }}>✓</span>
                       )}
@@ -2036,6 +2140,38 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                         {getWorkoutDistance(workout)}
                       </div>
                     )}
+
+                    {/* Cross-Training Equipment Badge */}
+                    {workout.type === 'cross-training' && workout.crossTrainingType && (() => {
+                      const equipmentLabels = {
+                        'pool': 'Pool / Aqua Running',
+                        'aquaRunning': 'Aqua Running',
+                        'rowing': 'Rowing Machine',
+                        'elliptical': 'Elliptical',
+                        'swimming': 'Swimming',
+                        'stationaryBike': 'Stationary Bike',
+                        'standUpBike': 'Stand-Up Bike',
+                        'cyclete': 'Cyclete',
+                        'elliptigo': 'ElliptiGO'
+                      };
+                      const label = equipmentLabels[workout.crossTrainingType] || workout.crossTrainingType;
+                      return (
+                        <div style={{
+                          display: 'inline-block',
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          color: '#ef4444',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          fontSize: '0.85rem',
+                          fontWeight: '600',
+                          marginBottom: '8px',
+                          marginLeft: getWorkoutDistance(workout) ? '8px' : '0',
+                          border: '1px solid rgba(239, 68, 68, 0.3)'
+                        }}>
+                          🏥 {label}
+                        </div>
+                      );
+                    })()}
 
                     {/* Expected Calorie Burn - Stand-Up Bike Workouts Only */}
                     {(workout.type === 'bike' || workout.equipmentSpecific) && (() => {
@@ -2879,6 +3015,15 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       <ManagePlanModal
         isOpen={showManagePlanModal}
         onClose={() => setShowManagePlanModal(false)}
+        userProfile={userProfile}
+        trainingPlan={trainingPlan}
+        currentWeek={currentWeek}
+      />
+
+      {/* Injury Recovery Modal */}
+      <InjuryRecoveryModal
+        isOpen={showInjuryRecoveryModal}
+        onClose={() => setShowInjuryRecoveryModal(false)}
         userProfile={userProfile}
         trainingPlan={trainingPlan}
         currentWeek={currentWeek}

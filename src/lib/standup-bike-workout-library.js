@@ -1002,4 +1002,67 @@ export class StandUpBikeWorkoutLibrary {
         
         return results;
     }
+
+    /**
+     * Get workout by type and approximate duration for injury recovery
+     * @param {string} type - Workout type: 'EASY', 'TEMPO', 'INTERVALS', 'LONG', 'HILLS', 'RECOVERY'
+     * @param {number} durationMinutes - Target duration in minutes
+     * @returns {object} - Matching workout or closest match
+     */
+    getWorkoutByDuration(type, durationMinutes) {
+        // Map type to category - use the ACTUAL category names in this library
+        const typeMapping = {
+            'EASY': 'AEROBIC_BASE',
+            'TEMPO': 'TEMPO_BIKE',
+            'INTERVALS': 'INTERVAL_BIKE',
+            'LONG': 'LONG_ENDURANCE_RIDES',
+            'HILLS': 'POWER_RESISTANCE',
+            'RECOVERY': 'RECOVERY_SPECIFIC'
+        };
+
+        const category = typeMapping[type] || 'AEROBIC_BASE';
+        const workouts = this.workoutLibrary[category];
+
+        if (!workouts || workouts.length === 0) {
+            return null;
+        }
+
+        // For stand-up bike, distance-based workouts
+        // Estimate: ~6 min/mile average on stand-up bike
+        const estimatedDistance = durationMinutes / 6;
+
+        // Find closest match by distance
+        let closestWorkout = workouts[0];
+        let smallestDiff = Math.abs(this.parseDistance(workouts[0].distance) - estimatedDistance);
+
+        for (const workout of workouts) {
+            const workoutDistance = this.parseDistance(workout.distance);
+            const diff = Math.abs(workoutDistance - estimatedDistance);
+            if (diff < smallestDiff) {
+                smallestDiff = diff;
+                closestWorkout = workout;
+            }
+        }
+
+        return closestWorkout;
+    }
+
+    /**
+     * Parse distance string to numeric miles
+     * @param {string} distanceStr - Distance like "5 miles" or "8-10 miles"
+     * @returns {number} - Distance in miles
+     */
+    parseDistance(distanceStr) {
+        if (!distanceStr) return 5; // default
+
+        // Match patterns like "5 miles", "8-10 miles", "5-7 miles"
+        const match = distanceStr.match(/(\d+)(?:-(\d+))?\s*miles?/i);
+        if (match) {
+            const low = parseInt(match[1]);
+            const high = match[2] ? parseInt(match[2]) : low;
+            return (low + high) / 2; // Average if range
+        }
+
+        return 5; // default fallback
+    }
 }
