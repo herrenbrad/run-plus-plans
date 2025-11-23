@@ -20,6 +20,8 @@ import logger from '../utils/logger';
 class TrainingPlanAIService {
     constructor() {
         // Use Firebase Functions to proxy Anthropic API calls (keeps API key secure)
+        // Function has 540s timeout, but client-side httpsCallable has default 60s timeout
+        // We'll wrap calls with a custom timeout handler to allow up to 180 seconds
         this.callAnthropicAPI = httpsCallable(functions, 'callAnthropicAPI');
 
         // Instantiate workout libraries
@@ -396,111 +398,136 @@ SEQUENCING RULES:
      * Shows available workouts that AI can select from
      */
     buildWorkoutLibraryContext() {
-        let context = `**WORKOUT LIBRARY AVAILABLE FOR SELECTION**\n\n`;
+        // Optimized: Concise format to reduce prompt size and speed up generation
+        let context = `**WORKOUT LIBRARY - Use [WORKOUT_ID: ...] format**\n\n`;
 
-        // Hill Workouts
-        context += `**HILL WORKOUTS**\n`;
+        // Hill Workouts - Just IDs and names
+        context += `**HILL:** `;
         const hillCategories = this.hillLibrary.getCategories();
+        const hillWorkouts = [];
         hillCategories.forEach(category => {
             const workouts = this.hillLibrary.getWorkoutsByCategory(category);
-            const categoryName = category.replace(/_/g, ' ').toUpperCase();
-            context += `\n${categoryName}:\n`;
             workouts.forEach((workout, index) => {
-                context += `  [WORKOUT_ID: hill_${category}_${index}] ${workout.name}\n`;
-                context += `    Duration: ${workout.duration} | Focus: ${workout.focus}\n`;
-                context += `    Intensity: ${workout.intensity}\n`;
+                hillWorkouts.push(`[hill_${category}_${index}] ${workout.name}`);
             });
         });
+        context += hillWorkouts.join(', ') + `\n`;
 
-        // Interval Workouts
-        context += `\n**INTERVAL WORKOUTS**\n`;
+        // Interval Workouts - Just IDs and names
+        context += `**INTERVALS:** `;
         const intervalCategories = this.intervalLibrary.getCategories();
+        const intervalWorkouts = [];
         intervalCategories.forEach(category => {
             const workouts = this.intervalLibrary.getWorkoutsByCategory(category);
-            const categoryName = category.replace(/_/g, ' ');
-            context += `\n${categoryName}:\n`;
             workouts.forEach((workout, index) => {
-                context += `  [WORKOUT_ID: interval_${category}_${index}] ${workout.name}\n`;
-                context += `    ${workout.repetitions.length} reps | Pace: ${workout.pace}\n`;
+                intervalWorkouts.push(`[interval_${category}_${index}] ${workout.name}`);
             });
         });
+        context += intervalWorkouts.join(', ') + `\n`;
 
-        // Tempo Workouts
-        context += `\n**TEMPO WORKOUTS**\n`;
+        // Tempo Workouts - Just IDs and names
+        context += `**TEMPO:** `;
         const tempoCategories = this.tempoLibrary.getCategories();
+        const tempoWorkouts = [];
         tempoCategories.forEach(category => {
             const workouts = this.tempoLibrary.getWorkoutsByCategory(category);
-            const categoryName = category.replace(/_/g, ' ');
-            context += `\n${categoryName}:\n`;
             workouts.forEach((workout, index) => {
-                context += `  [WORKOUT_ID: tempo_${category}_${index}] ${workout.name}\n`;
-                context += `    Duration: ${workout.duration} | ${workout.description}\n`;
+                tempoWorkouts.push(`[tempo_${category}_${index}] ${workout.name}`);
             });
         });
+        context += tempoWorkouts.join(', ') + `\n`;
 
-        // Long Run Workouts
-        context += `\n**LONG RUN WORKOUTS**\n`;
+        // Long Run Workouts - Just IDs and names
+        context += `**LONG RUNS:** `;
         const longRunCategories = this.longRunLibrary.getCategories();
+        const longRunWorkouts = [];
         longRunCategories.forEach(category => {
             const workouts = this.longRunLibrary.getWorkoutsByCategory(category);
-            const categoryName = category.replace(/_/g, ' ');
-            context += `\n${categoryName}:\n`;
             workouts.forEach((workout, index) => {
-                context += `  [WORKOUT_ID: longrun_${category}_${index}] ${workout.name}\n`;
-                context += `    ${workout.description}\n`;
+                longRunWorkouts.push(`[longrun_${category}_${index}] ${workout.name}`);
             });
         });
+        context += longRunWorkouts.join(', ') + `\n`;
 
-        context += `\n**IMPORTANT:** Always use [WORKOUT_ID: ...] format when assigning workouts!\n`;
         return context;
     }
 
     /**
      * Generate training plan with workout library integration
+     * SPLIT INTO TWO CALLS to avoid timeout:
+     * 1. Coaching analysis + paces (faster)
+     * 2. Week-by-week plan structure (concise)
      */
     async generateTrainingPlan(userProfile) {
-        // 1. Build workout library context for AI
-        const workoutContext = this.buildWorkoutLibraryContext();
-
-        // 2. Build user coaching prompt
-        const userPrompt = this.buildCoachingPrompt(userProfile);
-
-        // 3. Combine into full prompt
-        const fullPrompt = `${workoutContext}\n\n---\n\n${userPrompt}`;
-
         try {
-            // 4. Call Claude API via Firebase Function (secure server-side call)
-            const result = await this.callAnthropicAPI({
-                model: 'claude-sonnet-4-5-20250929',
-                max_tokens: 8000,
-                system: this.coachingSystemPrompt,
-                messages: [
-                    {
-                        role: 'user',
-                        content: fullPrompt
-                    }
-                ]
-            });
+            // STEP 1: Get coaching analysis and key paces (shorter, faster call)
+            const coachingPrompt = this.buildCoachingAnalysisPrompt(userProfile);
+            const coachingResult = await this.callWithTimeout(
+                this.callAnthropicAPI({
+                    model: 'claude-sonnet-4-5-20250929',
+                    max_tokens: 2000, // Shorter response for coaching analysis
+                    system: this.coachingSystemPrompt,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: coachingPrompt
+                        }
+                    ]
+                }),
+                180000 // 180 seconds timeout
+            );
 
-            if (!result.data.success) {
-                throw new Error(result.data.error || 'Failed to generate plan');
+            if (!coachingResult.data.success) {
+                throw new Error(coachingResult.data.error || 'Failed to generate coaching analysis');
             }
 
-            const planText = result.data.content[0].text;
+            const coachingText = coachingResult.data.content[0].text;
+            logger.log('✅ Step 1 complete: Coaching analysis generated');
 
-            // 5. Parse AI response (extracts workout IDs)
-            const structuredPlan = this.parseAIPlanToStructure(planText, userProfile);
+            // STEP 2: Get week-by-week plan structure (concise format)
+            // CRITICAL: Include coaching analysis so Step 2 can reference race strategy and pacing
+            const workoutContext = this.buildWorkoutLibraryContext();
+            const planPrompt = this.buildPlanStructurePrompt(userProfile, coachingText);
+            const fullPlanPrompt = `${workoutContext}\n\n---\n\n**COACHING ANALYSIS FROM STEP 1 (for reference):**\n${coachingText}\n\n---\n\n${planPrompt}`;
 
-            // 6. Hydrate workout IDs with full workout details from library
+            const planResult = await this.callWithTimeout(
+                this.callAnthropicAPI({
+                    model: 'claude-sonnet-4-5-20250929',
+                    max_tokens: 4000, // Reduced for plan structure only
+                    system: this.coachingSystemPrompt,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: fullPlanPrompt
+                        }
+                    ]
+                }),
+                180000 // 180 seconds timeout
+            );
+
+            if (!planResult.data.success) {
+                throw new Error(planResult.data.error || 'Failed to generate plan structure');
+            }
+
+            const planText = planResult.data.content[0].text;
+            logger.log('✅ Step 2 complete: Plan structure generated');
+
+            // Combine coaching analysis with plan structure
+            const combinedText = `${coachingText}\n\n---\n\n${planText}`;
+
+            // Parse AI response (extracts workout IDs)
+            const structuredPlan = this.parseAIPlanToStructure(combinedText, userProfile);
+
+            // Hydrate workout IDs with full workout details from library
             const enrichedPlan = this.enrichPlanWithWorkouts(structuredPlan);
 
-            // 7. Transform to Dashboard format
+            // Transform to Dashboard format
             const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, userProfile);
 
             return {
                 success: true,
                 plan: dashboardPlan,
-                rawResponse: planText,
+                rawResponse: combinedText,
                 metadata: {
                     generatedAt: new Date().toISOString(),
                     model: 'claude-sonnet-4-5',
@@ -515,6 +542,192 @@ SEQUENCING RULES:
                 error: error.message
             };
         }
+    }
+
+    /**
+     * Wrapper to add custom timeout to Firebase Function calls
+     * Firebase Functions v2 client has default 60s timeout, but we need 180s
+     */
+    async callWithTimeout(promise, timeoutMs) {
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Request timeout: Function call exceeded 180 seconds')), timeoutMs);
+        });
+        return Promise.race([promise, timeoutPromise]);
+    }
+
+    /**
+     * Build prompt for coaching analysis only (Step 1)
+     * Focuses on assessment, paces, and strategy - NO week-by-week plan
+     */
+    buildCoachingAnalysisPrompt(profile) {
+        const units = profile.units || 'imperial';
+        const distanceUnit = units === 'metric' ? 'kilometers' : 'miles';
+        const fullName = profile.name || profile.displayName;
+        const firstName = fullName ? fullName.split(' ')[0] : null;
+
+        let prompt = `**COACHING ANALYSIS REQUEST**\n\n`;
+        if (firstName) {
+            prompt += `Runner: ${firstName}\n\n`;
+            prompt += `**CRITICAL: Use the runner's actual name "${firstName}" throughout your response. DO NOT use example names like "Sarah" or any other placeholder names. The runner's name is ${firstName}.**\n\n`;
+        }
+
+        prompt += `**Goal Race:**\n`;
+        prompt += `- Distance: ${profile.raceDistance}\n`;
+        prompt += `- Goal Time: ${profile.raceTime}\n`;
+        prompt += `- Race Date: ${profile.raceDate}\n\n`;
+
+        prompt += `**Current Fitness:**\n`;
+        prompt += `- Weekly Mileage: ${profile.currentWeeklyMileage} ${distanceUnit}\n`;
+        prompt += `- Current Long Run: ${profile.currentLongRun} ${distanceUnit}\n`;
+        if (profile.recentRaceTime && profile.recentRaceDistance) {
+            prompt += `- Recent Race: ${profile.recentRaceTime} for ${profile.recentRaceDistance}\n`;
+            const fitnessContext = this.buildFitnessAssessmentContext(profile);
+            if (fitnessContext) {
+                prompt += fitnessContext;
+            }
+        }
+        prompt += `\n`;
+
+        prompt += `**OUTPUT REQUIRED (Jason Fitzgerald voice):**\n`;
+        prompt += `1. Honest assessment with data (e.g., "39 min improvement = 3 min/week")\n`;
+        prompt += `2. Key training paces with specific ranges\n`;
+        prompt += `3. Race day strategy: pacing plan, fueling, terrain tactics\n`;
+        prompt += `4. Checkpoints with metrics (e.g., "Week 8: 10K under 65:00")\n`;
+        prompt += `5. Final notes: why plan works, what to watch, encouragement\n\n`;
+        prompt += `**DO NOT include week-by-week plan yet - that comes in a separate request.**\n`;
+        prompt += `Keep response focused and concise (150-200 words for assessment, then paces and strategy).\n`;
+
+        return prompt;
+    }
+
+    /**
+     * Build prompt for plan structure only (Step 2)
+     * Focuses on week-by-week schedule - concise format
+     */
+    buildPlanStructurePrompt(profile, coachingAnalysis) {
+        const today = new Date();
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const dayAbbrevs = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const startDayOfWeek = today.getDay();
+        const startDayName = dayNames[startDayOfWeek];
+        const startDayAbbrev = dayAbbrevs[startDayOfWeek];
+        // CRITICAL: If starting on Sunday, Week 1 only has 1 day (Sunday). Otherwise, days from start day through Sunday.
+        const daysInWeek1 = startDayOfWeek === 0 ? 1 : (7 - startDayOfWeek + 1);
+
+        const units = profile.units || 'imperial';
+        const distanceUnit = units === 'metric' ? 'kilometers' : 'miles';
+        const restDays = profile.restDays || [];
+
+        // CRITICAL: Calculate total weeks from today to race date
+        const raceDateObj = new Date(profile.raceDate);
+        const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+        const totalWeeks = Math.ceil((raceDateObj.getTime() - today.getTime()) / msPerWeek);
+        
+        // Add bike/cross-training day info (CRITICAL: Same as buildCoachingPrompt)
+        let bikeDays = [];
+        let bikeType = null;
+        if (profile.standUpBikeType && profile.standUpBikeType !== 'none' && profile.preferredBikeDays && profile.preferredBikeDays.length > 0) {
+            bikeType = profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO';
+            bikeDays = profile.preferredBikeDays;
+        }
+
+        let prompt = `**WEEK-BY-WEEK PLAN STRUCTURE REQUEST**\n\n`;
+        prompt += `Based on the coaching analysis above, generate ONLY the week-by-week training schedule.\n`;
+        prompt += `**CRITICAL: Use the race strategy and pacing plan from the coaching analysis above. The race strategy in Week ${totalWeeks} must match the strategy outlined in the coaching analysis.**\n\n`;
+        
+        // CRITICAL: Explicitly state race distance to prevent confusion
+        const raceDistanceDisplay = profile.raceDistance === 'Half' ? 'Half Marathon (13.1 miles)' : 
+                                    profile.raceDistance === 'Marathon' ? 'Marathon (26.2 miles)' :
+                                    profile.raceDistance === '5K' ? '5K (3.1 miles)' :
+                                    profile.raceDistance === '10K' ? '10K (6.2 miles)' :
+                                    profile.raceDistance;
+        prompt += `**CRITICAL RACE CONTEXT:**\n`;
+        prompt += `- Race Distance: ${raceDistanceDisplay}\n`;
+        prompt += `- Goal Time: ${profile.raceTime}\n`;
+        prompt += `- Race Date: ${profile.raceDate}\n`;
+        prompt += `- **TOTAL WEEKS: Generate EXACTLY ${totalWeeks} weeks (Week 1 through Week ${totalWeeks})**\n`;
+        prompt += `**DO NOT confuse this with a different race distance. The race is ${raceDistanceDisplay}, NOT a marathon unless explicitly stated above.**\n`;
+        prompt += `**DO NOT generate more than ${totalWeeks} weeks. The plan must be exactly ${totalWeeks} weeks long, ending on the race date.**\n\n`;
+
+        prompt += `**CRITICAL FORMAT:**\n`;
+        if (startDayOfWeek === 0) {
+            // Starting on Sunday - Week 1 is ONLY Sunday
+            prompt += `- Week 1: ONLY ${startDayAbbrev} (1 day - just today, ${startDayName})\n`;
+        } else {
+            prompt += `- Week 1: Only ${startDayAbbrev}-Sun (${daysInWeek1} days, starts ${startDayName})\n`;
+        }
+        prompt += `- Week 2+: Full Mon-Sun (7 days)\n`;
+        prompt += `- Use [WORKOUT_ID: type_category_index] for quality workouts\n`;
+        prompt += `- Include distance in ${distanceUnit} for EVERY workout\n`;
+        prompt += `- **CRITICAL: DO NOT include [WORKOUT_ID: ...] tags in your output text. Only use the tags internally for reference, but in the actual workout lines, write clean names like:\n`;
+        prompt += `  * "Classic Easy Long Run 5 miles" (NOT "[WORKOUT_ID: longrun_TRADITIONAL_EASY_0] Classic Easy Long Run 5 miles")\n`;
+        prompt += `  * "Classic Hill Repeats 6 miles" (NOT "[WORKOUT_ID: hill_medium_vo2_0] Classic Hill Repeats 6 miles")\n`;
+        prompt += `  * "Classic Tempo Run 6 miles" (NOT "[WORKOUT_ID: tempo_TRADITIONAL_TEMPO_0] Classic Tempo Run 6 miles")\n`;
+        prompt += `  The system will automatically match workouts using the library, but users should see clean, readable names.\n`;
+        if (restDays.length > 0) {
+            prompt += `- **REST DAYS: ${restDays.join(', ')} = "Rest" ONLY**\n`;
+        }
+        if (bikeDays.length > 0 && bikeType) {
+            prompt += `- **IMPORTANT: ${bikeDays.join(' and ')} should be ${bikeType} rides, NOT runs**\n`;
+            prompt += `  Format: "Tue: Ride 4 RunEQ miles on your ${bikeType}" (NOT "Easy 4 mile run")\n`;
+        }
+        prompt += `\n`;
+
+        prompt += `**EXAMPLE FORMAT:**\n`;
+        if (startDayOfWeek === 0) {
+            // Starting on Sunday - Week 1 is ONLY Sunday
+            prompt += `### Week 1 (${startDayAbbrev} only) - XX ${distanceUnit}\n`;
+            if (bikeDays.includes(startDayName) && bikeType) {
+                prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
+            } else {
+                prompt += `- ${startDayAbbrev}: Easy 3 ${distanceUnit}\n`;
+            }
+            prompt += `\n`;
+        } else {
+            prompt += `### Week 1 (${startDayAbbrev}-Sun) - XX ${distanceUnit}\n`;
+            if (bikeDays.includes(startDayName) && bikeType) {
+                prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
+            } else {
+                prompt += `- ${startDayAbbrev}: [WORKOUT_ID: tempo_THRESHOLD_0] Tempo Run 6 ${distanceUnit}\n`;
+            }
+            prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 5 ${distanceUnit}\n\n`;
+        }
+        prompt += `### Week 2 - XX ${distanceUnit}\n`;
+        prompt += `- Mon: Rest\n`;
+        prompt += `- Wed: [WORKOUT_ID: interval_VO2_MAX_2] 800m Intervals 6 ${distanceUnit}\n`;
+        if (bikeDays.includes('Thursday') && bikeType) {
+            prompt += `- Thu: Ride 3 RunEQ miles on your ${bikeType}\n`;
+        } else {
+            prompt += `- Thu: Easy 3 ${distanceUnit}\n`;
+        }
+        prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 7 ${distanceUnit}\n\n`;
+
+        // Calculate taper weeks (last 2-3 weeks before race)
+        const taperStartWeek = Math.max(totalWeeks - 2, 1);
+        const taperWeeks = [];
+        for (let w = taperStartWeek; w <= totalWeeks; w++) {
+            taperWeeks.push(w);
+        }
+        
+        prompt += `**REQUIREMENTS:**\n`;
+        prompt += `- **CRITICAL: Generate EXACTLY ${totalWeeks} weeks (Week 1 through Week ${totalWeeks})**\n`;
+        prompt += `- Start conservatively (Week 1 long run ≤ ${profile.currentLongRun} ${distanceUnit})\n`;
+        prompt += `- Progressive overload (increase 1-2 ${distanceUnit}/week)\n`;
+        prompt += `- Recovery weeks every 3-4 weeks\n`;
+        prompt += `- **TAPER WEEKS (Weeks ${taperWeeks.join(', ')}):**\n`;
+        prompt += `  * Reduce volume by 30-50% compared to peak weeks\n`;
+        prompt += `  * Maintain intensity but reduce frequency (1 quality workout per week max)\n`;
+        prompt += `  * Long runs should be 50-60% of peak long run distance\n`;
+        prompt += `  * Week ${totalWeeks} (race week): Minimal volume, easy runs only, no hard workouts\n`;
+        prompt += `- Include week header with mileage for each week\n`;
+        prompt += `- Brief "Notes" for each week explaining focus\n`;
+        prompt += `- Week ${totalWeeks} should end on or just before the race date (${profile.raceDate})\n`;
+        prompt += `- **CRITICAL: Week ${totalWeeks} race strategy must match the pacing plan from coaching analysis above**\n\n`;
+
+        prompt += `**OUTPUT:** Week-by-week schedule ONLY. No coaching analysis (already provided above).\n`;
+        prompt += `**REMINDER: You must generate exactly ${totalWeeks} weeks, no more, no less.**\n`;
+
+        return prompt;
     }
 
     /**
@@ -648,17 +861,20 @@ SEQUENCING RULES:
 
         try {
             // Call Claude API via Firebase Function (secure server-side call)
-            const result = await this.callAnthropicAPI({
-                model: 'claude-sonnet-4-5-20250929',
-                max_tokens: 8000,
-                system: this.coachingSystemPrompt,
-                messages: [
-                    {
-                        role: 'user',
-                        content: fullPrompt
-                    }
-                ]
-            });
+            const result = await this.callWithTimeout(
+                this.callAnthropicAPI({
+                    model: 'claude-sonnet-4-5-20250929',
+                    max_tokens: 6000, // Reduced from 8000 to speed up generation and reduce timeout risk
+                    system: this.coachingSystemPrompt,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: fullPrompt
+                        }
+                    ]
+                }),
+                180000 // 180 seconds timeout
+            );
 
             if (!result.data.success) {
                 throw new Error(result.data.error || 'Failed to regenerate plan');
@@ -780,7 +996,7 @@ SEQUENCING RULES:
 
         // Add personalization instruction if we have a name
         if (firstName) {
-            prompt += `**PERSONALIZATION: The runner's name is ${firstName}. Use their name naturally 2-3 times throughout your coaching analysis to make it feel personal and engaging. For example: "Hey, ${firstName}!" at the start, and "Here's the thing, ${firstName}..." when being honest about challenges.**\n\n`;
+            prompt += `**PERSONALIZATION: The runner's name is ${firstName}. Use their ACTUAL name "${firstName}" naturally 2-3 times throughout your coaching analysis. DO NOT use example names like "Sarah" or any placeholder names. For example: "Hey, ${firstName}!" at the start, and "Here's the thing, ${firstName}..." when being honest about challenges.**\n\n`;
         }
 
         prompt += `**Goal Race:**\n`;
@@ -956,12 +1172,17 @@ SEQUENCING RULES:
         });
         exampleWeek2 += `\n`;
 
-        prompt += exampleWeek1;
-        prompt += exampleWeek2;
+        // Simplified examples - just show format, not full weeks
+        prompt += `**EXAMPLE FORMAT:**\n`;
+        prompt += `Week 1 (${startDayAbbrev}-Sun):\n`;
+        prompt += `- ${startDayAbbrev}: [WORKOUT_ID: tempo_THRESHOLD_0] Tempo Run 6 ${distanceUnit}\n`;
+        prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 5 ${distanceUnit}\n\n`;
+        prompt += `Week 2 (Mon-Sun):\n`;
+        prompt += `- Mon: Rest\n`;
+        prompt += `- Wed: [WORKOUT_ID: interval_VO2_MAX_2] 800m Intervals 6 ${distanceUnit}\n`;
+        prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 7 ${distanceUnit}\n\n`;
 
-        prompt += `**CRITICAL WEEK STRUCTURE:**\n`;
-        prompt += `- **Week 1 is a PARTIAL week** starting today (${startDayName}). Only include these days: ${uniqueWeek1Days.join(', ')}\n`;
-        prompt += `- **Week 2 onwards are FULL Mon-Sun weeks**\n\n`;
+        prompt += `**CRITICAL:** Week 1 starts ${startDayName} (partial). Week 2+ are full Mon-Sun.\n\n`;
 
         // Add VERY EXPLICIT rest day rules
         if (restDays.length > 0) {
@@ -988,17 +1209,19 @@ SEQUENCING RULES:
         prompt += `2. Increase long run by 1-2 ${distanceUnit} per week, with recovery weeks every 3-4 weeks\n`;
         prompt += `3. Build from current fitness level (${profile.currentWeeklyMileage} ${distanceUnit}/week) - don't jump more than 10% weekly\n\n`;
 
-        prompt += `**Please provide in Jason Fitzgerald's coaching voice:**\n`;
-        prompt += `1. **Honest assessment** - Start with "Let's be real about this goal..." Be direct about whether it's ambitious, realistic, or very achievable. Use data (e.g., "39 minutes improvement in 13 weeks = 3 min/week").\n`;
-        prompt += `2. **Key training paces** - List all paces with specific ranges (e.g., "Easy: 11:30-12:30/mile", "Threshold: 9:35-9:50/mile"). Include why each pace matters.\n`;
-        prompt += `3. **Complete week-by-week plan** - For each week, include:\n`;
-        prompt += `   - Week header with focus (e.g., "Focus: Build aerobic base, introduce speed")\n`;
-        prompt += `   - All 7 days with specific workouts\n`;
-        prompt += `   - Brief "Notes" explaining the week's purpose and key workouts\n`;
-        prompt += `4. **Race day strategy** - Specific pacing plan, fueling strategy, terrain tactics\n`;
-        prompt += `5. **Checkpoints & reality checks** - Clear milestones with specific metrics (e.g., "Week 8: 10K under 65:00 or adjust goal"). Explain what each checkpoint tells us.\n`;
-        prompt += `6. **Final coaching notes** - Why this plan works, what to watch for, encouragement to trust the process\n\n`;
-        prompt += `**TONE:** Be conversational, direct, and encouraging. Use the runner's name naturally. Explain the "why" behind workouts. Emphasize injury prevention and smart recovery. End with confidence-building encouragement.\n\n`;
+        // CRITICAL: Calculate total weeks from today to race date
+        const raceDateObj = new Date(profile.raceDate);
+        const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+        const totalWeeks = Math.ceil((raceDateObj.getTime() - today.getTime()) / msPerWeek);
+
+        prompt += `**OUTPUT REQUIREMENTS (Jason Fitzgerald voice):**\n`;
+        prompt += `1. Honest assessment with data (e.g., "39 min improvement = 3 min/week")\n`;
+        prompt += `2. Key training paces with ranges\n`;
+        prompt += `3. Week-by-week plan: **EXACTLY ${totalWeeks} weeks** (Week 1 through Week ${totalWeeks}), header, all days, brief notes\n`;
+        prompt += `4. Race day strategy: pacing, fueling, terrain\n`;
+        prompt += `5. Checkpoints with metrics (e.g., "Week 8: 10K under 65:00")\n`;
+        prompt += `6. Final notes: why plan works, what to watch, encouragement\n`;
+        prompt += `**CRITICAL: The week-by-week plan must be exactly ${totalWeeks} weeks long. Do not generate more or fewer weeks.**\n\n`;
 
         return prompt;
     }
@@ -1068,17 +1291,20 @@ COACHING REQUIREMENTS (Jason Fitzgerald voice):
 Keep response to 200-250 words. Be conversational, direct, and actionable. Use the runner's name naturally if provided.`;
 
         try {
-            const result = await this.callAnthropicAPI({
-                model: 'claude-sonnet-4-5-20250929',
-                max_tokens: 600,
-                system: this.coachingSystemPrompt,
-                messages: [
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ]
-            });
+            const result = await this.callWithTimeout(
+                this.callAnthropicAPI({
+                    model: 'claude-sonnet-4-5-20250929',
+                    max_tokens: 600,
+                    system: this.coachingSystemPrompt,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt
+                        }
+                    ]
+                }),
+                180000 // 180 seconds timeout
+            );
 
             if (!result.data.success) {
                 throw new Error(result.data.error || 'Failed to generate injury recovery coaching');
@@ -1181,17 +1407,20 @@ COACHING REQUIREMENTS (Jason Fitzgerald voice):
 Keep response to 200-250 words. Be conversational, direct, and actionable. Use the runner's name naturally if provided.`;
 
         try {
-            const result = await this.callAnthropicAPI({
-                model: 'claude-sonnet-4-5-20250929',
-                max_tokens: 600,
-                system: this.coachingSystemPrompt,
-                messages: [
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ]
-            });
+            const result = await this.callWithTimeout(
+                this.callAnthropicAPI({
+                    model: 'claude-sonnet-4-5-20250929',
+                    max_tokens: 600,
+                    system: this.coachingSystemPrompt,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt
+                        }
+                    ]
+                }),
+                180000 // 180 seconds timeout
+            );
 
             if (!result.data.success) {
                 throw new Error(result.data.error || 'Failed to generate plan adjustment coaching');
@@ -1668,12 +1897,19 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                         rest_or_xt: 'Recovery / XT'
                     };
 
+                    // Clean workout name - remove [WORKOUT_ID: ...] tags if present
+                    let cleanName = details.name || workout.description;
+                    cleanName = cleanName.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/g, '').trim();
+                    
+                    let cleanDescription = details.description || workout.description;
+                    cleanDescription = cleanDescription.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/g, '').trim();
+
                     return {
                         day: workout.day,
                     type: normalizedType,
-                    // CRITICAL: Library should provide name/description - if missing, use workout description but log warning
-                    name: details.name || workout.description,
-                    description: details.description || workout.description,
+                    // CRITICAL: Clean names/descriptions - remove WORKOUT_ID tags
+                    name: cleanName,
+                    description: cleanDescription,
                     distance: extractedDistance,
                     // CRITICAL: Focus should come from library or type mapping - only fallback to 'Training' if truly unknown
                     focus: focusMap[normalizedType] || details.focus || 'Training',
@@ -1735,11 +1971,15 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                     rest_or_xt: 'Recovery / XT'
                 };
 
+                // Clean fallback workout name - remove [WORKOUT_ID: ...] tags if present
+                let cleanFallbackName = workout.description;
+                cleanFallbackName = cleanFallbackName.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/g, '').trim();
+
                 const fallbackWorkout = {
                     day: workout.day,
                     type: fallbackType,
-                    name: workout.description,
-                    description: workout.description,
+                    name: cleanFallbackName,
+                    description: cleanFallbackName,
                     distance: extractedDistance,
                     focus: fallbackFocusMap[fallbackType] || 'Training', // Keep this fallback for safety, but type should be determined above
                     workout: {
@@ -1763,15 +2003,18 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
         });
 
         // Clean WORKOUT_ID tags from coaching analysis for display
+        // Use a more aggressive regex that catches all variations
+        const workoutIdRegex = /\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_[^\]]+\]\s*/gi;
         const cleanedCoachingText = enrichedPlan.fullPlanText
-            ? enrichedPlan.fullPlanText.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/g, '')
+            ? enrichedPlan.fullPlanText.replace(workoutIdRegex, '').trim()
             : enrichedPlan.fullPlanText;
 
-        // Calculate start date (working backwards from race date)
+        // CRITICAL: Plan starts TODAY, not calculated backwards from race date
+        // Week 1 starts on the day the user onboarded (today)
         const totalWeeks = enrichedPlan.weeks.length;
+        const today = new Date();
+        const startDate = new Date(today); // Start date is TODAY
         const raceDate = new Date(userProfile.raceDate);
-        const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-        const startDate = new Date(raceDate.getTime() - (totalWeeks * msPerWeek));
 
         // Format as YYYY-MM-DD for consistency
         const startDateString = startDate.toISOString().split('T')[0];

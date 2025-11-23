@@ -145,12 +145,6 @@ function LandingPage() {
                   <p style={{ fontSize: '0.9rem', color: '#888888', margin: '8px 0' }}>
                     Create a personalized training plan tailored to your goals, experience, and equipment.
                   </p>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-around', fontSize: '0.8rem', color: '#666666' }}>
-                    <span>✓ No credit card</span>
-                    <span>✓ Full preview</span>
-                    <span>✓ All features</span>
-                  </div>
                 </>
               )}
             </div>

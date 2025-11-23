@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { auth } from '../firebase/config';
 import TrainingPlanAIService from '../services/TrainingPlanAIService.js';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
@@ -423,6 +424,16 @@ function OnboardingFlow({ onComplete }) {
       const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       const restDays = allDays.filter(day => !formData.availableDays.includes(day));
 
+      // Get user's name from Firebase Auth (if available)
+      const currentUser = auth.currentUser;
+      const userName = currentUser?.displayName || currentUser?.email?.split('@')[0] || null;
+      
+      logger.log('👤 User name from Firebase Auth:', {
+        displayName: currentUser?.displayName,
+        email: currentUser?.email,
+        extractedName: userName
+      });
+
       // Build user profile for AI service
       const userProfile = {
         raceDistance: formData.raceDistance,
@@ -446,7 +457,10 @@ function OnboardingFlow({ onComplete }) {
         climate: formData.climate,
         location: formData.location,
         runningStatus: formData.runningStatus,
-        units: 'imperial'
+        units: 'imperial',
+        // CRITICAL: Include user's name for personalization (from Firebase Auth)
+        name: userName,
+        displayName: userName
       };
 
       logger.log('👤 User profile:', userProfile);
@@ -1946,7 +1960,7 @@ function OnboardingFlow({ onComplete }) {
             </div>
 
             <p style={{ fontSize: '0.9rem', color: '#E5E7EB' }}>
-              Click "Create My Plan" to see your complete training plan preview - no payment required!
+              Click "Create My Plan" to see your complete training plan preview.
             </p>
           </div>
         );

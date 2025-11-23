@@ -366,9 +366,6 @@ function TrainingPlanPreview({ userProfile, trainingPlan }) {
               🎯 Start My Training Plan
             </button>
             
-            <p style={{ fontSize: '0.9rem', margin: '8px 0 0 0', opacity: 0.8 }}>
-              Free preview • Try all features • Subscribe when ready
-            </p>
           </div>
         </div>
       </div>
