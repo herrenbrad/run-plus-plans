@@ -182,39 +182,65 @@ exports.callAnthropicAPI = onCall(
     enforceAppCheck: false, // Set to true in production if you enable App Check
     secrets: [anthropicApiKey], // Reference the secret
     runtime: 'nodejs20', // Use Node.js 20 runtime
+    timeoutSeconds: 300, // Increase timeout to 5 minutes for large AI responses
+    memory: '512MiB', // Increase memory for better performance
   },
   async (request) => {
-    // Verify user is authenticated
-    if (!request.auth) {
-      throw new Error("Unauthorized: User must be authenticated");
-    }
-
-    const { model, max_tokens, system, messages } = request.data;
-
-    // Validate required parameters
-    if (!model || !messages) {
-      throw new Error("Missing required parameters: model and messages are required");
-    }
-
-    // Get API key from secret
-    const apiKey = anthropicApiKey.value();
-
-    if (!apiKey) {
-      throw new Error("Anthropic API key not configured. Set the secret: firebase functions:secrets:set ANTHROPIC_API_KEY");
-    }
-
-    // Initialize Anthropic client
-    const client = new Anthropic({
-      apiKey: apiKey,
-    });
-
     try {
+      // Verify user is authenticated
+      if (!request.auth) {
+        console.error("Unauthorized: User not authenticated");
+        return {
+          success: false,
+          error: "Unauthorized: User must be authenticated"
+        };
+      }
+
+      const { model, max_tokens, system, messages } = request.data;
+
+      // Validate required parameters
+      if (!model || !messages) {
+        console.error("Missing required parameters:", { model: !!model, messages: !!messages });
+        return {
+          success: false,
+          error: "Missing required parameters: model and messages are required"
+        };
+      }
+
+      // Get API key from secret
+      const apiKey = anthropicApiKey.value();
+
+      if (!apiKey) {
+        console.error("Anthropic API key not configured");
+        return {
+          success: false,
+          error: "Anthropic API key not configured. Set the secret: firebase functions:secrets:set ANTHROPIC_API_KEY"
+        };
+      }
+
+      console.log("Making Anthropic API call:", {
+        model: model,
+        max_tokens: max_tokens || 8000,
+        messageCount: messages.length,
+        systemPromptLength: system ? system.length : 0
+      });
+
+      // Initialize Anthropic client
+      const client = new Anthropic({
+        apiKey: apiKey,
+      });
+
       // Make API call
       const response = await client.messages.create({
         model: model || "claude-sonnet-4-5-20250929",
         max_tokens: max_tokens || 8000,
         system: system,
         messages: messages,
+      });
+
+      console.log("Anthropic API call successful:", {
+        contentLength: response.content?.[0]?.text?.length || 0,
+        usage: response.usage
       });
 
       return {
@@ -224,9 +250,14 @@ exports.callAnthropicAPI = onCall(
       };
     } catch (error) {
       console.error("Anthropic API Error:", error);
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
       return {
         success: false,
-        error: error.message,
+        error: error.message || "An unknown error occurred",
       };
     }
   }

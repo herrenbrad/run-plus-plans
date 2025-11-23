@@ -23,6 +23,7 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const analytics = getAnalytics(app);
-export const functions = getFunctions(app);
+// Initialize Functions with explicit region (must match deployment region)
+export const functions = getFunctions(app, 'us-central1');
 
 export default app;
