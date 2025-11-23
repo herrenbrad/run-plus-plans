@@ -7,8 +7,8 @@
  * - Workout library provides quality & cross-training options
  */
 
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { auth } from '../firebase/config';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../firebase/config';
 import { HillWorkoutLibrary } from '../lib/hill-workout-library';
 import { IntervalWorkoutLibrary } from '../lib/interval-workout-library';
 import { TempoWorkoutLibrary } from '../lib/tempo-workout-library';
