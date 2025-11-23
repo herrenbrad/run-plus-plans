@@ -20,7 +20,12 @@ export default function PlanWelcomeScreen({ trainingPlan }) {
     <div className="plan-welcome-screen">
       <div className="welcome-container">
         <div className="welcome-header">
-          <h1>🎉 Your Training Plan is Ready!</h1>
+          <img
+            src="/logo.png"
+            alt="Run+ Plans"
+            className="welcome-logo"
+          />
+          <h1>Your Training Plan is Ready</h1>
           <p>Here's what your AI coach has to say about your journey ahead</p>
         </div>
 
