@@ -623,6 +623,28 @@ SEQUENCING RULES:
         const msPerWeek = 7 * 24 * 60 * 60 * 1000;
         const totalWeeks = Math.ceil((raceDateObj.getTime() - today.getTime()) / msPerWeek);
         
+        // Format today's date for the prompt
+        const todayFormatted = today.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        
+        // Calculate Week 1 date range
+        const week1EndDate = new Date(today);
+        if (startDayOfWeek === 0) {
+            // Starting on Sunday - Week 1 is just Sunday
+            // Week 1 end is also Sunday (same day)
+        } else {
+            // Week 1 ends on Sunday (7 - startDayOfWeek days later)
+            week1EndDate.setDate(today.getDate() + (7 - startDayOfWeek));
+        }
+        const week1EndFormatted = week1EndDate.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
+        });
+        
         // Add bike/cross-training day info (CRITICAL: Same as buildCoachingPrompt)
         let bikeDays = [];
         let bikeType = null;
@@ -645,9 +667,17 @@ SEQUENCING RULES:
         prompt += `- Race Distance: ${raceDistanceDisplay}\n`;
         prompt += `- Goal Time: ${profile.raceTime}\n`;
         prompt += `- Race Date: ${profile.raceDate}\n`;
+        prompt += `- **TODAY'S DATE: ${todayFormatted} (${startDayName})**\n`;
+        prompt += `- **WEEK 1 STARTS: ${todayFormatted} (${startDayName})**\n`;
+        if (startDayOfWeek === 0) {
+            prompt += `- **WEEK 1 DATE RANGE: ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} only (1 day)**\n`;
+        } else {
+            prompt += `- **WEEK 1 DATE RANGE: ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${week1EndFormatted}**\n`;
+        }
         prompt += `- **TOTAL WEEKS: Generate EXACTLY ${totalWeeks} weeks (Week 1 through Week ${totalWeeks})**\n`;
         prompt += `**DO NOT confuse this with a different race distance. The race is ${raceDistanceDisplay}, NOT a marathon unless explicitly stated above.**\n`;
-        prompt += `**DO NOT generate more than ${totalWeeks} weeks. The plan must be exactly ${totalWeeks} weeks long, ending on the race date.**\n\n`;
+        prompt += `**DO NOT generate more than ${totalWeeks} weeks. The plan must be exactly ${totalWeeks} weeks long, ending on the race date.**\n`;
+        prompt += `**CRITICAL: Week 1 starts TODAY (${todayFormatted}), NOT next Monday or any other date. Use the actual date range shown above.**\n\n`;
 
         prompt += `**CRITICAL FORMAT:**\n`;
         if (startDayOfWeek === 0) {
@@ -674,9 +704,10 @@ SEQUENCING RULES:
         prompt += `\n`;
 
         prompt += `**EXAMPLE FORMAT:**\n`;
+        const week1StartDate = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         if (startDayOfWeek === 0) {
             // Starting on Sunday - Week 1 is ONLY Sunday
-            prompt += `### Week 1 (${startDayAbbrev} only) - XX ${distanceUnit}\n`;
+            prompt += `### Week 1 (${week1StartDate} only) - XX ${distanceUnit}\n`;
             if (bikeDays.includes(startDayName) && bikeType) {
                 prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
             } else {
@@ -684,7 +715,7 @@ SEQUENCING RULES:
             }
             prompt += `\n`;
         } else {
-            prompt += `### Week 1 (${startDayAbbrev}-Sun) - XX ${distanceUnit}\n`;
+            prompt += `### Week 1 (${week1StartDate} - ${week1EndFormatted}) - XX ${distanceUnit}\n`;
             if (bikeDays.includes(startDayName) && bikeType) {
                 prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
             } else {
@@ -1507,6 +1538,9 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 const cleanDescription = idMatch
                     ? rawDescription.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/, '').trim()
                     : rawDescription;
+                
+                // CRITICAL: Store original description before cleaning for distance extraction
+                const originalDescription = rawDescription;
 
                 // Determine workout type from description for non-library workouts
                 let inferredType = null;
@@ -1522,6 +1556,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 currentWeek.workouts.push({
                     day: workoutMatch[1],
                     description: cleanDescription,
+                    originalDescription: originalDescription, // Store original for distance extraction
                     workoutId: idMatch ? idMatch[0] : null,
                     workoutType: idMatch ? idMatch[1] : inferredType,
                     workoutCategory: idMatch ? idMatch[2] : null,
@@ -1697,6 +1732,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                         if (rawWorkout) {
                             fullWorkout = this.tempoLibrary.prescribeTempoWorkout(rawWorkout.name, {
                                 paces: structuredPlan.paces,
+                                totalDistance: totalDistance,
                                 weekNumber: weekNumber,
                                 totalWeeks: totalWeeks
                             });
@@ -1718,11 +1754,18 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                     if (fullWorkout) {
                         console.log(`    ✅ Found workout: ${fullWorkout.name}`);
                         const enriched = this.injectUserPaces(fullWorkout, structuredPlan.paces);
+                        
+                        // CRITICAL: Ensure distance is preserved from AI's description
+                        if (totalDistance && !enriched.distance) {
+                            enriched.distance = totalDistance;
+                            console.log(`    📏 Added distance ${totalDistance} miles to enriched workout`);
+                        }
 
                         return {
                             ...workout,
                             fullWorkoutDetails: enriched,
-                            hasStructuredWorkout: true
+                            hasStructuredWorkout: true,
+                            extractedDistance: totalDistance // Store for later use
                         };
                     } else {
                         console.log(`    ❌ No workout found at index ${workout.workoutIndex}`);
@@ -1830,12 +1873,22 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                     });
 
                     // Try to extract distance from AI's workout description (e.g., "Long Run 10 miles")
-                    let extractedDistance = details.distance || 0;
+                    // CRITICAL: Check workout.extractedDistance first (from enrichPlanWithWorkouts)
+                    let extractedDistance = workout.extractedDistance || details.distance || 0;
                     if (!extractedDistance) {
                         const distanceMatch = workout.description.match(/(\d+(?:\.\d+)?)\s*(mile|miles|mi|km)/i);
                         if (distanceMatch) {
                             extractedDistance = parseFloat(distanceMatch[1]);
                             console.log(`  📏 Extracted distance from description: ${extractedDistance} ${distanceMatch[2]}`);
+                        }
+                    }
+                    
+                    // CRITICAL: If still no distance, try to extract from the original description before cleaning
+                    if (!extractedDistance && workout.originalDescription) {
+                        const originalMatch = workout.originalDescription.match(/(\d+(?:\.\d+)?)\s*(mile|miles|mi|km)/i);
+                        if (originalMatch) {
+                            extractedDistance = parseFloat(originalMatch[1]);
+                            console.log(`  📏 Extracted distance from original description: ${extractedDistance}`);
                         }
                     }
 
@@ -1910,7 +1963,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                     // CRITICAL: Clean names/descriptions - remove WORKOUT_ID tags
                     name: cleanName,
                     description: cleanDescription,
-                    distance: extractedDistance,
+                    distance: extractedDistance || workout.extractedDistance || 0, // CRITICAL: Preserve distance from AI description
                     // CRITICAL: Focus should come from library or type mapping - only fallback to 'Training' if truly unknown
                     focus: focusMap[normalizedType] || details.focus || 'Training',
                         workout: workoutObj,
