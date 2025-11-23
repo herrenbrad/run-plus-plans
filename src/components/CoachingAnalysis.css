@@ -5,13 +5,13 @@
     border-radius: 12px;
     margin-bottom: 2rem;
     overflow: hidden;
-    border: 2px solid #00f5d4;
+    border: 2px solid #3b82f6;
 }
 
 .coaching-header {
-    background: linear-gradient(135deg, #00f5d4 0%, #00d4b8 100%);
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     padding: 1.5rem;
-    color: #000;
+    color: #ffffff;
 }
 
 .coaching-header h2 {
@@ -50,7 +50,7 @@
 /* Headers */
 .coaching-h1 {
     font-size: 2rem;
-    color: #00f5d4;
+    color: #3b82f6;
     margin: 2rem 0 1rem 0;
     padding-bottom: 0.5rem;
     border-bottom: 2px solid #444;
@@ -58,7 +58,7 @@
 
 .coaching-h2 {
     font-size: 1.5rem;
-    color: #00f5d4;
+    color: #3b82f6;
     margin: 1.75rem 0 1rem 0;
     padding-bottom: 0.3rem;
     border-bottom: 1px solid #444;
@@ -66,7 +66,7 @@
 
 .coaching-h3 {
     font-size: 1.25rem;
-    color: #00f5d4;
+    color: #3b82f6;
     margin: 1.5rem 0 0.75rem 0;
     font-weight: 600;
 }
@@ -87,12 +87,12 @@
 }
 
 .coaching-ul li::marker {
-    color: #00f5d4;
+    color: #3b82f6;
 }
 
 /* Strong text */
 .coaching-strong {
-    color: #00f5d4;
+    color: #3b82f6;
     font-weight: 600;
 }
 

@@ -15,7 +15,7 @@
   margin-bottom: 40px;
   padding: 40px 20px;
   background: rgba(26, 26, 26, 0.8);
-  border: 2px solid rgba(0, 245, 212, 0.3);
+  border: 2px solid rgba(59, 130, 246, 0.3);
   border-radius: 16px;
   color: #ffffff;
   backdrop-filter: blur(10px);
@@ -35,7 +35,7 @@
   margin: 0 0 12px 0;
   font-weight: 600;
   color: #ffffff;
-  text-shadow: 0 2px 10px rgba(0, 245, 212, 0.3);
+  text-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
 }
 
 .welcome-header p {
@@ -49,13 +49,13 @@
 /* Override CoachingAnalysis background to fit dark theme */
 .plan-welcome-screen .coaching-analysis {
   background: #1a1a1a;
-  border: 2px solid #00f5d4;
-  box-shadow: 0 4px 20px rgba(0, 245, 212, 0.2);
+  border: 2px solid #3b82f6;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.2);
 }
 
 .plan-welcome-screen .analysis-header {
-  background: linear-gradient(135deg, #00f5d4 0%, #00d4b8 100%);
-  color: #000;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
 }
 
 .plan-welcome-screen .analysis-content {
@@ -66,7 +66,7 @@
 .plan-welcome-screen .coaching-analysis .analysis-content .md-h1,
 .plan-welcome-screen .coaching-analysis .analysis-content .md-h2,
 .plan-welcome-screen .coaching-analysis .analysis-content .md-h3 {
-  color: #00f5d4 !important;
+  color: #3b82f6 !important;
   border-bottom-color: #444 !important;
 }
 
@@ -100,7 +100,7 @@
 .plan-welcome-screen .coaching-analysis .analysis-content .md-ol li strong,
 .plan-welcome-screen .coaching-analysis .analysis-content ul li strong,
 .plan-welcome-screen .coaching-analysis .analysis-content ol li strong {
-  color: #00f5d4 !important;
+  color: #3b82f6 !important;
 }
 
 /* Blockquote styling moved to CoachingAnalysis.css */
@@ -111,12 +111,12 @@
 }
 
 .plan-welcome-screen .md-table thead {
-  background: #00f5d4;
-  color: #000;
+  background: #3b82f6;
+  color: #ffffff;
 }
 
 .plan-welcome-screen .md-table th {
-  border-bottom: 2px solid #00d4b8;
+  border-bottom: 2px solid #2563eb;
 }
 
 .plan-welcome-screen .md-table td {
@@ -138,13 +138,13 @@
 
 .plan-welcome-screen .md-code-inline {
   background: #333;
-  color: #00f5d4;
+  color: #3b82f6;
 }
 
 .plan-welcome-screen .md-code-block {
   background: #1a1a1a;
   border: 1px solid #333;
-  border-left: 4px solid #00f5d4;
+  border-left: 4px solid #3b82f6;
   color: #e0e0e0;
 }
 
@@ -155,8 +155,8 @@
 }
 
 .btn-continue {
-  background: linear-gradient(135deg, #00f5d4 0%, #00d4b8 100%);
-  color: #000;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
   border: none;
   padding: 18px 48px;
   font-size: 1.2rem;
@@ -164,13 +164,13 @@
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(0, 245, 212, 0.3);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
 }
 
 .btn-continue:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 30px rgba(0, 245, 212, 0.5);
-  background: linear-gradient(135deg, #00d4b8 0%, #00b89f 100%);
+  box-shadow: 0 6px 30px rgba(59, 130, 246, 0.5);
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
 }
 
 .btn-continue:active {

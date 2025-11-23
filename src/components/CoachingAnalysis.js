@@ -11,7 +11,7 @@ function CoachingAnalysis({ rawResponse }) {
     return (
         <div className="coaching-analysis-wrapper">
             <div className="coaching-header">
-                <h2>📊 Coach's Analysis</h2>
+                <h2>Coach's Analysis</h2>
             </div>
             <div className="coaching-content">
                 <ReactMarkdown
