@@ -1,9 +1,15 @@
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {onCall} = require("firebase-functions/v2/https");
+const {defineSecret} = require("firebase-functions/params");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
 const nodemailer = require("nodemailer");
+const Anthropic = require("@anthropic-ai/sdk");
 
 initializeApp();
+
+// Define secret for Anthropic API key
+const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 
 /**
  * Send email notification when a new user signs up
@@ -150,6 +156,65 @@ exports.sendNewUserNotification = onDocumentCreated(
       });
 
       throw error;
+    }
+  }
+);
+
+/**
+ * Proxy function for Anthropic Claude API calls
+ * Keeps API key secure on server-side
+ */
+exports.callAnthropicAPI = onCall(
+  {
+    cors: true,
+    enforceAppCheck: false, // Set to true in production if you enable App Check
+    secrets: [anthropicApiKey], // Reference the secret
+  },
+  async (request) => {
+    // Verify user is authenticated
+    if (!request.auth) {
+      throw new Error("Unauthorized: User must be authenticated");
+    }
+
+    const { model, max_tokens, system, messages } = request.data;
+
+    // Validate required parameters
+    if (!model || !messages) {
+      throw new Error("Missing required parameters: model and messages are required");
+    }
+
+    // Get API key from secret
+    const apiKey = anthropicApiKey.value();
+
+    if (!apiKey) {
+      throw new Error("Anthropic API key not configured. Set the secret: firebase functions:secrets:set ANTHROPIC_API_KEY");
+    }
+
+    // Initialize Anthropic client
+    const client = new Anthropic({
+      apiKey: apiKey,
+    });
+
+    try {
+      // Make API call
+      const response = await client.messages.create({
+        model: model || "claude-sonnet-4-5-20250929",
+        max_tokens: max_tokens || 8000,
+        system: system,
+        messages: messages,
+      });
+
+      return {
+        success: true,
+        content: response.content,
+        usage: response.usage,
+      };
+    } catch (error) {
+      console.error("Anthropic API Error:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
   }
 );

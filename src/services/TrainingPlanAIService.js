@@ -7,7 +7,8 @@
  * - Workout library provides quality & cross-training options
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { auth } from '../firebase/config';
 import { HillWorkoutLibrary } from '../lib/hill-workout-library';
 import { IntervalWorkoutLibrary } from '../lib/interval-workout-library';
 import { TempoWorkoutLibrary } from '../lib/tempo-workout-library';
@@ -18,10 +19,8 @@ import logger from '../utils/logger';
 
 class TrainingPlanAIService {
     constructor() {
-        this.client = new Anthropic({
-            apiKey: process.env.REACT_APP_ANTHROPIC_API_KEY,
-            dangerouslyAllowBrowser: true
-        });
+        // Use Firebase Functions to proxy Anthropic API calls (keeps API key secure)
+        this.callAnthropicAPI = httpsCallable(functions, 'callAnthropicAPI');
 
         // Instantiate workout libraries
         this.hillLibrary = new HillWorkoutLibrary();
@@ -470,8 +469,8 @@ SEQUENCING RULES:
         const fullPrompt = `${workoutContext}\n\n---\n\n${userPrompt}`;
 
         try {
-            // 4. Call Claude API
-            const response = await this.client.messages.create({
+            // 4. Call Claude API via Firebase Function (secure server-side call)
+            const result = await this.callAnthropicAPI({
                 model: 'claude-sonnet-4-5-20250929',
                 max_tokens: 8000,
                 system: this.coachingSystemPrompt,
@@ -483,7 +482,11 @@ SEQUENCING RULES:
                 ]
             });
 
-            const planText = response.content[0].text;
+            if (!result.data.success) {
+                throw new Error(result.data.error || 'Failed to generate plan');
+            }
+
+            const planText = result.data.content[0].text;
 
             // 5. Parse AI response (extracts workout IDs)
             const structuredPlan = this.parseAIPlanToStructure(planText, userProfile);
@@ -644,8 +647,8 @@ SEQUENCING RULES:
         const fullPrompt = `${workoutContext}\n\n---\n\n${prompt}`;
 
         try {
-            // Call Claude API
-            const response = await this.client.messages.create({
+            // Call Claude API via Firebase Function (secure server-side call)
+            const result = await this.callAnthropicAPI({
                 model: 'claude-sonnet-4-5-20250929',
                 max_tokens: 8000,
                 system: this.coachingSystemPrompt,
@@ -657,7 +660,11 @@ SEQUENCING RULES:
                 ]
             });
 
-            const planText = response.content[0].text;
+            if (!result.data.success) {
+                throw new Error(result.data.error || 'Failed to regenerate plan');
+            }
+
+            const planText = result.data.content[0].text;
             logger.log('  ✅ AI generated plan structure');
 
             // Parse AI response (extracts workout IDs)
@@ -1061,7 +1068,7 @@ COACHING REQUIREMENTS (Jason Fitzgerald voice):
 Keep response to 200-250 words. Be conversational, direct, and actionable. Use the runner's name naturally if provided.`;
 
         try {
-            const response = await this.client.messages.create({
+            const result = await this.callAnthropicAPI({
                 model: 'claude-sonnet-4-5-20250929',
                 max_tokens: 600,
                 system: this.coachingSystemPrompt,
@@ -1073,7 +1080,11 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 ]
             });
 
-            return response.content[0].text;
+            if (!result.data.success) {
+                throw new Error(result.data.error || 'Failed to generate injury recovery coaching');
+            }
+
+            return result.data.content[0].text;
         } catch (error) {
             console.error('AI Coach Error (Injury Recovery):', error);
             // Return fallback message if AI fails
@@ -1170,7 +1181,7 @@ COACHING REQUIREMENTS (Jason Fitzgerald voice):
 Keep response to 200-250 words. Be conversational, direct, and actionable. Use the runner's name naturally if provided.`;
 
         try {
-            const response = await this.client.messages.create({
+            const result = await this.callAnthropicAPI({
                 model: 'claude-sonnet-4-5-20250929',
                 max_tokens: 600,
                 system: this.coachingSystemPrompt,
@@ -1182,7 +1193,11 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 ]
             });
 
-            return response.content[0].text;
+            if (!result.data.success) {
+                throw new Error(result.data.error || 'Failed to generate plan adjustment coaching');
+            }
+
+            return result.data.content[0].text;
         } catch (error) {
             console.error('AI Coach Error (Plan Adjustment):', error);
             // Return fallback message if AI fails
