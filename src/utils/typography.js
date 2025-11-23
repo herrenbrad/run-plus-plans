@@ -114,13 +114,22 @@ export function formatIntensity(intensity) {
     return TYPOGRAPHY.INTENSITY_LABELS[intensity];
   }
 
-  // If it's already a full sentence/description (contains spaces and looks formatted), return as-is
-  if (intensity.includes(' ') && !intensity.includes('_') && intensity.charAt(0) === intensity.charAt(0).toUpperCase()) {
+  // Handle camelCase terms like "marathonPace" or "easy to marathonPace"
+  // Convert camelCase to spaces: "marathonPace" -> "marathon Pace"
+  let formatted = intensity.replace(/([a-z])([A-Z])/g, '$1 $2');
+
+  // Replace underscores with spaces
+  formatted = formatted.replace(/_/g, ' ');
+
+  // If it's already a well-formatted sentence (starts uppercase, has spaces, no technical patterns), return as-is
+  if (formatted === intensity &&
+      intensity.includes(' ') &&
+      intensity.charAt(0) === intensity.charAt(0).toUpperCase()) {
     return intensity;
   }
 
-  // Otherwise, clean it up with titleCase
-  return titleCase(intensity.replace(/_/g, ' '));
+  // Apply title case to the formatted string
+  return titleCase(formatted);
 }
 
 /**

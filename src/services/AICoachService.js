@@ -142,10 +142,10 @@ ${recoveryNotes}
 COMPLETED WORKOUT:
 - Distance: ${workoutData.distance} miles
 - Duration: ${workoutData.duration} minutes
-- Pace: ${workoutData.pace || 'N/A'}
-- Total Elevation Gain: ${workoutData.elevationGain || 0} feet
-- Avg Heart Rate: ${workoutData.avgHeartRate || 'N/A'} bpm
-- Max Heart Rate: ${workoutData.maxHeartRate || 'N/A'} bpm
+${workoutData.pace ? `- Pace: ${workoutData.pace}` : ''}
+${workoutData.elevationGain !== null && workoutData.elevationGain !== undefined ? `- Total Elevation Gain: ${workoutData.elevationGain} feet` : ''}
+${workoutData.avgHeartRate ? `- Avg Heart Rate: ${workoutData.avgHeartRate} bpm` : ''}
+${workoutData.maxHeartRate ? `- Max Heart Rate: ${workoutData.maxHeartRate} bpm` : ''}
 ${lapSummary}
 
 ${prescribedWorkout ? `PRESCRIBED WORKOUT:\n${prescribedWorkout}\n` : ''}

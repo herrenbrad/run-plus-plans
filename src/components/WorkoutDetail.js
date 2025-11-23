@@ -6,6 +6,21 @@ import { auth } from '../firebase/config';
 import FirestoreService from '../services/FirestoreService';
 import { calorieCalculator } from '../lib/calorie-calculator.js';
 import AICoachService from '../services/AICoachService';
+import './WorkoutDetail.css';
+
+// Import workout libraries for fallback lookup
+import { IntervalWorkoutLibrary } from '../lib/interval-workout-library';
+import { TempoWorkoutLibrary } from '../lib/tempo-workout-library';
+import { HillWorkoutLibrary } from '../lib/hill-workout-library';
+import { LongRunWorkoutLibrary } from '../lib/long-run-workout-library';
+import { PaceCalculator } from '../lib/pace-calculator';
+
+// Initialize libraries
+const paceCalculator = new PaceCalculator();
+const intervalLibrary = new IntervalWorkoutLibrary();
+const tempoLibrary = new TempoWorkoutLibrary();
+const hillLibrary = new HillWorkoutLibrary();
+const longRunLibrary = new LongRunWorkoutLibrary();
 
 function WorkoutDetail({ userProfile, trainingPlan }) {
   const navigate = useNavigate();
@@ -26,6 +41,96 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
   const userProfileFromState = location.state?.userProfile || userProfile;
   const currentWeekNumber = location.state?.currentWeek || 1;
   const weekDataFromState = location.state?.weekData;
+
+  // Get VDOT paces - try multiple sources:
+  // 1. Paces passed from Dashboard (userProfileFromState.paces)
+  // 2. Paces on training plan directly (trainingPlan?.paces)
+  // 3. Calculate from user's goal time if we have it
+  // Helper: Calculate actual race pace from goal time and distance
+  const calculateRacePace = (goalTime, raceDistance) => {
+    if (!goalTime || !raceDistance) return null;
+
+    // Parse goal time (formats: "2:00:00", "1:45:00", "Half-2:00:00")
+    let timeStr = goalTime;
+    if (timeStr.includes('-')) {
+      timeStr = timeStr.split('-')[1];
+    }
+
+    const parts = timeStr.split(':').map(Number);
+    let totalMinutes;
+    if (parts.length === 3) {
+      totalMinutes = parts[0] * 60 + parts[1] + parts[2] / 60;
+    } else if (parts.length === 2) {
+      totalMinutes = parts[0] + parts[1] / 60;
+    } else {
+      return null;
+    }
+
+    // Get distance in miles
+    const distanceMap = {
+      '5K': 3.1,
+      '10K': 6.2,
+      'Half': 13.1,
+      'Half Marathon': 13.1,
+      'Marathon': 26.2
+    };
+    const miles = distanceMap[raceDistance] || parseFloat(raceDistance);
+    if (!miles) return null;
+
+    // Calculate pace per mile
+    const paceMinutes = totalMinutes / miles;
+    const mins = Math.floor(paceMinutes);
+    const secs = Math.round((paceMinutes - mins) * 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getVdotPaces = () => {
+    // Get goal time and race distance for calculating actual race pace
+    const goalTime = trainingPlan?.planOverview?.goalTime || userProfileFromState?.raceTime || userProfile?.raceTime;
+    const raceDistance = trainingPlan?.planOverview?.raceDistance || userProfileFromState?.raceDistance || userProfile?.raceDistance;
+    const racePace = calculateRacePace(goalTime, raceDistance);
+
+    // Helper to add race pace to paces object
+    // CRITICAL: Always calculate racePace for sandwich/simulation workouts
+    const addRacePace = (paces) => {
+      if (!paces) return paces;
+      // Always add racePace if we can calculate it (even if paces object exists)
+      if (racePace) {
+        return {
+          ...paces,
+          racePace: { pace: racePace }, // Actual goal race pace (e.g., 9:09 for 2:00 half)
+          raceDistance: raceDistance
+        };
+      }
+      return paces;
+    };
+
+    // First, try paces from state
+    if (userProfileFromState?.paces?.easy) {
+      return addRacePace(userProfileFromState.paces);
+    }
+
+    // Second, try paces from training plan
+    if (trainingPlan?.paces?.easy) {
+      return addRacePace(trainingPlan.paces);
+    }
+
+    // Third, calculate from goal time if available
+    if (goalTime && raceDistance) {
+      try {
+        const result = paceCalculator.calculateFromGoal(raceDistance, goalTime);
+        if (result?.paces?.easy) {
+          return addRacePace(result.paces);
+        }
+      } catch (e) {
+        // Could not calculate paces
+      }
+    }
+
+    return null;
+  };
+
+  const vdotPaces = getVdotPaces();
   
   const getDayWorkout = (dayName) => {
     // Use week data from state if available
@@ -188,6 +293,44 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     return 'Develops overall fitness and running ability';
   };
 
+  // Helper function to fetch rich workout data from library by name
+  const fetchFromLibrary = (workoutName, workoutType, paces, trackIntervals, distance) => {
+    if (!workoutName) return null;
+
+    try {
+      const options = {
+        runEqPreference: userProfileFromState?.runEqPreference || 0,
+        paces: paces || vdotPaces, // Use calculated vdotPaces as fallback
+        trackIntervals: trackIntervals || trainingPlan?.trackIntervals || userProfileFromState?.trackIntervals
+      };
+
+      // Extract week info from trainingPlan if available
+      const weekNumber = trainingPlan?.currentWeek || trainingPlan?.planOverview?.currentWeek || null;
+      const totalWeeks = trainingPlan?.planOverview?.totalWeeks || null;
+
+      switch (workoutType) {
+        case 'interval':
+        case 'intervals':
+          // Pass totalDistance to calculate specific rep count from prescribed mileage
+          return intervalLibrary.prescribeIntervalWorkout(workoutName, { ...options, totalDistance: distance, weekNumber, totalWeeks });
+        case 'tempo':
+          return tempoLibrary.prescribeTempoWorkout(workoutName, { ...options, weekNumber, totalWeeks });
+        case 'hill':
+        case 'hills':
+          return hillLibrary.prescribeHillWorkout(workoutName, options);
+        case 'longRun':
+        case 'long-run':
+          // Use actual distance from workout, not hardcoded value
+          return longRunLibrary.prescribeLongRunWorkout(workoutName, { ...options, distance: distance || 8 });
+        default:
+          return null;
+      }
+    } catch (e) {
+      console.warn(`Could not fetch workout "${workoutName}" from library:`, e.message);
+      return null;
+    }
+  };
+
   // Transform workout library data to WorkoutDetail format
   const transformWorkoutData = (workoutData) => {
     if (!workoutData) return null;
@@ -195,24 +338,98 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     // CROSS-TRAINING: Data is stored flat at top level (name, description, structure, etc.)
     // REGULAR WORKOUTS: Data is nested under workoutData.workout or workoutData.workoutDetails
     const isCrossTraining = workoutData.type === 'cross-training';
-    const workoutLib = isCrossTraining ? workoutData : (workoutData.workoutDetails || workoutData.workout);
+    let workoutLib = isCrossTraining ? workoutData : (workoutData.workoutDetails || workoutData.workout);
     const workoutType = workoutData.type;
 
-    // DEBUG: Log what we're working with
-    console.log('🔍 WorkoutDetail - transformWorkoutData:');
-    console.log('  workoutType:', workoutType);
-    console.log('  workoutData:', workoutData);
-    console.log('  workoutData.workout:', workoutData.workout);
-    console.log('  workoutData.workout.structure:', workoutData.workout?.structure);
-    console.log('  workoutLib:', workoutLib);
-    console.log('  workoutLib.structure:', workoutLib?.structure);
-    console.log('  workoutLib.totalWorkout:', workoutLib?.totalWorkout);
-    console.log('  workoutLib.totalWorkout.structure:', workoutLib?.totalWorkout?.structure);
-    console.log('  workoutLib.repetitions:', workoutLib?.repetitions);
+    // ALWAYS fetch fresh from library for structured workouts to ensure:
+    // - Paces are injected from user profile
+    // - Duration is calculated from actual distance + pace (not template)
+    // - Rep counts are specific (not ranges like "4-8")
+    const structuredWorkoutTypes = ['longRun', 'long-run', 'tempo', 'interval', 'intervals', 'hill', 'hills'];
+
+    // Also detect long runs by workout name if type doesn't match
+    const workoutNameLower = (workoutLib?.name || workoutData.name || '').toLowerCase();
+    const isLongRunByName = workoutNameLower.includes('long run') ||
+                            workoutNameLower.includes('progression') ||
+                            workoutNameLower.includes('dropdown') ||
+                            workoutNameLower.includes('thirds') ||
+                            workoutNameLower.includes('marathon pace') ||
+                            workoutNameLower.includes('steady state') ||
+                            workoutNameLower.includes('sandwich') ||
+                            workoutNameLower.includes('simulation') ||
+                            workoutNameLower.includes('dress rehearsal') ||
+                            workoutNameLower.includes('goal pace');
+
+    const effectiveWorkoutType = isLongRunByName ? 'longRun' : workoutType;
+
+    const needsLibraryRefresh = !workoutLib?.intensityGuidance ||
+      structuredWorkoutTypes.includes(effectiveWorkoutType);
+
+    if (workoutLib && needsLibraryRefresh && !isCrossTraining && effectiveWorkoutType !== 'easy') {
+      // Try to get name from multiple locations (nested workout may not have name for hills)
+      const workoutName = workoutLib.name || workoutData.name;
+      // Get paces from vdotPaces (which already tried multiple sources including calculating from goal time)
+      const userPaces = vdotPaces;
+
+      // Extract distance from multiple sources (in priority order):
+      // 1. Direct distance field on workoutData, workoutLib, or nested workout object
+      // 2. Parse from workout name (e.g., "8-Mile 10-Second Dropdowns")
+      // 3. Parse from description (e.g., "Long Run 8 miles")
+      // 4. Parse from workoutData.name if different from workoutLib.name
+      let workoutDistance = workoutData.distance ||
+                            workoutLib?.distance ||
+                            workoutData.workout?.distance;
+
+      if (!workoutDistance) {
+        // Try parsing from workout name (e.g., "8-Mile Long Run")
+        const nameMatch = (workoutName || '').match(/(\d+(?:\.\d+)?)[- ]?Mile/i);
+        if (nameMatch) {
+          workoutDistance = parseFloat(nameMatch[1]);
+        }
+      }
+
+      if (!workoutDistance) {
+        // Try parsing from description (e.g., "Long Run 8 miles" or "12 mile long run")
+        const descMatch = (workoutData.description || workoutLib?.description || '').match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/i);
+        if (descMatch) {
+          workoutDistance = parseFloat(descMatch[1]);
+        }
+      }
+
+      if (!workoutDistance) {
+        // Try parsing from workoutData.name (Firebase stored name might have distance)
+        const dataNameMatch = (workoutData.name || '').match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi|-Mile)\b/i);
+        if (dataNameMatch) {
+          workoutDistance = parseFloat(dataNameMatch[1]);
+        }
+      }
+
+      // NO DEFAULT FALLBACK - if distance isn't found, we log a warning
+      // The AI coach SHOULD include distance in workout description
+      // If it doesn't, that's the bug to fix - not paper over it with guesses
+      if (!workoutDistance && effectiveWorkoutType === 'longRun') {
+        console.warn(`⚠️ NO DISTANCE FOUND for long run "${workoutName}" - AI coach should include distance in description`);
+      }
+
+      // Debug log to help track distance extraction issues
+      console.log(`📏 Distance extraction for "${workoutName}":`, {
+        fromWorkoutData: workoutData.distance,
+        fromWorkoutLib: workoutLib?.distance,
+        fromNestedWorkout: workoutData.workout?.distance,
+        parsed: workoutDistance,
+        description: workoutData.description?.substring(0, 50)
+      });
+
+      const libraryData = fetchFromLibrary(workoutName, effectiveWorkoutType, userPaces, workoutLib.trackIntervals, workoutDistance);
+      if (libraryData) {
+        workoutLib = libraryData;
+      }
+    }
 
     // Map workout type to intensity and heart rate (fallback if not in library)
     const getIntensityInfo = (type) => {
       switch(type) {
+        case 'interval':
         case 'intervals':
           return {
             intensity: 'High intensity - 5K to 1-mile race pace',
@@ -223,12 +440,14 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             intensity: 'Medium-hard effort, sustainable for 20-60 minutes',
             heartRate: '86-90% Max HR'
           };
+        case 'hill':
         case 'hills':
           return {
             intensity: 'Hard effort on hills, easy on recovery',
             heartRate: '85-95% Max HR'
           };
         case 'longRun':
+        case 'long-run':
           return {
             intensity: 'Easy conversational pace',
             heartRate: '70-80% Max HR'
@@ -248,6 +467,20 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
     // Cross-training workouts have structure at top level
     if (isCrossTraining && workoutLib?.structure) {
+      structure = workoutLib.structure;
+    } else if (workoutLib?.warmupCooldown && workoutLib?.repetitions) {
+      // INTERVAL WORKOUTS: Build structure from warmupCooldown + repetitions + recovery
+      const wc = workoutLib.warmupCooldown;
+      const parts = [];
+      if (wc.warmup) parts.push(`**Warmup:** ${wc.warmup}`);
+      parts.push(`**Main Set:** ${workoutLib.repetitions}${workoutLib.recovery ? ` with ${workoutLib.recovery}` : ''}`);
+      if (wc.cooldown) parts.push(`**Cooldown:** ${wc.cooldown}`);
+      structure = parts.join('\n\n');
+    } else if (workoutLib?.mileByMilePacing) {
+      // PROGRESSIVE LONG RUNS: Use detailed mile-by-mile pacing from library
+      structure = workoutLib.mileByMilePacing;
+    } else if (workoutLib?.structure && (workoutType === 'longRun' || workoutType === 'long-run' || workoutType === 'tempo')) {
+      // LONG RUN / TEMPO: Prefer library structure over stored Firebase structure
       structure = workoutLib.structure;
     } else if (workoutData.workout?.structure) {
       // Check for bike workout structure (from new TEMPO_BIKE, INTERVAL_BIKE, etc. categories)
@@ -320,16 +553,21 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     // Extract intensity from library if available
     // For cross-training, check effort.perceived or intensity field
     // For bike workouts, check workout.effort object
+    // For interval/hill/tempo workouts, check intensityGuidance.effort
     const actualIntensity = (isCrossTraining && workoutLib?.effort?.perceived) ||
                            workoutData.workout?.effort?.perceived ||
-                           workoutLib?.intensity ||
+                           workoutLib?.intensityGuidance?.effort ||
+                           workoutLib?.intensityGuidance?.description ||
+                           (typeof workoutLib?.intensity === 'string' && !['shortSpeed', 'vo2Max', 'longIntervals', 'threshold', 'tempoPlus'].includes(workoutLib.intensity) ? workoutLib.intensity : null) ||
                            intensityInfo.intensity;
 
     // Extract heart rate from library if available
     // For cross-training, check effort.heartRate
     // For bike workouts, check workout.effort object
+    // For interval/hill/tempo workouts, check intensityGuidance.heartRate
     const actualHeartRate = (isCrossTraining && workoutLib?.effort?.heartRate) ||
                            workoutData.workout?.effort?.heartRate ||
+                           workoutLib?.intensityGuidance?.heartRate ||
                            workoutLib?.heartRate ||
                            intensityInfo.heartRate;
 
@@ -346,29 +584,134 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         paceGuidance = `${formatEquipmentName(userProfileFromState.standUpBikeType)} specific: Focus on smooth motion and consistent effort`;
       }
     }
-    // Priority 1: Use actual pace if available - match pace to workout intensity
-    else if (workoutLib?.paces) {
-      // Check workout intensity to determine which pace to show
-      const intensity = workoutLib.intensity || workoutType;
+    // Priority 1: For interval workouts, check trackIntervals first for specific times
+    else if (workoutType === 'intervals' && workoutLib?.trackIntervals) {
+      // Build pace guidance from track intervals
+      const trackIntervals = workoutLib.trackIntervals;
+      const workoutName = workoutLib?.name?.toLowerCase() || '';
 
-      if (intensity === 'easy' || intensity === 'recovery' && workoutLib.paces.easy) {
-        // EASY/RECOVERY workouts - show easy pace
-        paceGuidance = `${workoutLib.paces.easy.min}-${workoutLib.paces.easy.max}/mile`;
-      } else if ((workoutType === 'intervals' || intensity === 'interval') && workoutLib.paces.interval) {
-        // INTERVAL workouts - show interval pace
-        paceGuidance = `${workoutLib.paces.interval.pace}/mile`;
-      } else if ((workoutType === 'tempo' || intensity === 'threshold') && workoutLib.paces.threshold) {
-        // TEMPO workouts - show threshold pace
-        paceGuidance = `${workoutLib.paces.threshold.pace}/mile`;
-      } else if (intensity === 'marathonPace' && workoutLib.paces.marathon) {
-        // MARATHON PACE workouts - show marathon pace
-        paceGuidance = `${workoutLib.paces.marathon.pace}/mile`;
-      } else if (workoutLib.paces.easy) {
-        // FALLBACK - default to easy pace if nothing else matches
-        paceGuidance = `${workoutLib.paces.easy.min}-${workoutLib.paces.easy.max}/mile`;
+      // Try to match the interval distance from the workout name
+      let intervalTime = null;
+      if (workoutName.includes('800m') && trackIntervals['800m']) {
+        intervalTime = `${trackIntervals['800m']} per 800m`;
+      } else if (workoutName.includes('1000m') && trackIntervals['1000m']) {
+        intervalTime = `${trackIntervals['1000m']} per 1000m`;
+      } else if (workoutName.includes('1200m') && trackIntervals['1200m']) {
+        intervalTime = `${trackIntervals['1200m']} per 1200m`;
+      } else if (workoutName.includes('400m') && trackIntervals['400m']) {
+        intervalTime = `${trackIntervals['400m']} per 400m`;
+      } else if (workoutName.includes('200m') && trackIntervals['200m']) {
+        intervalTime = `${trackIntervals['200m']} per 200m`;
+      } else if (workoutName.includes('mile') && trackIntervals['1mile']) {
+        intervalTime = `${trackIntervals['1mile']} per mile`;
+      }
+
+      if (intervalTime) {
+        // Also show intensityGuidance pace description if available
+        const intensityDesc = workoutLib?.intensityGuidance?.pace || '';
+        paceGuidance = intensityDesc ? `${intervalTime} (${intensityDesc})` : intervalTime;
+      } else if (workoutLib?.intensityGuidance?.pace) {
+        paceGuidance = workoutLib.intensityGuidance.pace;
       }
     }
-    // Priority 2: Use paceGuidance object/string from library
+    // Priority 2: Use actual pace if available - match pace to workout intensity
+    // Check both workoutLib.paces AND vdotPaces as fallback
+    const availablePaces = workoutLib?.paces || vdotPaces;
+    if (availablePaces) {
+      // Check workout intensity to determine which pace to show
+      const intensity = workoutLib?.intensity || workoutType;
+      const workoutNameForPace = (workoutLib?.name || workoutData.name || '').toLowerCase();
+
+      // PROGRESSION RUNS: Always show easy pace range (that's where they START)
+      // These are identified by workout name, not intensity
+      // The intensity "easy to marathonPace" describes the progression, NOT the target pace
+      const isProgressionRun = workoutNameForPace.includes('dropdown') ||
+                                workoutNameForPace.includes('10-second') ||
+                                workoutNameForPace.includes('thirds') ||
+                                workoutNameForPace.includes('dusa') ||
+                                workoutNameForPace.includes('fast finish') ||
+                                workoutNameForPace.includes('progressive');
+
+      // SANDWICH/SIMULATION WORKOUTS: Show marathon pace (the KEY portion)
+      // These have goal pace in the MIDDLE, sandwiched between easy miles
+      const isSandwichWorkout = workoutNameForPace.includes('sandwich') ||
+                                 workoutNameForPace.includes('simulation') ||
+                                 workoutNameForPace.includes('dress rehearsal') ||
+                                 workoutNameForPace.includes('marathon pace long') ||
+                                 workoutNameForPace.includes('goal pace');
+
+      // FAST FINISH WORKOUTS: Show both easy pace AND fast finish pace
+      const isFastFinish = workoutNameForPace.includes('fast finish') || workoutNameForPace.includes('super fast');
+      
+      if (isSandwichWorkout && (availablePaces.racePace || availablePaces.marathon)) {
+        // SANDWICH WORKOUTS - show ACTUAL RACE PACE (not marathon training pace)
+        // For half marathon: 9:09/mi for 2:00 goal, NOT marathon pace 9:27/mi
+        const goalPace = availablePaces.racePace?.pace || availablePaces.marathon?.pace;
+        paceGuidance = `${goalPace}/mile (goal pace)`;
+      } else if (isFastFinish && availablePaces.easy && availablePaces.interval) {
+        // FAST FINISH WORKOUTS - show both starting easy pace AND fast finish pace (5K/interval effort)
+        const easyPace = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile`;
+        const fastFinishPace = availablePaces.interval.pace;
+        paceGuidance = `${easyPace} → ${fastFinishPace}/mile (fast finish)`;
+      } else if (isProgressionRun && availablePaces.easy) {
+        // PROGRESSION RUNS - show easy pace range (starting pace)
+        paceGuidance = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile (starting pace)`;
+      } else if ((intensity === 'easy' || intensity === 'recovery') && availablePaces.easy) {
+        // EASY/RECOVERY workouts - show easy pace
+        paceGuidance = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile`;
+      } else if (workoutType === 'hills' || workoutType === 'hill') {
+        // HILL WORKOUTS - use pace based on intensity (interval for short/power, threshold for longer)
+        if ((intensity && intensity.toLowerCase().includes('short')) && availablePaces.interval) {
+          paceGuidance = `${availablePaces.interval.pace}/mile (hill effort)`;
+        } else if (availablePaces.threshold) {
+          paceGuidance = `${availablePaces.threshold.pace}/mile (hill effort)`;
+        } else if (availablePaces.interval) {
+          paceGuidance = `${availablePaces.interval.pace}/mile (hill effort)`;
+        } else if (workoutLib?.intensityGuidance?.pace) {
+          paceGuidance = workoutLib.intensityGuidance.pace;
+        }
+      } else if ((workoutType === 'intervals' || intensity === 'interval' || intensity === 'shortspeed' || intensity === 'vo2Max' || intensity === 'longIntervals')) {
+        // INTERVAL workouts - show interval pace
+        if (availablePaces.interval) {
+          paceGuidance = `${availablePaces.interval.pace}/mile`;
+        } else if (workoutLib?.intensityGuidance?.pace) {
+          // Fallback to intensityGuidance if interval pace not available
+          paceGuidance = workoutLib.intensityGuidance.pace;
+        } else {
+          paceGuidance = '5K to 3K race pace (interval effort)';
+        }
+      } else if (workoutType === 'tempo' || intensity === 'threshold' || intensity === 'tempoPlus' || intensity === 'comfortablyHard') {
+        // TEMPO workouts - show threshold pace (handles all tempo intensity types)
+        if (availablePaces.threshold) {
+          paceGuidance = `${availablePaces.threshold.pace}/mile`;
+        } else if (workoutLib?.intensityGuidance?.pace) {
+          // Fallback to intensityGuidance if threshold pace not available
+          paceGuidance = workoutLib.intensityGuidance.pace;
+        } else {
+          paceGuidance = 'Half marathon to 10-mile race pace (tempo effort)';
+        }
+      } else if (intensity === 'marathonPace' && availablePaces.marathon) {
+        // Pure MARATHON PACE workouts - show marathon pace
+        // Only match exact "marathonPace", NOT "easy to marathonPace"
+        paceGuidance = `${availablePaces.marathon.pace}/mile`;
+      } else if (workoutType === 'longRun' && availablePaces.easy) {
+        // LONG RUN workouts - show easy pace range
+        paceGuidance = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile`;
+      } else if (workoutLib?.intensityGuidance?.pace) {
+        // FALLBACK 1: Use intensityGuidance from library if available
+        paceGuidance = workoutLib.intensityGuidance.pace;
+      } else if (availablePaces.easy) {
+        // FALLBACK 2: Only default to easy pace if workout type is easy/recovery/longRun
+        // Don't use easy pace for interval/tempo/hill workouts that are missing their specific pace
+        if (workoutType === 'easy' || workoutType === 'recovery' || workoutType === 'longRun' || intensity === 'easy') {
+          paceGuidance = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile`;
+        } else {
+          // For other workout types missing pace, show generic guidance
+          paceGuidance = 'Maintain appropriate effort for workout type';
+        }
+      }
+    }
+    // Priority 3: Use paceGuidance object/string from library
     else if (workoutLib?.paceGuidance) {
       if (typeof workoutLib.paceGuidance === 'object') {
         // Extract description field from paceGuidance object
@@ -376,6 +719,10 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       } else {
         paceGuidance = workoutLib.paceGuidance;
       }
+    }
+    // Priority 4: For intervals, use intensityGuidance.pace
+    else if (workoutType === 'intervals' && workoutLib?.intensityGuidance?.pace) {
+      paceGuidance = workoutLib.intensityGuidance.pace;
     }
 
     // Extract safety notes from library - prefer safetyNotes over generic fallback
@@ -393,31 +740,48 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     }
 
     // Calculate total duration based on distance and pace (if available)
-    // For cross-training, duration is at top level
-    let calculatedDuration = (isCrossTraining && workoutLib?.duration) ||
-                            workoutData.workout?.duration ||
-                            workoutLib?.duration ||
-                            '30-45 minutes';
+    // PRIORITY: Library-calculated duration (from prescribe methods) > Firebase stored > fallback
+    // The library's prescribe methods already calculate duration from distance + pace
+    let calculatedDuration = '30-45 minutes';
 
-    // For running workouts with distance and easy pace, calculate specific duration
-    if (workoutType === 'longRun' || workoutType === 'easy') {
-      // Extract distance from workout name
-      const distanceMatch = workoutData.workout?.name?.match(/(\d+)-Mile/i);
-      if (distanceMatch && workoutLib?.paces?.easy) {
+    // Note: effectiveWorkoutType was already defined above (handles long runs detected by name)
+
+    if (isCrossTraining && workoutLib?.duration) {
+      // Cross-training duration is at top level
+      calculatedDuration = workoutLib.duration;
+    } else if (workoutLib?.duration && structuredWorkoutTypes.includes(effectiveWorkoutType)) {
+      // For structured workouts, prefer library-calculated duration (already personalized)
+      calculatedDuration = workoutLib.duration;
+    } else if (workoutData.workout?.duration) {
+      // Fall back to Firebase stored duration
+      calculatedDuration = workoutData.workout.duration;
+    } else if (workoutLib?.duration) {
+      // Fall back to any library duration
+      calculatedDuration = workoutLib.duration;
+    }
+
+    // For running workouts, if we still don't have a calculated duration,
+    // try to calculate from distance and pace
+    if ((effectiveWorkoutType === 'longRun' || workoutType === 'easy') &&
+        calculatedDuration.includes('45-') && workoutLib?.paces?.easy) {
+      // The "45-" pattern suggests we have template duration - try to calculate
+      const workoutNameCalc = workoutLib?.name || workoutData.workout?.name || '';
+      const distanceMatch = workoutNameCalc.match(/(\d+(?:\.\d+)?)[- ]?Mile/i);
+      if (distanceMatch) {
         const miles = parseFloat(distanceMatch[1]);
-        const easyPaceMin = workoutLib.paces.easy.min; // e.g., "11:07"
-        const easyPaceMax = workoutLib.paces.easy.max; // e.g., "12:12"
+        const easyPaceMin = workoutLib.paces.easy.min;
+        const easyPaceMax = workoutLib.paces.easy.max;
 
-        // Convert pace strings to minutes
-        const parseMinutes = (paceStr) => {
-          const [min, sec] = paceStr.split(':').map(Number);
-          return min + sec / 60;
-        };
+        if (easyPaceMin && easyPaceMax) {
+          const parseMinutes = (paceStr) => {
+            const [min, sec] = paceStr.split(':').map(Number);
+            return min + sec / 60;
+          };
 
-        const minDuration = Math.round(miles * parseMinutes(easyPaceMin));
-        const maxDuration = Math.round(miles * parseMinutes(easyPaceMax));
-
-        calculatedDuration = `${minDuration}-${maxDuration} minutes`;
+          const minDuration = Math.round(miles * parseMinutes(easyPaceMin));
+          const maxDuration = Math.round(miles * parseMinutes(easyPaceMax));
+          calculatedDuration = `${minDuration}-${maxDuration} minutes`;
+        }
       }
     }
 
@@ -435,11 +799,24 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       }
     }
 
+    // Helper to get focus based on workout type if not provided
+    const getFocusFallback = (type) => {
+      const focusMap = {
+        hills: "Power & Strength",
+        tempo: "Lactate Threshold",
+        intervals: "VO2 Max & Speed",
+        easy: "Aerobic Base",
+        longRun: "Endurance",
+        'cross-training': "Active Recovery"
+      };
+      return focusMap[type] || "General Fitness";
+    };
+
     // Build comprehensive workout object
     const transformedWorkout = {
       name: workoutLib?.name || 'Workout',
       type: workoutData.type || 'easy',
-      focus: workoutData.focus || workoutLib?.focus || 'Recovery',
+      focus: workoutData.focus || workoutLib?.focus || getFocusFallback(workoutType),
       duration: calculatedDuration,
       description: workoutLib?.description || 'Standard workout',
       structure: structure,
@@ -649,7 +1026,9 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
   const handleGetCoaching = async () => {
     if (!completionData) {
-      alert('No workout data available for analysis');
+      // Note: useToast hook would need to be added to WorkoutDetail component
+      // For now, using console.warn as fallback
+      console.warn('No workout data available for analysis');
       return;
     }
 
@@ -748,9 +1127,9 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0a0a' }}>
+    <div className="workout-detail" style={{ minHeight: '100vh', background: '#0a0a0a' }}>
       {/* Hero Header - Dark Theme */}
-      <div style={{
+      <div className="workout-detail-header" style={{
         background: '#1a1a1a',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         padding: '32px 0 48px 0',
@@ -826,7 +1205,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                 };
                 const info = equipmentInfo[currentWorkout.crossTrainingType] || { emoji: '🏃', color: '#999', label: 'Cross-Training' };
                 return (
-                  <div style={{
+                  <div className="workout-equipment-indicator" style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '12px',
@@ -836,12 +1215,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                     padding: '12px 20px',
                     marginTop: '16px'
                   }}>
-                    <span style={{ fontSize: '2rem' }}>{info.emoji}</span>
+                    <span className="workout-equipment-emoji" style={{ fontSize: '2rem' }}>{info.emoji}</span>
                     <div>
                       <div style={{ color: info.color, fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         Cross-Training Workout
                       </div>
-                      <div style={{ color: 'white', fontSize: '1.3rem', fontWeight: '800', marginTop: '2px' }}>
+                      <div className="workout-equipment-label" style={{ color: 'white', fontSize: '1.3rem', fontWeight: '800', marginTop: '2px' }}>
                         {info.label}
                       </div>
                     </div>
@@ -849,7 +1228,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                 );
               })()}
 
-              <p style={{
+              <p className="workout-subtitle" style={{
                 margin: '8px 0 0 0',
                 color: '#999',
                 fontSize: '1.1rem',
@@ -864,17 +1243,18 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <span
+              className="workout-badge"
               style={{
-                background: '#2a2a2a',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#999',
+                background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}20 0%, ${getWorkoutTypeColor(currentWorkout.type)}40 100%)`,
+                border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}`,
+                color: getWorkoutTypeColor(currentWorkout.type),
                 padding: '8px 16px',
                 borderRadius: '20px',
                 fontSize: '0.9rem',
-                fontWeight: '600'
+                fontWeight: '700'
               }}
             >
-              {currentWorkout.focus}
+              {getWorkoutTypeEmoji(currentWorkout.type)} {currentWorkout.focus}
             </span>
             {currentWorkout.equipmentSpecific && userProfile?.standUpBikeType && (
               <span style={{
@@ -902,31 +1282,31 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           marginBottom: '24px'
         }}>
           {/* Pace Card */}
-          <div style={{
+          <div className="workout-detail-card workout-metric-card" style={{
             background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
             border: '2px solid #00D4FF'
           }}>
-            <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            <div className="workout-metric-label" style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Target Pace
             </div>
-            <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
+            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
               {formatPaceGuidance(currentWorkout.paceGuidance)}
             </div>
           </div>
 
           {/* Intensity Card */}
-          <div style={{
+          <div className="workout-detail-card workout-metric-card" style={{
             background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
             border: '2px solid #00D4FF'
           }}>
-            <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            <div className="workout-metric-label" style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Intensity
             </div>
-            <div style={{ color: 'white', fontSize: '1.1rem', fontWeight: '700', lineHeight: '1.3' }}>
+            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.1rem', fontWeight: '700', lineHeight: '1.3' }}>
               {typeof currentWorkout.intensity === 'string' ? formatIntensity(currentWorkout.intensity) :
                typeof currentWorkout.intensity === 'object' ? JSON.stringify(currentWorkout.intensity) :
                'Medium Effort'}
@@ -934,16 +1314,16 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           </div>
 
           {/* Heart Rate Card */}
-          <div style={{
+          <div className="workout-detail-card workout-metric-card" style={{
             background: '#1a1a1a',
             padding: '20px',
             borderRadius: '16px',
             border: '2px solid #00D4FF'
           }}>
-            <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            <div className="workout-metric-label" style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Heart Rate Zone
             </div>
-            <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
+            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
               {typeof currentWorkout.heartRate === 'string' ? formatHeartRate(currentWorkout.heartRate) :
                typeof currentWorkout.heartRate === 'object' ? JSON.stringify(currentWorkout.heartRate) :
                '70-85% Max HR'}
@@ -1304,7 +1684,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   <span style={{ fontSize: '1.5rem' }}>💡</span>
                   Workout Insights
                 </h4>
-                <div style={{
+                <div className="workout-coaching-text" style={{
                   color: '#DDD',
                   fontSize: '1.05rem',
                   lineHeight: '1.8',
@@ -1333,7 +1713,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         )}
 
         {/* WORKOUT STRUCTURE - VISUAL BREAKDOWN */}
-        <div style={{
+        <div className="workout-detail-card workout-section" style={{
           background: '#1a1a1a',
           border: '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '20px',
@@ -1352,7 +1732,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             Workout Structure
           </h2>
 
-          <div style={{
+          <div className="workout-structure-text" style={{
             background: '#0a0a0a',
             padding: '20px',
             borderRadius: '16px',
@@ -1369,7 +1749,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
         {/* DESCRIPTION */}
         {currentWorkout.description && (
-          <div style={{
+          <div className="workout-detail-card workout-section" style={{
             background: '#1a1a1a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '16px',
@@ -1384,7 +1764,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             }}>
               About This Workout
             </h3>
-            <p style={{ fontSize: '1rem', margin: 0, lineHeight: '1.7', color: '#ddd' }}>
+            <p className="workout-description-text" style={{ fontSize: '1rem', margin: 0, lineHeight: '1.7', color: '#ddd' }}>
               {typeof currentWorkout.description === 'string' ? currentWorkout.description :
                typeof currentWorkout.description === 'object' ? JSON.stringify(currentWorkout.description) :
                'Standard workout description'}
@@ -1707,8 +2087,8 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               'Stop if you feel pain or excessive fatigue'
             ]).map((note, index) => (
               <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '8px 0' }}>
-                <span style={{ color: '#666', fontSize: '1.5rem', minWidth: '24px' }}>•</span>
-                <span style={{ fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
+                <span className="workout-safety-bullet" style={{ color: '#666', fontSize: '1.5rem', minWidth: '24px' }}>•</span>
+                <span className="workout-body-text" style={{ fontSize: '1rem', lineHeight: '1.6', color: '#ddd' }}>
                   {typeof note === 'string' ? note : JSON.stringify(note)}
                 </span>
               </div>
@@ -1815,32 +2195,6 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                 ))}
               </div>
             ) : null}
-          </div>
-        )}
-
-        {/* Benefits */}
-        {currentWorkout.benefits && (
-          <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '16px',
-            padding: '20px',
-            marginBottom: '24px'
-          }}>
-            <h3 style={{
-              margin: '0 0 12px 0',
-              color: 'white',
-              fontSize: '1.3rem',
-              fontWeight: '700',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px'
-            }}>
-              Benefits
-            </h3>
-            <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
-              {currentWorkout.benefits}
-            </p>
           </div>
         )}
 
@@ -2184,6 +2538,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         }}>
           <button
             onClick={handleSomethingElse}
+            className="workout-button"
             style={{
               width: '100%',
               background: '#2a2a2a',

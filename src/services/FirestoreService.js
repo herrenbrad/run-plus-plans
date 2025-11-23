@@ -1,4 +1,4 @@
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 /**
@@ -68,7 +68,6 @@ class FirestoreService {
 
       // Clean undefined values before saving - Firestore doesn't accept undefined
       const cleanedPlan = cleanUndefinedValues(trainingPlan);
-      console.log('🧹 Cleaned training plan (removed undefined values)');
 
       await setDoc(userRef, {
         trainingPlan: {
@@ -208,15 +207,17 @@ class FirestoreService {
 
   /**
    * Clear all user data (for testing/reset)
+   * Actually deletes the user document and all associated data
    */
   async clearUserData(userId) {
     try {
       const userRef = doc(db, 'users', userId);
-      await setDoc(userRef, {
-        clearedAt: serverTimestamp()
-      });
+      
+      // Delete the entire user document
+      // Note: Firestore delete() removes the document completely
+      await deleteDoc(userRef);
 
-      console.log('✅ User data cleared');
+      console.log('✅ User data cleared (document deleted)');
       return { success: true };
     } catch (error) {
       console.error('❌ Error clearing user data:', error);

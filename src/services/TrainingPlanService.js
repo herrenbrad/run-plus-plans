@@ -174,10 +174,11 @@ class TrainingPlanService {
             // Convert onboarding data to TrainingPlanGenerator options
             const generatorOptions = this.convertOnboardingToOptions(formData);
 
-            // Use the proper TrainingPlanGenerator
+            // Use the legacy TrainingPlanGenerator for plan management features
+            // (Main plan generation now uses TrainingPlanAIService)
             const generatedPlan = this.trainingPlanGenerator.generateTrainingPlan(generatorOptions);
 
-            logger.log('✅ TrainingPlanGenerator created plan with', generatedPlan.weeks.length, 'weeks');
+            logger.log('✅ Plan generator created plan with', generatedPlan.weeks.length, 'weeks');
 
             // FIXED: Add dates and reorder workouts based on start date
             const weeksWithDates = this.addDatesAndReorderWorkouts(generatedPlan.weeks, formData.startDate);
@@ -1707,79 +1708,50 @@ class TrainingPlanService {
     }
 
     /**
-     * Regenerate training plan from current week with new settings
-     * Preserves completed weeks, regenerates future weeks
+     * Utility: Preserve completed weeks and merge with new weeks
+     * This is a pure utility function - no plan generation, no defaults
      * @param {object} existingPlan - Current training plan
-     * @param {object} updatedProfile - User profile with new settings
-     * @param {number} currentWeek - Current week number (weeks before this are preserved)
-     * @returns {object} - Updated training plan
+     * @param {array} newWeeks - New weeks to merge (from AI generation)
+     * @param {number} currentWeek - Current week number
+     * @returns {array} - Merged weeks array
      */
-    async regeneratePlanFromCurrentWeek(existingPlan, updatedProfile, currentWeek) {
-        logger.log('⚙️ Regenerating plan from week', currentWeek);
-        logger.log('  Preserving weeks 1-' + (currentWeek - 1));
-        logger.log('  New settings:', {
-            runsPerWeek: updatedProfile.runsPerWeek,
-            trainingDays: updatedProfile.trainingDays,
-            hardDays: updatedProfile.hardDays,
-            longRunDay: updatedProfile.longRunDay,
-            bikeDays: updatedProfile.bikeDays
-        });
-
+    preserveAndMergeWeeks(existingPlan, newWeeks, currentWeek) {
+        logger.log('🔧 Preserving completed weeks and merging...');
+        
         // Get existing weekly plans
-        const weeklyPlans = existingPlan?.weeklyPlans || existingPlan?.weeks;
+        const weeklyPlans = existingPlan?.weeks || existingPlan?.weeklyPlans;
         if (!weeklyPlans) {
-            throw new Error('Training plan structure is invalid - missing weeklyPlans/weeks array');
+            throw new Error('Training plan structure is invalid - missing weeks array');
         }
 
         // Preserve completed weeks (everything before current week)
         const completedWeeks = weeklyPlans.slice(0, currentWeek - 1);
         logger.log('  Preserved', completedWeeks.length, 'completed weeks');
-
-        // Generate new plan with updated settings
-        const newPlanOptions = {
-            ...existingPlan.planOverview,
-            ...updatedProfile,
-            // Keep the same start date and race details
-            startDate: existingPlan.planOverview.startDate,
-            raceDate: existingPlan.planOverview.raceDate,
-            targetRace: existingPlan.planOverview.targetRace,
-            // Map raceTime to currentRaceTime for generatePlanFromOnboarding
-            currentRaceTime: existingPlan.planOverview.raceTime,
-            raceDistance: existingPlan.planOverview.raceDistance
-        };
-
-        logger.log('  Generating new plan with updated settings...');
-        const result = await this.generatePlanFromOnboarding(newPlanOptions);
-
-        // generatePlanFromOnboarding returns { success, plan, userProfile }
-        if (!result.success || !result.plan) {
-            throw new Error('Failed to generate new plan');
-        }
-
-        const newPlan = result.plan;
-
-        // Get the weeks from current week onwards from the new plan
-        const newWeeklyPlans = newPlan.weeks;
-        if (!newWeeklyPlans) {
-            throw new Error('Generated plan has no weeks array');
-        }
-
-        const futureWeeks = newWeeklyPlans.slice(currentWeek - 1);
-        logger.log('  Generated', futureWeeks.length, 'new weeks starting from week', currentWeek);
+        logger.log('  Merging', newWeeks.length, 'new weeks from week', currentWeek);
 
         // Merge: completed weeks + new future weeks
-        const mergedWeeklyPlans = [...completedWeeks, ...futureWeeks];
+        const mergedWeeklyPlans = [...completedWeeks, ...newWeeks];
 
-        logger.log('  ✅ Plan regenerated successfully');
+        logger.log('  ✅ Weeks merged successfully');
         logger.log('    Total weeks:', mergedWeeklyPlans.length);
         logger.log('    Completed weeks:', completedWeeks.length);
-        logger.log('    New weeks:', futureWeeks.length);
+        logger.log('    New weeks:', newWeeks.length);
 
-        // Return updated plan with merged weeks
-        return {
-            ...newPlan,
-            weeks: mergedWeeklyPlans
-        };
+        return mergedWeeklyPlans;
+    }
+
+    /**
+     * Regenerate plan from current week with new settings
+     * DEPRECATED: This method now delegates to AI via TrainingPlanAIService
+     * Kept for backward compatibility but should use AI regeneration instead
+     * @deprecated Use TrainingPlanAIService.regeneratePlanStructureFromCurrentWeek() instead
+     */
+    async regeneratePlanFromCurrentWeek(existingPlan, updatedProfile, currentWeek) {
+        logger.warn('⚠️ regeneratePlanFromCurrentWeek() is deprecated. Use AI regeneration instead.');
+        
+        // This method should not be called anymore - AI handles plan regeneration
+        // But keeping it for now as a fallback
+        throw new Error('This method is deprecated. Plan regeneration should use AI via TrainingPlanAIService.');
     }
 
     /**

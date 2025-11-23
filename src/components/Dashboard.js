@@ -1,16 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import FirestoreService from '../services/FirestoreService';
-import TrainingPlanService from '../services/TrainingPlanService';
 import { TempoWorkoutLibrary } from '../lib/tempo-workout-library.js';
 import { IntervalWorkoutLibrary } from '../lib/interval-workout-library.js';
 import { LongRunWorkoutLibrary } from '../lib/long-run-workout-library.js';
 import { HillWorkoutLibrary } from '../lib/hill-workout-library.js';
+import { PaceCalculator } from '../lib/pace-calculator.js';
 import WorkoutOptionsService from '../services/WorkoutOptionsService.js';
-import BrickWorkoutService from '../services/brickWorkoutService.js';
 import SomethingElseModal from './SomethingElseModal';
 import ManagePlanModal from './ManagePlanModal';
 import InjuryRecoveryModal from './InjuryRecoveryModal';
@@ -19,11 +18,16 @@ import { calorieCalculator } from '../lib/calorie-calculator.js';
 import StravaService from '../services/StravaService';
 import StravaSyncService from '../services/StravaSyncService';
 import logger from '../utils/logger';
+import { useToast } from './Toast';
+import './Dashboard.css';
 
 function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData }) {
   const navigate = useNavigate();
+  const toast = useToast();
   const [showManagePlanModal, setShowManagePlanModal] = useState(false);
   const [showInjuryRecoveryModal, setShowInjuryRecoveryModal] = useState(false);
+  const [isInjuryCoachingExpanded, setIsInjuryCoachingExpanded] = useState(true); // Start expanded
+  const [isPlanAdjustmentCoachingExpanded, setIsPlanAdjustmentCoachingExpanded] = useState(true); // Start expanded
   
   // Calculate the actual current week based on training plan start date
   const calculateCurrentWeek = () => {
@@ -78,6 +82,172 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     return `${startStr} - ${endStr}`;
   };
 
+  // Calculate the actual date for a specific workout
+  const getWorkoutDate = (weekNumber, dayName) => {
+    if (!trainingPlan?.planOverview?.startDate) {
+      return null;
+    }
+
+    const planStartDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
+    const msPerDay = 24 * 60 * 60 * 1000;
+
+    // FIXED: Calculate the Monday of the week containing the start date (same as getWeekDateRange)
+    const dayOfWeek = planStartDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+    const mondayOfStartWeek = new Date(planStartDate.getTime() - (daysFromMonday * msPerDay));
+
+    // Calculate the Monday of the requested week
+    const weekStartDate = new Date(mondayOfStartWeek.getTime() + ((weekNumber - 1) * 7 * msPerDay));
+
+    // Map day names to day of week numbers (Monday = 0 in our week, Sunday = 6)
+    // This maps to offset from Monday
+    const dayOffsets = {
+      'Monday': 0, 'Mon': 0,
+      'Tuesday': 1, 'Tue': 1,
+      'Wednesday': 2, 'Wed': 2,
+      'Thursday': 3, 'Thu': 3,
+      'Friday': 4, 'Fri': 4,
+      'Saturday': 5, 'Sat': 5,
+      'Sunday': 6, 'Sun': 6
+    };
+
+    const daysToAdd = dayOffsets[dayName] ?? 0;
+    const workoutDate = new Date(weekStartDate.getTime() + (daysToAdd * msPerDay));
+
+    return workoutDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  // Normalize workout type for backward compatibility with existing plans
+  // Converts library categories (VO2_MAX, SHORT_SPEED, etc.) to standard types (intervals, hills, etc.)
+  const getNormalizedWorkoutType = (workout) => {
+    const type = (workout?.type || '').toLowerCase();
+    const name = (workout?.name || '').toLowerCase();
+    const focus = (workout?.focus || '').toLowerCase();
+
+    // Already normalized
+    if (['intervals', 'hills', 'tempo', 'longrun', 'easy', 'rest', 'rest_or_xt', 'bike'].includes(type)) {
+      return type === 'longrun' ? 'longRun' : type;
+    }
+
+    // Detect interval workouts
+    if (type.includes('vo2') || type.includes('speed') || type.includes('interval') ||
+        name.includes('interval') || name.includes('800m') || name.includes('400m') ||
+        name.includes('repeat') || focus.includes('vo2')) {
+      return 'intervals';
+    }
+
+    // Detect hill workouts
+    if (type.includes('hill') || type.includes('power') || type.includes('strength') ||
+        name.includes('hill') || focus.includes('strength')) {
+      return 'hills';
+    }
+
+    // Detect tempo workouts
+    if (type.includes('tempo') || type.includes('threshold') ||
+        name.includes('tempo') || name.includes('threshold') || name.includes('cruise') ||
+        focus.includes('threshold')) {
+      return 'tempo';
+    }
+
+    // Detect long runs
+    if (type.includes('long') || type.includes('progressive') || type.includes('mixed') ||
+        name.includes('long run') || focus.includes('endurance')) {
+      return 'longRun';
+    }
+
+    return type || 'easy';
+  };
+
+  // Check if a workout date is in the past
+  const isWorkoutInPast = (weekNumber, dayName) => {
+    if (!trainingPlan?.planOverview?.startDate) {
+      return false;
+    }
+
+    const planStartDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
+    const msPerDay = 24 * 60 * 60 * 1000;
+
+    // FIXED: Calculate the Monday of the week containing the start date (same as getWeekDateRange)
+    const dayOfWeek = planStartDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+    const mondayOfStartWeek = new Date(planStartDate.getTime() - (daysFromMonday * msPerDay));
+
+    // Calculate the Monday of the requested week
+    const weekStartDate = new Date(mondayOfStartWeek.getTime() + ((weekNumber - 1) * 7 * msPerDay));
+
+    // Map day names to offset from Monday
+    const dayOffsets = {
+      'Monday': 0, 'Mon': 0,
+      'Tuesday': 1, 'Tue': 1,
+      'Wednesday': 2, 'Wed': 2,
+      'Thursday': 3, 'Thu': 3,
+      'Friday': 4, 'Fri': 4,
+      'Saturday': 5, 'Sat': 5,
+      'Sunday': 6, 'Sun': 6
+    };
+
+    const daysToAdd = dayOffsets[dayName];
+    if (daysToAdd === undefined) {
+      return false; // Unknown day name, can't determine if past
+    }
+
+    const workoutDate = new Date(weekStartDate.getTime() + (daysToAdd * msPerDay));
+
+    // Set both dates to midnight for fair comparison
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    workoutDate.setHours(0, 0, 0, 0);
+
+    return workoutDate < today;
+  };
+
+  // Check if a workout is before the plan's start date (for filtering Week 1 partial weeks)
+  const isWorkoutBeforePlanStart = (weekNumber, dayName) => {
+    // Only applies to Week 1
+    if (weekNumber !== 1) return false;
+
+    if (!trainingPlan?.planOverview?.startDate) {
+      return false;
+    }
+
+    const planStartDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
+    const planStartDayOfWeek = planStartDate.getDay(); // 0 = Sunday, 6 = Saturday
+
+    // Map day names to day of week numbers (includes abbreviations)
+    const dayOfWeekNumbers = {
+      'Sunday': 0, 'Sun': 0,
+      'Monday': 1, 'Mon': 1,
+      'Tuesday': 2, 'Tue': 2,
+      'Wednesday': 3, 'Wed': 3,
+      'Thursday': 4, 'Thu': 4,
+      'Friday': 5, 'Fri': 5,
+      'Saturday': 6, 'Sat': 6
+    };
+
+    const workoutDayOfWeek = dayOfWeekNumbers[dayName];
+    if (workoutDayOfWeek === undefined) {
+      return false;
+    }
+
+    // For Week 1, we need to filter days that come before the start day
+    // Week structure: Mon(1), Tue(2), Wed(3), Thu(4), Fri(5), Sat(6), Sun(0)
+    // If plan starts Saturday (6), we want to keep Sat(6) and Sun(0), filter Mon-Fri(1-5)
+    // If plan starts Wednesday (3), we want to keep Wed-Sun, filter Mon-Tue(1-2)
+
+    // Sunday (0) is special - it's always the END of the week, so never filter it
+    if (workoutDayOfWeek === 0) {
+      return false; // Sunday is always included
+    }
+
+    // For all other days, filter if the workout day is before the start day
+    // (but only if start day isn't Sunday, which would mean full week)
+    if (planStartDayOfWeek !== 0 && workoutDayOfWeek < planStartDayOfWeek) {
+      return true; // Day is before plan started this week
+    }
+
+    return false;
+  };
+
   // Format workout type names for display
   const formatWorkoutTypeName = (type) => {
     const typeNames = {
@@ -95,171 +265,87 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     return typeNames[type] || type.charAt(0).toUpperCase() + type.slice(1) + ' Workout';
   };
 
-  // Function to refresh the training plan with latest features
-  const refreshTrainingPlan = async () => {
-    if (!userProfile || !trainingPlan) return;
-
-    try {
-      logger.log('🔄 Regenerating training plan with updated workout logic...');
-
-      // Reconstruct the original form data from user profile and training plan
-      const formData = {
-        raceDistance: trainingPlan.planOverview.raceDistance,
-        raceDate: trainingPlan.planOverview.raceDate,
-        startDate: trainingPlan.planOverview.startDate,
-        currentRaceTime: userProfile.currentRaceTime || '2:00:00',
-        runsPerWeek: trainingPlan.planOverview.runsPerWeek || 5,
-        experienceLevel: userProfile.experienceLevel || 'recreational',
-        standUpBikeType: userProfile.standUpBikeType || null,
-        availableDays: userProfile.availableDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-        preferredBikeDays: userProfile.preferredBikeDays || [],
-        longRunDay: userProfile.longRunDay || 'Sunday',
-        trainingStyle: userProfile.trainingStyle || 'prescribed',
-        weeksAvailable: trainingPlan.planOverview.totalWeeks || 16,
-        hardSessionDays: userProfile.hardSessionDays || ['Wednesday', 'Friday'],
-        hardSessionsPerWeek: userProfile.hardSessionsPerWeek || 2,
-        currentWeeklyMileage: userProfile.currentWeeklyMileage || 15,
-        currentLongRunDistance: userProfile.currentLongRunDistance || 6,
-        raceElevationProfile: userProfile.raceElevationProfile || 'flat',
-        climate: userProfile.climate || 'temperate',
-        trainingPhilosophy: userProfile.trainingPhilosophy || 'practical_periodization',
-        missedWorkoutPreference: userProfile.missedWorkoutPreference || 'modify',
-        goal: userProfile.goal || 'race'
-      };
-
-      logger.log('📋 Form data for regeneration:', formData);
-
-      // Generate new plan using TrainingPlanService
-      const trainingPlanService = new TrainingPlanService();
-      const result = await trainingPlanService.generatePlanFromOnboarding(formData);
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to generate plan');
-      }
-
-      const newPlan = result.plan;
-      logger.log('✅ New plan generated with', newPlan.weeks?.length, 'weeks');
-
-      // Save to Firebase
-      const userRef = doc(db, 'users', auth.currentUser.uid);
-      await updateDoc(userRef, {
-        trainingPlan: newPlan,
-        planLastUpdated: new Date().toISOString()
-      });
-
-      logger.log('💾 Plan saved to Firebase - reloading...');
-
-      // Reload the page to show updated plan
-      window.location.reload();
-    } catch (error) {
-      console.error('Error refreshing training plan:', error);
-      alert('Error refreshing plan. Please try again or contact support.');
-    }
-  };
-
   // Calculate mileage breakdown between running and equivalent activities
   const calculateMileageBreakdown = (weekData) => {
     if (!weekData?.workouts) {
       return { runMiles: 0, bikeMiles: 0, ellipticalMiles: 0, runEqMiles: 0, totalMiles: 0, equivalentMiles: 0 };
     }
 
-    logger.log('🔢 Calculating mileage for week:', weekData.week);
-    logger.log('📋 Workouts:', weekData.workouts);
+    // CRITICAL: If backend provided totalMileage, use it as the authoritative source
+    const hasBackendMileage = weekData.totalMileage !== undefined && weekData.totalMileage !== null;
 
     let runMiles = 0;
-    let bikeMiles = 0; // This will be the actual bike miles (not equivalent)
-    let ellipticalMiles = 0; // This will be the actual elliptical miles (not equivalent)
-    let runEqMiles = 0; // RunEQ miles are already equivalent - don't convert again!
+    let bikeMiles = 0;
+    let ellipticalMiles = 0;
+    let runEqMiles = 0;
 
     weekData.workouts.forEach(workout => {
-      // Get ALL workouts for this day (including two-a-days)
       const allWorkoutsForDay = getWorkouts(workout);
 
-      logger.log(`🏃 ${workout.day}: ${allWorkoutsForDay.length} workout(s)`);
-
-      // Calculate mileage for each workout on this day
-      allWorkoutsForDay.forEach((currentWorkout, idx) => {
-      logger.log(`   Workout ${idx + 1}: ${currentWorkout.workout?.name} (type: ${currentWorkout.type})`);
-
-      if (currentWorkout.type === 'brick') {
-        // For brick workouts, we need to extract both run and bike components
-        const runMatch = currentWorkout.workout?.description?.match(/(\d+(?:\.\d+)?)\s*mi.*run/i);
-        const bikeMatch = currentWorkout.workout?.description?.match(/(\d+(?:\.\d+)?)\s*mi.*bike/i);
-
-        if (runMatch) runMiles += parseFloat(runMatch[1]);
-        if (bikeMatch) bikeMiles += parseFloat(bikeMatch[1]);
-      } else if (currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*RunEQ\s*Miles?/i)) {
-        // RunEQ Miles - already in equivalent format, add directly without conversion!
-        const runEqMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*RunEQ\s*Miles?/i);
-        if (runEqMatch) {
-          const extractedRunEq = parseFloat(runEqMatch[1]);
-          logger.log(`   ✅ Extracted ${extractedRunEq} RunEQ miles from "${currentWorkout.workout?.name}" (already equivalent)`);
-          runEqMiles += extractedRunEq;
-        }
-      } else if (currentWorkout.workout?.name?.includes('Bike') || currentWorkout.workout?.name?.includes('Cycling')) {
-        // Pure bike workout - actual miles that need conversion
-        const bikeMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)/);
-        if (bikeMatch) bikeMiles += parseFloat(bikeMatch[1]);
-      } else if (currentWorkout.workout?.name?.includes('Elliptical') || currentWorkout.workout?.name?.includes('ElliptiGO')) {
-        // Pure elliptical workout - actual miles that need conversion
-        const ellipticalMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)/);
-        if (ellipticalMatch) ellipticalMiles += parseFloat(ellipticalMatch[1]);
-      } else {
-        // Regular running workout - extract miles from workout name or description
-        // Look for patterns like "5-Mile", "5 miles", "5 mi" etc, but ignore "1000m", "400m" etc
-        const runMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*-?\s*(mile|miles|mi)\b/i) || 
-                        currentWorkout.workout?.name?.match(/^(\d+(?:\.\d+)?)\s*(mile|miles|mi)/i);
-        if (runMatch) {
-          const extractedMiles = parseFloat(runMatch[1]);
-          logger.log(`   📏 Extracted ${extractedMiles} miles from "${currentWorkout.workout?.name}"`);
-          runMiles += extractedMiles;
+      allWorkoutsForDay.forEach((currentWorkout) => {
+        if (currentWorkout.type === 'brick') {
+          const runMatch = currentWorkout.workout?.description?.match(/(\d+(?:\.\d+)?)\s*mi.*run/i);
+          const bikeMatch = currentWorkout.workout?.description?.match(/(\d+(?:\.\d+)?)\s*mi.*bike/i);
+          if (runMatch) runMiles += parseFloat(runMatch[1]);
+          if (bikeMatch) bikeMiles += parseFloat(bikeMatch[1]);
+        } else if (currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*RunEQ\s*Miles?/i)) {
+          const runEqMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*RunEQ\s*Miles?/i);
+          if (runEqMatch) runEqMiles += parseFloat(runEqMatch[1]);
+        } else if (currentWorkout.workout?.name?.includes('Bike') || currentWorkout.workout?.name?.includes('Cycling')) {
+          const bikeMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)/);
+          if (bikeMatch) bikeMiles += parseFloat(bikeMatch[1]);
+        } else if (currentWorkout.workout?.name?.includes('Elliptical') || currentWorkout.workout?.name?.includes('ElliptiGO')) {
+          const ellipticalMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)/);
+          if (ellipticalMatch) ellipticalMiles += parseFloat(ellipticalMatch[1]);
         } else {
-          // Fallback: try to estimate from workout type
-          let defaultMiles = 0;
-          switch (currentWorkout.type) {
-            case 'rest':
-              defaultMiles = 0; // Rest days = 0 miles!
-              break;
-            case 'longRun':
-              defaultMiles = 10; // Default long run distance
-              break;
-            case 'tempo':
-              defaultMiles = 6; // Default tempo distance
-              break;
-            case 'intervals':
-              defaultMiles = 5; // Default interval session distance
-              break;
-            case 'easy':
-              defaultMiles = 4; // Default easy run distance
-              break;
-            case 'hills':
-              defaultMiles = 5; // Default hill workout distance
-              break;
-            default:
-              defaultMiles = 4; // Default fallback
+          // Regular running workout - extract miles from workout name
+          const runMatch = currentWorkout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*-?\s*(mile|miles|mi)\b/i) ||
+                          currentWorkout.workout?.name?.match(/^(\d+(?:\.\d+)?)\s*(mile|miles|mi)/i);
+          if (runMatch) {
+            runMiles += parseFloat(runMatch[1]);
+          } else {
+            // Fallback: estimate from workout type
+            let defaultMiles = 0;
+            switch (currentWorkout.type) {
+              case 'rest':
+              case 'cross-training':
+                defaultMiles = 0;
+                break;
+              case 'longRun':
+              case 'long-run':
+                defaultMiles = 10;
+                break;
+              case 'tempo':
+                defaultMiles = 6;
+                break;
+              case 'interval':
+              case 'intervals':
+                defaultMiles = 5;
+                break;
+              case 'easy':
+                defaultMiles = 4;
+                break;
+              case 'hill':
+              case 'hills':
+                defaultMiles = 5;
+                break;
+              default:
+                defaultMiles = 4;
+            }
+            runMiles += defaultMiles;
           }
-          logger.log(`   📏 Using default ${defaultMiles} miles for ${currentWorkout.type} workout "${currentWorkout.workout?.name}"`);
-          runMiles += defaultMiles;
         }
-      }
-      }); // End inner loop (all workouts for this day)
-    }); // End outer loop (all days)
+      });
+    });
 
-    // Calculate equivalent miles (bike at 3:1 ratio, elliptical at 2:1 ratio)
-    // RunEQ miles are already equivalent, so add them directly
     const bikeEquivalentMiles = bikeMiles / 3;
     const ellipticalEquivalentMiles = ellipticalMiles / 2;
     const equivalentMiles = bikeEquivalentMiles + ellipticalEquivalentMiles + runEqMiles;
-    const totalMiles = runMiles + equivalentMiles;
+    const calculatedTotal = runMiles + equivalentMiles;
 
-    logger.log('📊 Final mileage calculation:');
-    logger.log(`   Running: ${runMiles} miles`);
-    logger.log(`   Biking: ${bikeMiles} miles (${bikeEquivalentMiles} equivalent)`);
-    logger.log(`   Elliptical: ${ellipticalMiles} miles (${ellipticalEquivalentMiles} equivalent)`);
-    logger.log(`   RunEQ: ${runEqMiles} miles (already equivalent)`);
-    logger.log(`   Total: ${totalMiles} miles`);
+    const totalMiles = hasBackendMileage ? weekData.totalMileage : calculatedTotal;
 
-    const result = {
+    return {
       runMiles: Math.round(runMiles * 10) / 10,
       bikeMiles: Math.round(bikeMiles * 10) / 10,
       ellipticalMiles: Math.round(ellipticalMiles * 10) / 10,
@@ -267,9 +353,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       equivalentMiles: Math.round(equivalentMiles * 10) / 10,
       totalMiles: Math.round(totalMiles * 10) / 10
     };
-
-    logger.log('📊 Rounded result:', result);
-    return result;
   };
 
   // Calculate rolling distance totals from completed workouts
@@ -470,17 +553,17 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
           logger.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
           window.location.reload();
         } else {
-          alert(`Sync complete! Found ${result.activitiesFetched} activities, ${result.matchesFound} matched workouts.`);
+          toast.success(`Sync complete! Found ${result.activitiesFetched} activities, ${result.matchesFound} matched workouts.`);
           setStravaSyncing(false);
         }
       } else {
         console.warn('⚠️ Strava sync failed:', result.error);
-        alert(`Sync failed: ${result.error}`);
+        toast.error(`Sync failed: ${result.error}`);
         setStravaSyncing(false);
       }
     } catch (error) {
       console.error('❌ Strava sync error:', error);
-      alert(`Sync error: ${error.message}`);
+      toast.error(`Sync error: ${error.message}`);
       setStravaSyncing(false);
     }
   };
@@ -547,10 +630,16 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   const longRunLibrary = new LongRunWorkoutLibrary();
   const hillLibrary = new HillWorkoutLibrary();
   const workoutOptionsService = new WorkoutOptionsService();
-  const brickWorkoutService = new BrickWorkoutService();
   
   // Extract distance/duration info for quick glance
   const getWorkoutDistance = (workout) => {
+    // Don't show distance badge for rest days
+    if (workout.type === 'rest' || workout.type === 'Rest' ||
+        workout.workout?.name?.toLowerCase().includes('rest') ||
+        workout.name?.toLowerCase().includes('rest')) {
+      return null;
+    }
+
     // Priority 1: Check workout.distance field
     if (workout.distance) {
       return `📏 ${workout.distance}`;
@@ -589,6 +678,27 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       default:
         return null;
     }
+  };
+
+  // Helper to check if workout is a long run (handles both old and AI-generated workouts)
+  const isLongRun = (workout) => {
+    // Check explicit type
+    if (workout.type === 'longRun' || workout.type === 'brickLongRun') {
+      return true;
+    }
+    // Check metadata from AI-generated workouts
+    if (workout.metadata?.workoutId && workout.metadata.workoutId.includes('longrun_')) {
+      return true;
+    }
+    // Check workout ID field directly
+    if (workout.workoutId && workout.workoutId.includes('longrun_')) {
+      return true;
+    }
+    // Check if workout name contains "long run"
+    if (workout.name?.toLowerCase().includes('long run') || workout.workout?.name?.toLowerCase().includes('long run')) {
+      return true;
+    }
+    return false;
   };
 
   // Intensity-based color system for workout cards - BOLD & VIVID 2025
@@ -853,21 +963,27 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       brickLongRun: '#ff6b6b',    // Coral - brick workouts (run+bike combo)
       easy: '#718096',            // Gray - recovery
       rest: '#a0aec0',            // Light gray - rest
+      rest_or_xt: '#22c55e',      // Green - rest or cross-train (user's choice)
       preparation: '#ffd700'      // Gold - preparation phase
     };
     return colors[type] || '#718096';
   };
 
   const handleWorkoutClick = (workout) => {
-    if (workout.type === 'rest' || workout.type === 'preparation') return;
+    if (workout.type === 'rest' || workout.type === 'rest_or_xt' || workout.type === 'preparation') return;
     
     // Create safe day identifier
     const dayId = (workout.day || 'unknown').toLowerCase().replace(/\s+/g, '-');
     
     navigate(`/workout/${dayId}`, {
-      state: { 
+      state: {
         workout: workout,
-        userProfile: userProfile,
+        userProfile: {
+          ...userProfile,
+          // Include VDOT paces and track intervals from training plan
+          paces: trainingPlan?.paces,
+          trackIntervals: trainingPlan?.trackIntervals
+        },
         currentWeek: currentWeek,
         weekData: currentWeekData
       }
@@ -889,7 +1005,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
 
   const handleRemoveWorkout = (originalWorkout, workoutIndex) => {
     if (workoutIndex === 0) {
-      alert("Cannot remove the primary workout. Use 'Something Else' to replace it instead.");
+      toast.warning("Cannot remove the primary workout. Use 'Something Else' to replace it instead.");
       return;
     }
 
@@ -974,7 +1090,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
             delete updated[workoutKey];
             return updated;
           });
-          alert('Failed to save. Please try again.');
+          toast.error('Failed to save. Please try again.');
         }
       } catch (error) {
         console.error('Error uncompleting workout:', error);
@@ -1060,7 +1176,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
           delete updated[workoutKey];
           return updated;
         });
-        alert('Failed to save. Please try again.');
+        toast.error('Failed to save. Please try again.');
       }
     } catch (error) {
       // Rollback on error
@@ -1070,7 +1186,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         delete updated[workoutKey];
         return updated;
       });
-      alert('Failed to save. Please try again.');
+      toast.error('Failed to save. Please try again.');
     }
   };
 
@@ -1203,12 +1319,13 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
 
   const handleShowOptions = (workout) => {
     const workoutKey = `${currentWeek}-${workout.day}`;
-    
-    // Get options based on workout type
+
+    // Get options based on workout type (use normalized type for backward compatibility)
     let options = [];
     const targetDistance = parseFloat(workout.workout?.name?.match(/\d+/)?.[0]) || 8;
-    
-    switch (workout.type) {
+    const normalizedType = getNormalizedWorkoutType(workout);
+
+    switch (normalizedType) {
       case 'intervals':
         options = workoutOptionsService.getSpeedOptions(currentWeek, userProfile);
         break;
@@ -1360,11 +1477,11 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         successCount++;
       }
 
-      alert(`✅ Success!\n\nAll ${successCount} beta codes added to Firestore!\n\nYou can now:\n1. Check Firebase Console → Firestore → betaCodes\n2. Update Firestore security rules (see FIRESTORE_RULES.md)\n3. Start sending codes to beta testers!`);
+      toast.success(`Success! All ${successCount} beta codes added to Firestore! Check Firebase Console → Firestore → betaCodes`, 8000);
       setShowBetaSetup(false);
     } catch (error) {
       console.error('Error adding beta codes:', error);
-      alert(`❌ Error adding beta codes:\n\n${error.message}\n\nMake sure Firestore security rules allow writes for authenticated users.`);
+      toast.error(`Error adding beta codes: ${error.message}. Make sure Firestore security rules allow writes for authenticated users.`, 10000);
     }
   };
 
@@ -1427,7 +1544,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)',
         padding: '20px'
       }}>
-        <div style={{
+        <div className="dashboard-pending-approval" style={{
           maxWidth: '500px',
           background: 'rgba(255, 255, 255, 0.05)',
           borderRadius: '12px',
@@ -1435,7 +1552,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
           textAlign: 'center',
           border: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
-          <div style={{ fontSize: '4rem', marginBottom: '20px' }}>⏳</div>
+          <div className="pending-emoji" style={{ fontSize: '4rem', marginBottom: '20px' }}>⏳</div>
           <h1 style={{ color: '#00D4FF', marginBottom: '16px' }}>Account Pending Approval</h1>
           <p style={{ color: '#AAAAAA', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '24px' }}>
             Thank you for signing up! Your account is currently pending approval.
@@ -1475,7 +1592,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         <div className="container">
           {/* Title Row */}
           <div style={{ marginBottom: '12px' }}>
-            <h1 style={{ margin: '0', lineHeight: '1.2' }}>
+            <h1 className="dashboard-week-title" style={{ margin: '0', lineHeight: '1.2' }}>
               Week {currentWeek}
             </h1>
             {(() => {
@@ -1492,6 +1609,34 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
             })()}
           </div>
 
+          {/* Navigation Row */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
+            <button
+              onClick={() => navigate('/welcome')}
+              style={{
+                padding: '8px 16px',
+                background: 'rgba(0, 245, 212, 0.1)',
+                border: '1px solid rgba(0, 245, 212, 0.3)',
+                borderRadius: '6px',
+                color: '#00f5d4',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: '500',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = 'rgba(0, 245, 212, 0.2)';
+                e.target.style.borderColor = '#00f5d4';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = 'rgba(0, 245, 212, 0.1)';
+                e.target.style.borderColor = 'rgba(0, 245, 212, 0.3)';
+              }}
+            >
+              ← Coach's Analysis
+            </button>
+          </div>
+
           {/* Stats Row */}
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
                 {(() => {
@@ -1499,7 +1644,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                   const hasEquivalentMiles = mileageBreakdown.equivalentMiles > 0;
                   
                   return (
-                    <div style={{ 
+                    <div className="dashboard-stats-badge" style={{ 
                       background: 'rgba(0, 212, 255, 0.2)', 
                       color: '#00D4FF', 
                       padding: '8px 14px', 
@@ -1510,7 +1655,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                     }}>
                       📊 {mileageBreakdown.totalMiles} Miles This Week
                       {hasEquivalentMiles && (
-                        <div style={{ 
+                        <div className="stats-subtext" style={{ 
                           fontSize: '0.85rem', 
                           fontWeight: '500', 
                           marginTop: '4px',
@@ -1546,7 +1691,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                   if (bikeWorkouts.length === 0) return null;
 
                   return (
-                    <div style={{
+                    <div className="dashboard-stats-badge" style={{
                       background: 'rgba(255, 149, 0, 0.15)',
                       color: '#FF9500',
                       padding: '8px 14px',
@@ -1574,7 +1719,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                   if (!hasCompletedWorkouts) return null;
 
                   return (
-                    <div style={{
+                    <div className="dashboard-stats-badge" style={{
                       background: 'rgba(34, 197, 94, 0.15)',
                       color: '#22c55e',
                       padding: '8px 14px',
@@ -1651,7 +1796,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 alignItems: 'center',
                 gap: '12px'
               }}>
-                <div style={{ fontSize: '1.8rem', lineHeight: '1' }}>{config.icon}</div>
+                <div className="dashboard-phase-icon" style={{ fontSize: '1.8rem', lineHeight: '1' }}>{config.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{
                     color: config.color,
@@ -1673,90 +1818,37 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
             );
           })()}
 
-          <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="dashboard-button-row" style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
             <button
-                className="btn btn-secondary"
+                className="dashboard-nav-button dashboard-nav-button-prev"
                 onClick={() => setCurrentWeek(Math.max(1, currentWeek - 1))}
                 disabled={currentWeek <= 1}
-                style={{
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#AAAAAA',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  fontSize: '0.8rem',
-                  padding: '6px 12px',
-                  borderRadius: '4px'
-                }}
               >
                 ← Prev
               </button>
 
               <select
+                className="dashboard-week-select"
                 value={currentWeek}
                 onChange={(e) => setCurrentWeek(parseInt(e.target.value, 10))}
-                style={{
-                  background: 'rgba(0, 212, 255, 0.15)',
-                  color: '#00D4FF',
-                  border: '2px solid rgba(0, 212, 255, 0.4)',
-                  borderRadius: '8px',
-                  padding: '6px 12px',
-                  fontSize: '0.8rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  minWidth: '100px'
-                }}
               >
                 {Array.from({ length: trainingPlan?.planOverview?.totalWeeks || 12 }, (_, i) => i + 1).map(week => (
-                  <option key={week} value={week} style={{ background: '#1a1a1a', color: '#00D4FF' }}>
+                  <option key={week} value={week}>
                     Week {week}
                   </option>
                 ))}
               </select>
 
               <button
-                className="btn btn-secondary"
+                className="dashboard-nav-button dashboard-nav-button-next"
                 onClick={() => setCurrentWeek(Math.min(trainingPlan?.planOverview?.totalWeeks || 12, currentWeek + 1))}
                 disabled={currentWeek === (trainingPlan?.planOverview?.totalWeeks || 12)}
-                style={{
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#AAAAAA',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  fontSize: '0.8rem',
-                  padding: '6px 12px',
-                  borderRadius: '4px'
-                }}
               >
                 Next →
               </button>
-              {/* Removed Refresh Plan button - replaced by Manage Plan feature */}
-              {/* <button
-                onClick={() => {
-                  if (window.confirm('Update your training plan with the latest features? This will regenerate workouts using current code while keeping your profile.')) {
-                    refreshTrainingPlan();
-                  }
-                }}
-                style={{
-                  background: 'rgba(34, 197, 94, 0.1)',
-                  color: '#22c55e',
-                  border: '1px solid rgba(34, 197, 94, 0.3)',
-                  fontSize: '0.8rem',
-                  padding: '6px 12px',
-                  borderRadius: '4px'
-                }}
-              >
-                🔄 Refresh Plan
-              </button> */}
-
               <button
+                className="dashboard-nav-button dashboard-nav-button-manage"
                 onClick={() => setShowManagePlanModal(true)}
-                style={{
-                  background: 'rgba(59, 130, 246, 0.1)',
-                  color: '#3b82f6',
-                  border: '1px solid rgba(59, 130, 246, 0.3)',
-                  fontSize: '0.8rem',
-                  padding: '6px 12px',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
                 title="Adjust training schedule, days, and preferences"
               >
                 ⚙️ Manage Plan
@@ -1765,27 +1857,28 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
               {/* Show either Report Injury or Cancel Recovery based on status */}
               {trainingPlan?.injuryRecoveryActive ? (
                 <button
+                  className="dashboard-nav-button dashboard-nav-button-recovery"
                   onClick={async () => {
                     if (window.confirm('Cancel injury recovery protocol and restore your original training plan?')) {
                       try {
-                        const trainingPlanService = new TrainingPlanService();
-                        const restoredPlan = trainingPlanService.cancelInjuryRecovery(trainingPlan);
+                        if (!trainingPlan.originalPlanBeforeInjury) {
+                          throw new Error('Cannot restore original plan - backup not found');
+                        }
+                        // Restore original plan inline (no need for TrainingPlanService)
+                        const restoredPlan = {
+                          ...trainingPlan,
+                          weeks: trainingPlan.originalPlanBeforeInjury.weeks,
+                          injuryRecoveryActive: false,
+                          injuryRecoveryInfo: null,
+                          originalPlanBeforeInjury: null
+                        };
                         await FirestoreService.saveTrainingPlan(auth.currentUser.uid, restoredPlan);
                         window.location.reload();
                       } catch (error) {
                         logger.error('Error canceling injury recovery:', error);
-                        alert('Error restoring plan. Please try again.');
+                        toast.error('Error restoring plan. Please try again.');
                       }
                     }
-                  }}
-                  style={{
-                    background: 'rgba(34, 197, 94, 0.1)',
-                    color: '#22c55e',
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                    fontSize: '0.8rem',
-                    padding: '6px 12px',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
                   }}
                   title="Cancel injury recovery and restore original plan"
                 >
@@ -1793,16 +1886,8 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 </button>
               ) : (
                 <button
+                  className="dashboard-nav-button dashboard-nav-button-injury"
                   onClick={() => setShowInjuryRecoveryModal(true)}
-                  style={{
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    color: '#ef4444',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    fontSize: '0.8rem',
-                    padding: '6px 12px',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
                   title="Modify plan for injury recovery with cross-training"
                 >
                   🏥 Report Injury
@@ -1813,20 +1898,13 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
               {userProfile?.stravaConnected ? (
                 <>
                   <button
-                    style={{
-                      background: 'rgba(252, 76, 2, 0.1)',
-                      color: '#FC4C02',
-                      border: '1px solid rgba(252, 76, 2, 0.3)',
-                      fontSize: '0.8rem',
-                      padding: '6px 12px',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
+                    className="dashboard-nav-button dashboard-nav-button-strava"
                     title={`Connected as ${userProfile.stravaAthleteName || 'Strava athlete'}`}
                   >
                     ✓ Strava Connected
                   </button>
                   <button
+                    className="dashboard-nav-button dashboard-nav-button-strava"
                     onClick={(e) => {
                       logger.log('🔘 BUTTON CLICKED INLINE - Event:', e);
                       logger.log('🔘 stravaSyncing:', stravaSyncing);
@@ -1838,17 +1916,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                       handleManualStravaSync();
                     }}
                     disabled={stravaSyncing}
-                    style={{
-                      background: stravaSyncing ? 'rgba(100, 100, 100, 0.1)' : 'rgba(252, 76, 2, 0.2)',
-                      color: stravaSyncing ? '#666' : '#FC4C02',
-                      border: `1px solid ${stravaSyncing ? 'rgba(100, 100, 100, 0.3)' : 'rgba(252, 76, 2, 0.4)'}`,
-                      fontSize: '0.8rem',
-                      padding: '6px 12px',
-                      borderRadius: '4px',
-                      cursor: stravaSyncing ? 'not-allowed' : 'pointer',
-                      opacity: stravaSyncing ? 0.6 : 1,
-                      pointerEvents: stravaSyncing ? 'none' : 'auto'
-                    }}
                     title="Manually sync your Strava activities"
                   >
                     {stravaSyncing ? '⏳ Syncing...' : '🔄 Sync Now'}
@@ -1856,18 +1923,10 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 </>
               ) : (
                 <button
+                  className="dashboard-nav-button dashboard-nav-button-strava"
                   onClick={() => {
                     const authUrl = StravaService.getAuthorizationUrl();
                     window.location.href = authUrl;
-                  }}
-                  style={{
-                    background: 'rgba(252, 76, 2, 0.1)',
-                    color: '#FC4C02',
-                    border: '1px solid rgba(252, 76, 2, 0.3)',
-                    fontSize: '0.8rem',
-                    padding: '6px 12px',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
                   }}
                 >
                   🔗 Connect Strava
@@ -1875,38 +1934,22 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
               )}
 
               <button
+                className="dashboard-nav-button dashboard-nav-button-reset"
                 onClick={() => {
                   if (window.confirm('Clear all data and start over? This will reset your profile and training plan.')) {
                     clearAllData();
                   }
-                }}
-                style={{
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  color: '#ef4444',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  fontSize: '0.8rem',
-                  padding: '6px 12px',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
                 }}
                 title="Clear all data and restart onboarding"
               >
                 🗑️ Reset
               </button>
               <button
+                className="dashboard-nav-button dashboard-nav-button-logout"
                 onClick={async () => {
                   if (window.confirm('Logout? Your data is saved and will be here when you log back in.')) {
                     await signOut(auth);
                   }
-                }}
-                style={{
-                  background: 'rgba(156, 163, 175, 0.1)',
-                  color: '#9ca3af',
-                  border: '1px solid rgba(156, 163, 175, 0.3)',
-                  fontSize: '0.8rem',
-                  padding: '6px 12px',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
                 }}
                 title="Logout (your data is saved)"
               >
@@ -1916,11 +1959,11 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         </div>
       </div>
 
-      <div className="container" style={{ padding: '20px 16px' }}>
+      <div className="container dashboard-container" style={{ padding: '20px 16px' }}>
         {/* Current Training System */}
         <div className="card" style={{ marginBottom: '20px', background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)' }}>
           <div style={{ marginBottom: '16px' }}>
-            <h3 style={{ margin: '0 0 4px 0', color: '#00D4FF' }}>Current Training System</h3>
+            <h3 className="dashboard-section-header" style={{ margin: '0 0 4px 0', color: '#00D4FF' }}>Current Training System</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '1.2rem' }}>🔬</span>
               <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
@@ -1928,7 +1971,9 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
               </span>
             </div>
             <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: '#00D4FF' }}>
-              Week {currentWeek} of {trainingPlan?.planOverview?.totalWeeks || 16} • Periodized training system
+              Week {currentWeek} of {trainingPlan?.planOverview?.totalWeeks || 16}
+              {getWeekDateRange(currentWeek) && ` • ${getWeekDateRange(currentWeek)}`}
+              {' • Periodized training system'}
             </p>
           </div>
           
@@ -1945,7 +1990,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         {/* Weekly Progress */}
         <div className="card" style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ margin: 0 }}>Week Progress</h2>
+            <h2 className="dashboard-section-header" style={{ margin: 0 }}>Week Progress</h2>
             <span className="badge badge-info">
               {(() => {
                 // Use getWorkout() to get completion status from both Firestore AND local state
@@ -1973,8 +2018,8 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         {/* Climate Alert (if applicable) */}
         {userProfile.climate === 'hot_humid' && (
           <div className="card" style={{ marginBottom: '20px', background: 'rgba(255, 184, 0, 0.1)', border: '1px solid rgba(255, 184, 0, 0.3)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '1.5rem' }}>🌡️</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className="dashboard-alert-emoji" style={{ fontSize: '1.5rem' }}>🌡️</span>
               <div>
                 <h3 style={{ margin: '0 0 4px 0', color: '#c05621' }}>Climate Adjustment Active</h3>
                 <p style={{ margin: 0, fontSize: '0.9rem', color: '#744210' }}>
@@ -1988,29 +2033,82 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
 
         {/* Injury Recovery Alert */}
         {currentWeekData.weekType === 'injury-recovery' && (
-          <div className="card" style={{ marginBottom: '20px', background: 'rgba(239, 68, 68, 0.15)', border: '2px solid rgba(239, 68, 68, 0.5)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '1.5rem' }}>🏥</span>
-              <div style={{ flex: 1 }}>
-                <h3 style={{ margin: '0 0 4px 0', color: '#ef4444' }}>Injury Recovery Protocol Active</h3>
-                <p style={{ margin: 0, fontSize: '0.9rem', color: '#dc2626' }}>
-                  No running this week. You're cross-training to maintain fitness while healing.
-                  {userProfile?.injuryRecovery && (
-                    <span>
-                      {' '}Return to running: Week {userProfile.injuryRecovery.returnToRunningWeek}.
-                    </span>
-                  )}
-                </p>
+          <>
+            <div className="card" style={{ marginBottom: '20px', background: 'rgba(239, 68, 68, 0.15)', border: '2px solid rgba(239, 68, 68, 0.5)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span className="dashboard-alert-emoji" style={{ fontSize: '1.5rem' }}>🏥</span>
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ margin: '0 0 4px 0', color: '#ef4444' }}>Injury Recovery Protocol Active</h3>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#dc2626' }}>
+                    No running this week. You're cross-training to maintain fitness while healing.
+                    {userProfile?.injuryRecovery && (
+                      <span>
+                        {' '}Return to running: Week {userProfile.injuryRecovery.returnToRunningWeek}.
+                      </span>
+                    )}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+            
+            {/* Injury Recovery Coaching Analysis - Collapsible Accordion */}
+            {trainingPlan?.injuryRecoveryCoaching && (
+              <div className="card" style={{ marginBottom: '20px', background: 'linear-gradient(135deg, #1a2a3a 0%, #0f1f2f 100%)', border: '2px solid #00D4FF' }}>
+                <div style={{ padding: '20px' }}>
+                  <h3 
+                    onClick={() => setIsInjuryCoachingExpanded(!isInjuryCoachingExpanded)}
+                    style={{ 
+                      margin: '0 0 16px 0', 
+                      color: '#00D4FF', 
+                      fontSize: '1.3rem', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px',
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      transition: 'opacity 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                  >
+                    <span>💡</span>
+                    <span style={{ flex: 1 }}>Coach's Recovery Guidance</span>
+                    <span 
+                      style={{ 
+                        fontSize: '1rem',
+                        transition: 'transform 0.3s ease',
+                        transform: isInjuryCoachingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                        display: 'inline-block'
+                      }}
+                    >
+                      ▼
+                    </span>
+                  </h3>
+                  {isInjuryCoachingExpanded && (
+                    <div 
+                      className="dashboard-coaching-text" 
+                      style={{ 
+                        color: '#DDD', 
+                        fontSize: '1rem', 
+                        lineHeight: '1.8', 
+                        whiteSpace: 'pre-line',
+                        animation: 'fadeIn 0.3s ease'
+                      }}
+                    >
+                      {trainingPlan.injuryRecoveryCoaching}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Return to Running Alert */}
         {currentWeekData.weekType === 'return-to-running' && (
           <div className="card" style={{ marginBottom: '20px', background: 'rgba(34, 197, 94, 0.15)', border: '2px solid rgba(34, 197, 94, 0.5)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '1.5rem' }}>🎯</span>
+              <span className="dashboard-alert-emoji" style={{ fontSize: '1.5rem' }}>🎯</span>
               <div style={{ flex: 1 }}>
                 <h3 style={{ margin: '0 0 4px 0', color: '#22c55e' }}>Return to Running Week</h3>
                 <p style={{ margin: 0, fontSize: '0.9rem', color: '#16a34a' }}>
@@ -2021,30 +2119,91 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
           </div>
         )}
 
+        {/* Plan Adjustment Coaching Analysis - Collapsible Accordion */}
+        {trainingPlan?.planAdjustmentCoaching && (
+          <div className="card" style={{ marginBottom: '20px', background: 'linear-gradient(135deg, #1a2a3a 0%, #0f1f2f 100%)', border: '2px solid #3b82f6' }}>
+            <div style={{ padding: '20px' }}>
+              <h3 
+                onClick={() => setIsPlanAdjustmentCoachingExpanded(!isPlanAdjustmentCoachingExpanded)}
+                style={{ 
+                  margin: '0 0 16px 0', 
+                  color: '#3b82f6', 
+                  fontSize: '1.3rem', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'opacity 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                <span>💡</span>
+                <span style={{ flex: 1 }}>Coach's Take on Your Plan Adjustments</span>
+                <span 
+                  style={{ 
+                    fontSize: '1rem',
+                    transition: 'transform 0.3s ease',
+                    transform: isPlanAdjustmentCoachingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    display: 'inline-block'
+                  }}
+                >
+                  ▼
+                </span>
+              </h3>
+              {isPlanAdjustmentCoachingExpanded && (
+                <div 
+                  className="dashboard-coaching-text" 
+                  style={{ 
+                    color: '#DDD', 
+                    fontSize: '1rem', 
+                    lineHeight: '1.8', 
+                    whiteSpace: 'pre-line',
+                    animation: 'fadeIn 0.3s ease'
+                  }}
+                >
+                  {trainingPlan.planAdjustmentCoaching}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Daily Workouts */}
         <div className="card" style={{ marginBottom: '20px' }}>
           <div className="card-header">
-            <h2 style={{ margin: 0 }}>This Week's Workouts</h2>
+            <h2 className="dashboard-section-header" style={{ margin: 0 }}>This Week's Workouts</h2>
             <p style={{ margin: '8px 0 0 0', color: '#666' }}>
               {userProfile.standUpBikeType && 'Equipment-specific workouts marked with ⚡'}
             </p>
           </div>
           
-          <div style={{ display: 'grid', gap: '16px' }}>
-            {currentWeekData.workouts.map((originalWorkout) => {
+          <div className="dashboard-workout-list" style={{ display: 'grid', gap: '16px' }}>
+            {currentWeekData.workouts
+              .filter(originalWorkout =>
+                !isWorkoutInPast(currentWeek, originalWorkout.day) &&
+                !isWorkoutBeforePlanStart(currentWeek, originalWorkout.day)
+              )
+              .map((originalWorkout) => {
               const workouts = getWorkouts(originalWorkout);
+              // Add dates to workouts
+              const workoutsWithDates = workouts.map(w => ({
+                ...w,
+                date: getWorkoutDate(currentWeek, originalWorkout.day)
+              }));
               return (
               <div key={originalWorkout.day} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {workouts.map((workout, workoutIdx) => (
+                {workoutsWithDates.map((workout, workoutIdx) => (
               <div
                 key={`${originalWorkout.day}-${workoutIdx}`}
-                className="card"
+                className="card dashboard-workout-card"
                 style={{
                   background: workout.type === 'rest' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.05)',
                   border: `2px solid ${getWorkoutTypeColor(workout.type)}20`,
                   borderLeft: `4px solid ${getWorkoutTypeColor(workout.type)}`,
-                  opacity: workout.type === 'rest' ? 0.7 : 1,
-                  cursor: workout.type === 'rest' ? 'default' : 'pointer',
+                  opacity: (workout.type === 'rest' || workout.type === 'rest_or_xt') ? 0.7 : 1,
+                  cursor: (workout.type === 'rest' || workout.type === 'rest_or_xt') ? 'default' : 'pointer',
                   position: 'relative'
                 }}
                 onClick={() => handleWorkoutClick(workout)}
@@ -2121,7 +2280,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                     </div>
                     
                     <h4 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', color: getWorkoutTypeColor(workout.type) }}>
-                      {workout.workout?.name || workout.name || 'Workout'}
+                      {workout.type === 'rest_or_xt' ? '🧘 Rest / Cross-Train' : (workout.workout?.name || workout.name || 'Workout')}
                     </h4>
 
                     {/* Distance/Duration info badge */}
@@ -2296,17 +2455,71 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                     })()}
 
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <span 
-                        className="badge"
-                        style={{ 
-                          background: `${getWorkoutTypeColor(workout.type)}30`,
-                          color: getWorkoutTypeColor(workout.type),
-                          fontSize: '0.8rem',
-                          fontWeight: '500'
-                        }}
-                      >
-                        {workout.focus}
-                      </span>
+                      {(() => {
+                        // Type-based focus labels (more descriptive than generic "Training")
+                        const typeFocusMap = {
+                          tempo: 'Lactate Threshold',
+                          intervals: 'Speed & VO2 Max',
+                          hills: 'Strength & Power',
+                          longRun: 'Distance Builder',
+                          brickLongRun: 'Distance Builder',
+                          long: 'Distance Builder',
+                          easy: 'Aerobic Base',
+                          bike: 'Cross-Training',
+                          rest: 'Recovery',
+                          rest_or_xt: 'Recovery / XT'
+                        };
+
+                        // Detect long run from name if type doesn't match
+                        const workoutName = (workout.workout?.name || workout.name || '').toLowerCase();
+                        const isLongRunByName = workoutName.includes('long run') || workoutName.includes('long-run');
+
+                        // Use workout.focus if it's meaningful, otherwise fall back to type-based or name-based
+                        let focusText;
+                        if (workout.focus && workout.focus !== 'Training') {
+                          focusText = workout.focus;
+                        } else if (typeFocusMap[workout.type]) {
+                          focusText = typeFocusMap[workout.type];
+                        } else if (isLongRunByName) {
+                          focusText = 'Distance Builder';
+                        } else {
+                          focusText = 'Training';
+                        }
+
+                        // Custom colors per focus type for visual variety
+                        const focusColors = {
+                          'Lactate Threshold': '#4299e1',    // Blue
+                          'Speed & VO2 Max': '#e53e3e',      // Red
+                          'Strength & Power': '#38a169',     // Green
+                          'Endurance': '#805ad5',            // Purple
+                          'Distance Builder': '#a78bfa',     // Bright purple - long runs
+                          'Aerobic Base': '#38b2ac',         // Teal
+                          'Aerobic Power': '#ed8936',        // Orange
+                          'Cross-Training': '#ed8936',       // Orange
+                          'Recovery': '#68d391',             // Light green
+                          'Recovery / XT': '#48bb78',        // Green
+                          'Active Recovery': '#68d391',      // Light green
+                          'Easy Effort': '#38b2ac',          // Teal
+                          'Base Building': '#4299e1',        // Blue
+                          'Training': '#a0aec0'              // Gray fallback
+                        };
+
+                        const badgeColor = focusColors[focusText] || getWorkoutTypeColor(workout.type);
+
+                        return (
+                          <span
+                            className="badge"
+                            style={{
+                              background: `${badgeColor}30`,
+                              color: badgeColor,
+                              fontSize: '0.8rem',
+                              fontWeight: '500'
+                            }}
+                          >
+                            {focusText}
+                          </span>
+                        );
+                      })()}
                       {workout.equipmentSpecific && userProfile?.preferredBikeDays?.includes(workout.day) && (
                         <span className="badge badge-warning" style={{ fontSize: '0.8rem', fontWeight: '500' }}>
                           {formatEquipmentName(userProfile.standUpBikeType)}
@@ -2315,8 +2528,8 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                     </div>
                   </div>
                   
-                  {workout.type === 'rest' ? (
-                    // Rest day specific buttons
+                  {(workout.type === 'rest' || workout.type === 'rest_or_xt') ? (
+                    // Rest day or Rest/XT day specific buttons
                     <div style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -2360,10 +2573,10 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                           handleSomethingElse(workout);
                         }}
                       >
-                        🌟 Add Workout
+                        {workout.type === 'rest_or_xt' ? '🏊 Cross-Train' : '🌟 Add Workout'}
                       </button>
                     </div>
-                  ) : workout.type !== 'rest' && (
+                  ) : workout.type !== 'rest' && workout.type !== 'rest_or_xt' && (
                     <div style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -2421,10 +2634,13 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                             : '📝 Log Workout'}
                       </button>
 
-                      {/* Show adventure options for adventure/flexible users */}
-                      {(userProfile?.trainingStyle === 'adventure' ||
-                        (userProfile?.trainingStyle === 'flexible' && ['tempo', 'intervals', 'longRun', 'hills'].includes(workout.type))) &&
-                       ['tempo', 'intervals', 'longRun', 'hills', 'easy'].includes(workout.type) &&
+                      {/* Show adventure options for adventure/flexible users - HARD DAYS ONLY */}
+                      {(() => {
+                        const normalizedType = getNormalizedWorkoutType(workout);
+                        const isHardWorkout = ['tempo', 'intervals', 'longRun', 'hills'].includes(normalizedType);
+                        return (userProfile?.trainingStyle === 'adventure' ||
+                          (userProfile?.trainingStyle === 'flexible' && isHardWorkout)) && isHardWorkout;
+                      })() &&
                        !(() => {
                          const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
                          const completionData = workoutCompletions[workoutKey];
@@ -2451,7 +2667,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                       )}
                       
                       {/* Show brick option prominently for Sunday long runs when user has equipment */}
-                      {(workout.type === 'longRun' || workout.type === 'brickLongRun') && userProfile?.standUpBikeType && workout.day === 'Sunday' &&
+                      {isLongRun(workout) && userProfile?.standUpBikeType && workout.day === 'Sunday' &&
                        !(() => {
                          const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
                          const completionData = workoutCompletions[workoutKey];
@@ -2463,9 +2679,9 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                             fontSize: '0.8rem',
                             padding: '8px 12px',
                             fontWeight: '600',
-                            background: workout.type === 'brickLongRun' ? '#48bb78' : '#ed8936',
-                            color: 'white',
-                            border: `1px solid ${workout.type === 'brickLongRun' ? '#48bb78' : '#ed8936'}`,
+                            background: workout.type === 'brickLongRun' ? '#48bb78' : 'transparent',
+                            color: workout.type === 'brickLongRun' ? 'white' : '#c4a77d',
+                            border: `1px solid ${workout.type === 'brickLongRun' ? '#48bb78' : '#c4a77d'}`,
                             textAlign: 'center'
                           }}
                           onClick={(e) => {
@@ -2487,21 +2703,21 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                       )}
                       
                       {/* Show standard brick option for non-Sunday long runs */}
-                      {(workout.type === 'longRun' || workout.type === 'brickLongRun') && userProfile?.standUpBikeType && workout.day !== 'Sunday' &&
+                      {isLongRun(workout) && userProfile?.standUpBikeType && workout.day !== 'Sunday' &&
                        !(() => {
                          const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
                          const completionData = workoutCompletions[workoutKey];
                          return completionData?.autoCompletedFromStrava;
                        })() && (
                         <button
-                          className="btn btn-success"
+                          className="btn"
                           style={{
                             fontSize: '0.8rem',
                             padding: '8px 12px',
                             fontWeight: '600',
-                            background: workout.type === 'brickLongRun' ? '#805ad5' : '#ff6b6b',
-                            color: 'white',
-                            border: `1px solid ${workout.type === 'brickLongRun' ? '#805ad5' : '#ff6b6b'}`,
+                            background: workout.type === 'brickLongRun' ? '#805ad5' : 'transparent',
+                            color: workout.type === 'brickLongRun' ? 'white' : '#c4a77d',
+                            border: `1px solid ${workout.type === 'brickLongRun' ? '#805ad5' : '#c4a77d'}`,
                             textAlign: 'center'
                           }}
                           onClick={(e) => {
@@ -2613,9 +2829,15 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 {(() => {
                   const workoutKey = `${currentWeek}-${workout.day}-${workout.workoutIndex || 0}`;
                   const isShowingBrickOptions = showBrickOptions[workoutKey];
-                  const originalDistance = parseFloat(workout.workout?.name?.match(/\d+/)?.[0]) || 10;
 
-                  if (!isShowingBrickOptions || workout.type !== 'longRun') return null;
+                  // Try to get distance from workout.distance field first, then workout name, finally default to 10
+                  let originalDistance = workout.distance || 0;
+                  if (!originalDistance) {
+                    const nameMatch = workout.workout?.name?.match(/(\d+(?:\.\d+)?)/);
+                    originalDistance = nameMatch ? parseFloat(nameMatch[1]) : 10;
+                  }
+
+                  if (!isShowingBrickOptions || !isLongRun(workout)) return null;
 
                   const splitOptions = [
                     {
@@ -2974,7 +3196,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
 
               {/* Add Workout Button */}
               <button
-                className="btn"
+                className="btn dashboard-add-workout-button"
                 style={{
                   width: '100%',
                   fontSize: '0.9rem',

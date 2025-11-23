@@ -1,25 +1,47 @@
 /**
  * RunEq Stand-Up Bike Specific Workout Library
- * Equipment-specific workouts for cyclete and elliptiGO
- * Based on research about differences between the two platforms
+ * Equipment-specific workouts for Cyclete and ElliptiGO
+ *
+ * KEY BIOMECHANICAL DIFFERENCES:
+ * - Cyclete: Patented teardrop motion with dual synchronized cranks. Accelerates
+ *   through the back stroke (like running push-off). QUAD-DOMINANT loading.
+ *   Inventor Steven Asher designed it specifically to simulate running's fluid motion.
+ *
+ * - ElliptiGO: Elliptical motion (smooth, constant speed throughout stroke).
+ *   GLUTE + FULL-BODY loading with hip extension emphasis. 11-speed gearing.
+ *   Burns 33% more calories than cycling. Great for joint protection.
  */
+import { convertVagueStructureToSpecific } from './workout-structure-converter.js';
+
 export class StandUpBikeWorkoutLibrary {
     constructor() {
-        // Equipment-specific characteristics
+        // Equipment-specific characteristics with biomechanical intelligence
         this.equipmentSpecs = {
             cyclete: {
-                name: "cyclete",
-                description: "Fluid, powerful running-like motion",
-                strengths: ["Long distance", "Running simulation", "Endurance training"],
+                name: "Cyclete",
+                motion: "Teardrop with acceleration through back stroke (patent pending)",
+                description: "Dual crank system - short crank front (low knee impact) + long crank back (kick/push-off)",
+                muscleLoading: "Quad-dominant (mimics running push-off mechanics)",
+                runningSpecificity: "HIGH - closest to actual running gait pattern",
+                strengths: ["Easy run replacement", "Running simulation", "Maintaining leg turnover", "Endurance training"],
                 optimalDurations: "Extended sessions (60+ minutes)",
-                resistanceType: "Variable terrain simulation"
+                resistanceType: "Variable terrain simulation",
+                bestFor: ["Replacing easy runs", "Running-specific fitness", "Quad maintenance"],
+                avoidAfter: ["Hill repeats", "Quad-heavy speed work", "Heavy leg strength days"],
+                pairsWellWith: ["Glute-focused strength days", "Upper body days", "After tempo runs"]
             },
             elliptigo: {
-                name: "elliptiGO", 
-                description: "Smooth elliptical motion, up to 26-inch adjustable stride",
-                strengths: ["Full body workout", "Interval training", "Recovery sessions"],
+                name: "ElliptiGO",
+                motion: "Elliptical (smooth, constant speed throughout stroke)",
+                description: "Outdoor elliptical with up to 11-speed gearing, adjustable stride up to 26 inches",
+                muscleLoading: "Glute + full-body (hip extension emphasis, engages core and upper body)",
+                runningSpecificity: "MODERATE - different muscle pattern than running",
+                strengths: ["Full body workout", "Active recovery", "Interval training", "Calorie burn (+33% vs bike)"],
                 optimalDurations: "Varied (20-120 minutes)",
-                resistanceType: "Gear-based resistance"
+                resistanceType: "Gear-based resistance (11 speeds)",
+                bestFor: ["Active recovery", "Cross-training variety", "After quad-heavy days", "Full-body conditioning"],
+                avoidAfter: ["Glute-heavy strength days", "Deadlift days"],
+                pairsWellWith: ["After hill repeats", "After speed work", "Quad-heavy running days"]
             }
         };
 
@@ -849,10 +871,16 @@ export class StandUpBikeWorkoutLibrary {
             }
         }
 
+        // Convert vague structures to specific values
+        const convertedStructure = workout.structure 
+            ? convertVagueStructureToSpecific(workout.structure, null, null)
+            : workout.structure;
+
         return {
             ...workout,
             name: updatedName,  // Override with distance-specific name
             description: updatedDescription,  // Override with distance-specific description
+            structure: convertedStructure,  // Converted structure with specific values
             category,
             equipmentSpec,
             prescribedRunEqMiles,  // The RunEQ miles to complete (measured by Garmin data field)

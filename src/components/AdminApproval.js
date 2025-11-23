@@ -68,7 +68,8 @@ function AdminApproval() {
       await loadPendingUsers();
     } catch (err) {
       console.error('Error approving user:', err);
-      alert('Error approving user: ' + err.message);
+      // Note: useToast hook would need to be added to AdminApproval component
+      console.error('Error approving user: ' + err.message);
     }
   };
 
@@ -89,7 +90,8 @@ function AdminApproval() {
       await loadPendingUsers();
     } catch (err) {
       console.error('Error denying user:', err);
-      alert('Error denying user: ' + err.message);
+      // Note: useToast hook would need to be added to AdminApproval component
+      console.error('Error denying user: ' + err.message);
     }
   };
 

@@ -4,8 +4,14 @@ import { IntervalWorkoutLibrary } from '../lib/interval-workout-library.js';
 import { HillWorkoutLibrary } from '../lib/hill-workout-library.js';
 import { LongRunWorkoutLibrary } from '../lib/long-run-workout-library.js';
 import { StandUpBikeWorkoutLibrary } from '../lib/standup-bike-workout-library.js';
+import { AquaRunningWorkoutLibrary } from '../lib/aqua-running-workout-library.js';
+import { EllipticalWorkoutLibrary } from '../lib/elliptical-workout-library.js';
+import { StationaryBikeWorkoutLibrary } from '../lib/stationary-bike-workout-library.js';
+import { SwimmingWorkoutLibrary } from '../lib/swimming-workout-library.js';
+import { RowingWorkoutLibrary } from '../lib/rowing-workout-library.js';
 import BrickWorkoutService from '../services/brickWorkoutService';
 import { formatEquipmentName } from '../utils/typography';
+import { convertVagueStructureToSpecific } from '../lib/workout-structure-converter.js';
 // Removed broken RealWorldTrainingService import
 
 function SomethingElseModal({
@@ -28,14 +34,23 @@ function SomethingElseModal({
   const longRunLibrary = new LongRunWorkoutLibrary();
   const bikeLibrary = new StandUpBikeWorkoutLibrary();
   const brickWorkoutService = new BrickWorkoutService();
-  // Using working workout libraries instead of external services
+
+  // Cross-training libraries (initialized based on user equipment)
+  const aquaLibrary = new AquaRunningWorkoutLibrary();
+  const ellipticalLibrary = new EllipticalWorkoutLibrary();
+  const stationaryBikeLibrary = new StationaryBikeWorkoutLibrary();
+  const swimmingLibrary = new SwimmingWorkoutLibrary();
+  const rowingLibrary = new RowingWorkoutLibrary();
 
   // Extract paces from training plan for injection into workouts
   const userPaces = trainingPlan?.trainingPaces || null;
   const trackIntervals = trainingPlan?.trackIntervals || null;
+  // Extract week info for progressive structure conversion
+  const weekNumber = trainingPlan?.currentWeek || trainingPlan?.planOverview?.currentWeek || null;
+  const totalWeeks = trainingPlan?.planOverview?.totalWeeks || trainingPlan?.weeks?.length || null;
 
-  // Don't render if not open
-  if (!isOpen) return null;
+  // Don't render if not open or no workout provided
+  if (!isOpen || !currentWorkout) return null;
 
   const getAlternativeCategories = () => {
     const categories = [];
@@ -43,6 +58,11 @@ function SomethingElseModal({
     // Special handling for rest days
     if (currentWorkout.type === 'rest') {
       return getRestDayCategories();
+    }
+
+    // Special handling for rest_or_xt days - show user's cross-training equipment
+    if (currentWorkout.type === 'rest_or_xt') {
+      return getRestOrXTCategories();
     }
 
     // Same intensity alternatives
@@ -127,6 +147,18 @@ function SomethingElseModal({
       });
     }
 
+    // Cross-training alternatives (if user has equipment)
+    const crossTrainingWorkouts = getCrossTrainingAlternatives();
+    if (crossTrainingWorkouts.length > 0) {
+      categories.push({
+        id: 'cross-training',
+        title: '🏊 Cross-Train Instead',
+        subtitle: 'Use your cross-training equipment',
+        icon: '🔄',
+        workouts: crossTrainingWorkouts
+      });
+    }
+
     return categories;
   };
 
@@ -182,6 +214,424 @@ function SomethingElseModal({
     });
 
     return restCategories;
+  };
+
+  // Special categories for rest_or_xt days - prioritize user's cross-training equipment
+  const getRestOrXTCategories = () => {
+    const xtCategories = [];
+    const equipment = userProfile?.crossTrainingEquipment || {};
+    const hasAnyEquipment = Object.values(equipment).some(Boolean);
+
+    // Just Rest option always first
+    xtCategories.push({
+      id: 'just-rest',
+      title: '🛌 Just Rest',
+      subtitle: 'Take the day off completely - recovery is training too',
+      icon: '😴',
+      workouts: [{
+        name: 'Complete Rest',
+        description: 'No activity today - let your body recover and adapt',
+        duration: 'Full day',
+        intensity: 'Rest',
+        reason: 'prioritize recovery',
+        benefits: 'Physical and mental recovery, injury prevention'
+      }]
+    });
+
+    // Pool / Aqua Running
+    if (equipment.pool) {
+      xtCategories.push({
+        id: 'pool-xt',
+        title: '🏊 Pool Running',
+        subtitle: 'Zero impact, running-specific fitness',
+        icon: '🌊',
+        workouts: getPoolWorkouts()
+      });
+    }
+
+    // Elliptical
+    if (equipment.elliptical) {
+      xtCategories.push({
+        id: 'elliptical-xt',
+        title: '🏃 Elliptical',
+        subtitle: 'Low impact cardio machine',
+        icon: '⚡',
+        workouts: getEllipticalWorkouts()
+      });
+    }
+
+    // Stationary Bike
+    if (equipment.stationaryBike) {
+      xtCategories.push({
+        id: 'stationary-bike-xt',
+        title: '🚴 Stationary Bike',
+        subtitle: 'Spin bike, Peloton, or indoor trainer',
+        icon: '🔥',
+        workouts: getStationaryBikeWorkouts()
+      });
+    }
+
+    // Swimming
+    if (equipment.swimming) {
+      xtCategories.push({
+        id: 'swimming-xt',
+        title: '🏊 Lap Swimming',
+        subtitle: 'Full body, zero impact workout',
+        icon: '💧',
+        workouts: getSwimmingWorkouts()
+      });
+    }
+
+    // Rowing
+    if (equipment.rowing) {
+      xtCategories.push({
+        id: 'rowing-xt',
+        title: '🚣 Rowing Machine',
+        subtitle: 'Full body power and cardio',
+        icon: '💪',
+        workouts: getRowingWorkouts()
+      });
+    }
+
+    // Stand-up bike if user has one
+    if (userProfile?.standUpBikeType) {
+      xtCategories.push({
+        id: 'standup-bike-xt',
+        title: `🚴 ${formatEquipmentName(userProfile.standUpBikeType)}`,
+        subtitle: 'Running-specific cross-training',
+        icon: '⚡',
+        workouts: getStandUpBikeEasyWorkouts()
+      });
+    }
+
+    // If user has no equipment at all, show generic options
+    if (!hasAnyEquipment && !userProfile?.standUpBikeType) {
+      xtCategories.push({
+        id: 'light-activity',
+        title: '🚶 Light Activity',
+        subtitle: 'No equipment needed',
+        icon: '🌱',
+        workouts: getRestDayLightOptions()
+      });
+    }
+
+    return xtCategories;
+  };
+
+  // Helper functions for rest_or_xt equipment-specific workouts
+  const getPoolWorkouts = () => {
+    try {
+      const workouts = [];
+      const easyWorkouts = aquaLibrary.getWorkoutsByIntensity?.('easy') || [];
+      const moderateWorkouts = aquaLibrary.getWorkoutsByIntensity?.('moderate') || [];
+
+      easyWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Easy pool running',
+          duration: w.duration || '30-40 minutes',
+          intensity: 'Easy',
+          reason: 'zero impact recovery',
+          benefits: 'Maintains running fitness without impact stress',
+          equipmentType: 'pool',
+          sourceWorkout: w
+        });
+      });
+
+      moderateWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Moderate pool running',
+          duration: w.duration || '35-45 minutes',
+          intensity: 'Moderate',
+          reason: 'aerobic maintenance',
+          benefits: 'Running-specific aerobic development',
+          equipmentType: 'pool',
+          sourceWorkout: w
+        });
+      });
+
+      return workouts.length > 0 ? workouts : [{
+        name: 'Pool Running Session',
+        description: 'Deep water running with flotation belt - running motion without impact',
+        duration: '30-45 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'zero impact',
+        benefits: 'Maintains running-specific fitness',
+        equipmentType: 'pool'
+      }];
+    } catch (e) {
+      return [{
+        name: 'Pool Running Session',
+        description: 'Deep water running with flotation belt',
+        duration: '30-45 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'zero impact',
+        benefits: 'Maintains running fitness',
+        equipmentType: 'pool'
+      }];
+    }
+  };
+
+  const getEllipticalWorkouts = () => {
+    try {
+      const workouts = [];
+      const easyWorkouts = ellipticalLibrary.getWorkoutsByIntensity?.('easy') || [];
+      const moderateWorkouts = ellipticalLibrary.getWorkoutsByIntensity?.('moderate') || [];
+
+      easyWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Easy elliptical session',
+          duration: w.duration || '30-40 minutes',
+          intensity: 'Easy',
+          reason: 'low impact cardio',
+          benefits: 'Cardio maintenance without joint stress',
+          equipmentType: 'elliptical',
+          sourceWorkout: w
+        });
+      });
+
+      moderateWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Moderate elliptical workout',
+          duration: w.duration || '35-45 minutes',
+          intensity: 'Moderate',
+          reason: 'aerobic development',
+          benefits: 'Aerobic fitness with minimal impact',
+          equipmentType: 'elliptical',
+          sourceWorkout: w
+        });
+      });
+
+      return workouts.length > 0 ? workouts : [{
+        name: 'Elliptical Session',
+        description: 'Steady effort on elliptical - similar motion to running',
+        duration: '30-45 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'gym alternative',
+        benefits: 'Low impact cardio maintenance',
+        equipmentType: 'elliptical'
+      }];
+    } catch (e) {
+      return [{
+        name: 'Elliptical Session',
+        description: 'Steady effort on elliptical',
+        duration: '30-45 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'gym alternative',
+        benefits: 'Low impact cardio',
+        equipmentType: 'elliptical'
+      }];
+    }
+  };
+
+  const getStationaryBikeWorkouts = () => {
+    try {
+      const workouts = [];
+      const easyWorkouts = stationaryBikeLibrary.getWorkoutsByIntensity?.('easy') || [];
+      const moderateWorkouts = stationaryBikeLibrary.getWorkoutsByIntensity?.('moderate') || [];
+
+      easyWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Easy spin session',
+          duration: w.duration || '30-40 minutes',
+          intensity: 'Easy',
+          reason: 'active recovery',
+          benefits: 'Leg turnover without running impact',
+          equipmentType: 'stationaryBike',
+          sourceWorkout: w
+        });
+      });
+
+      moderateWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Moderate bike workout',
+          duration: w.duration || '35-45 minutes',
+          intensity: 'Moderate',
+          reason: 'aerobic maintenance',
+          benefits: 'Aerobic development without impact',
+          equipmentType: 'stationaryBike',
+          sourceWorkout: w
+        });
+      });
+
+      return workouts.length > 0 ? workouts : [{
+        name: 'Stationary Bike Session',
+        description: 'Spin session for aerobic development',
+        duration: '30-45 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'cardio alternative',
+        benefits: 'Aerobic fitness maintenance',
+        equipmentType: 'stationaryBike'
+      }];
+    } catch (e) {
+      return [{
+        name: 'Stationary Bike Session',
+        description: 'Spin session for aerobic development',
+        duration: '30-45 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'cardio alternative',
+        benefits: 'Aerobic fitness maintenance',
+        equipmentType: 'stationaryBike'
+      }];
+    }
+  };
+
+  const getSwimmingWorkouts = () => {
+    try {
+      const workouts = [];
+      const easyWorkouts = swimmingLibrary.getWorkoutsByIntensity?.('easy') || [];
+      const moderateWorkouts = swimmingLibrary.getWorkoutsByIntensity?.('moderate') || [];
+
+      easyWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Easy lap swimming',
+          duration: w.duration || '30-40 minutes',
+          intensity: 'Easy',
+          reason: 'full body recovery',
+          benefits: 'Complete body workout with zero impact',
+          equipmentType: 'swimming',
+          sourceWorkout: w
+        });
+      });
+
+      moderateWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Moderate swimming workout',
+          duration: w.duration || '35-45 minutes',
+          intensity: 'Moderate',
+          reason: 'aerobic cross-training',
+          benefits: 'Full body cardio conditioning',
+          equipmentType: 'swimming',
+          sourceWorkout: w
+        });
+      });
+
+      return workouts.length > 0 ? workouts : [{
+        name: 'Lap Swimming',
+        description: 'Continuous lap swimming for full body conditioning',
+        duration: '30-45 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'full body workout',
+        benefits: 'Complete body conditioning',
+        equipmentType: 'swimming'
+      }];
+    } catch (e) {
+      return [{
+        name: 'Lap Swimming',
+        description: 'Continuous lap swimming',
+        duration: '30-45 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'full body workout',
+        benefits: 'Complete body conditioning',
+        equipmentType: 'swimming'
+      }];
+    }
+  };
+
+  const getRowingWorkouts = () => {
+    try {
+      const workouts = [];
+      const easyWorkouts = rowingLibrary.getWorkoutsByIntensity?.('easy') || [];
+      const moderateWorkouts = rowingLibrary.getWorkoutsByIntensity?.('moderate') || [];
+
+      easyWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Easy rowing session',
+          duration: w.duration || '25-35 minutes',
+          intensity: 'Easy',
+          reason: 'posterior chain focus',
+          benefits: 'Posterior chain development without impact',
+          equipmentType: 'rowing',
+          sourceWorkout: w
+        });
+      });
+
+      moderateWorkouts.slice(0, 2).forEach(w => {
+        workouts.push({
+          name: w.name,
+          description: w.description || w.structure || 'Moderate rowing workout',
+          duration: w.duration || '30-40 minutes',
+          intensity: 'Moderate',
+          reason: 'full body power',
+          benefits: 'Full body power and cardio development',
+          equipmentType: 'rowing',
+          sourceWorkout: w
+        });
+      });
+
+      return workouts.length > 0 ? workouts : [{
+        name: 'Rowing Session',
+        description: 'Rowing machine workout for full body conditioning',
+        duration: '25-40 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'full body alternative',
+        benefits: 'Posterior chain and cardio development',
+        equipmentType: 'rowing'
+      }];
+    } catch (e) {
+      return [{
+        name: 'Rowing Session',
+        description: 'Rowing machine workout',
+        duration: '25-40 minutes',
+        intensity: 'Easy to Moderate',
+        reason: 'full body alternative',
+        benefits: 'Posterior chain and cardio',
+        equipmentType: 'rowing'
+      }];
+    }
+  };
+
+  const getStandUpBikeEasyWorkouts = () => {
+    // Get easy bike workouts from the stand-up bike library
+    const workouts = [];
+    const longEndurance = bikeLibrary.workoutLibrary.LONG_ENDURANCE_RIDES || [];
+    const tempo = bikeLibrary.workoutLibrary.TEMPO_BIKE || [];
+
+    // Get easy/recovery options
+    longEndurance.slice(0, 2).forEach(w => {
+      workouts.push({
+        ...w,
+        type: 'bike',
+        library: 'bike',
+        equipment: userProfile.standUpBikeType,
+        equipmentSpecific: true,
+        reason: 'running-specific cross-training',
+        benefits: userProfile.standUpBikeType === 'cyclete'
+          ? 'Quad-dominant workout - high running specificity'
+          : 'Glute + full-body workout - excellent for recovery'
+      });
+    });
+
+    // Get one tempo option
+    if (tempo.length > 0) {
+      workouts.push({
+        ...tempo[0],
+        type: 'bike',
+        library: 'bike',
+        equipment: userProfile.standUpBikeType,
+        equipmentSpecific: true,
+        reason: 'aerobic development',
+        benefits: 'Lactate threshold development without running impact'
+      });
+    }
+
+    return workouts.length > 0 ? workouts : [{
+      name: `Easy ${formatEquipmentName(userProfile.standUpBikeType)} Ride`,
+      description: 'Light 30-minute ride at conversational effort',
+      duration: '30 minutes',
+      intensity: 'Easy',
+      equipment: formatEquipmentName(userProfile.standUpBikeType),
+      reason: 'running-specific',
+      benefits: 'Aerobic maintenance with running-similar motion'
+    }];
   };
 
   const getRestDayLightOptions = () => [
@@ -259,32 +709,78 @@ function SomethingElseModal({
     }
   ];
 
-  const getRestDayCrossTrainingOptions = () => [
-    {
-      name: 'Swimming (Easy)',
-      description: '20-30 minutes easy swimming - excellent for recovery',
-      duration: '20-30 minutes',
-      intensity: 'Easy',
-      reason: 'full body, low impact',
-      benefits: 'Complete body workout with minimal stress'
-    },
-    {
-      name: 'Elliptical Easy',
-      description: '25 minutes easy effort on elliptical machine',
-      duration: '25 minutes',
-      intensity: 'Easy',
-      reason: 'gym alternative',
-      benefits: 'Cardio maintenance without impact'
-    },
-    {
+  const getRestDayCrossTrainingOptions = () => {
+    const workouts = [];
+    const equipment = userProfile?.crossTrainingEquipment || {};
+
+    // Only show options for equipment the user actually has
+    if (equipment.pool) {
+      workouts.push({
+        name: 'Pool Running (Easy)',
+        description: '25-30 minutes easy aqua jogging - zero impact recovery',
+        duration: '25-30 minutes',
+        intensity: 'Easy',
+        reason: 'zero impact, running-specific',
+        benefits: 'Running fitness without impact stress'
+      });
+    }
+
+    if (equipment.swimming) {
+      workouts.push({
+        name: 'Swimming (Easy)',
+        description: '20-30 minutes easy swimming - excellent for recovery',
+        duration: '20-30 minutes',
+        intensity: 'Easy',
+        reason: 'full body, zero impact',
+        benefits: 'Complete body workout with minimal stress'
+      });
+    }
+
+    if (equipment.elliptical) {
+      workouts.push({
+        name: 'Elliptical Easy',
+        description: '25 minutes easy effort on elliptical machine',
+        duration: '25 minutes',
+        intensity: 'Easy',
+        reason: 'low impact cardio',
+        benefits: 'Cardio maintenance without impact'
+      });
+    }
+
+    if (equipment.stationaryBike) {
+      workouts.push({
+        name: 'Easy Spin',
+        description: '25-30 minutes easy spinning - legs moving without stress',
+        duration: '25-30 minutes',
+        intensity: 'Easy',
+        reason: 'active recovery',
+        benefits: 'Leg turnover without running impact'
+      });
+    }
+
+    if (equipment.rowing) {
+      workouts.push({
+        name: 'Easy Rowing',
+        description: '20-25 minutes easy rowing - posterior chain focus',
+        duration: '20-25 minutes',
+        intensity: 'Easy',
+        reason: 'full body, low impact',
+        benefits: 'Posterior chain development'
+      });
+    }
+
+    // Always include strength as an option (no equipment needed)
+    workouts.push({
       name: 'Strength Training (Light)',
       description: 'Light strength work focusing on running-specific muscles',
       duration: '30-40 minutes',
       intensity: 'Light',
       reason: 'strength maintenance',
       benefits: 'Maintains strength without fatigue'
-    }
-  ];
+    });
+
+    return workouts;
+  };
 
   const getRestDayShortOptions = () => [
     {
@@ -312,6 +808,121 @@ function SomethingElseModal({
       benefits: 'Maintains flexibility'
     }
   ];
+
+  // Get cross-training alternatives based on user's equipment
+  const getCrossTrainingAlternatives = () => {
+    const workouts = [];
+    const equipment = userProfile?.crossTrainingEquipment || {};
+    const workoutType = currentWorkout.type;
+
+    // Map running workout types to cross-training intensity category
+    // tempo/intervals/hills = hard intensity, easy = easy, longRun = endurance
+    let targetCategory = 'EASY';
+    let intensityLabel = 'Moderate';
+    if (workoutType === 'tempo') {
+      targetCategory = 'TEMPO';
+      intensityLabel = 'Tempo';
+    } else if (workoutType === 'intervals') {
+      targetCategory = 'INTERVALS';
+      intensityLabel = 'Intervals';
+    } else if (workoutType === 'hills') {
+      targetCategory = 'TEMPO'; // Hills map to tempo effort for cross-training
+      intensityLabel = 'Hard';
+    } else if (workoutType === 'longRun') {
+      targetCategory = 'EASY'; // Long runs are easy effort, just longer
+      intensityLabel = 'Endurance';
+    } else if (workoutType === 'easy') {
+      targetCategory = 'EASY';
+      intensityLabel = 'Easy';
+    }
+
+    // Helper to get workouts from a library's workout arrays
+    const getMatchingWorkouts = (library, emoji, equipmentType, equipmentName) => {
+      try {
+        // Access the workoutLibrary directly
+        const lib = library.workoutLibrary || {};
+
+        // Try target category first, fall back to EASY
+        let libraryWorkouts = lib[targetCategory] || [];
+        if (libraryWorkouts.length === 0) {
+          libraryWorkouts = lib.EASY || [];
+        }
+        if (libraryWorkouts.length === 0) {
+          libraryWorkouts = lib.TEMPO || [];
+        }
+
+        libraryWorkouts.slice(0, 2).forEach(w => {
+          // Convert vague structures to specific values
+          const convertedStructure = w.structure 
+            ? convertVagueStructureToSpecific(w.structure, weekNumber, totalWeeks)
+            : w.structure;
+          
+          workouts.push({
+            name: `${emoji} ${w.name}`,
+            description: w.description || convertedStructure || `${equipmentName} workout`,
+            duration: w.duration || '30-45 minutes',
+            intensity: w.intensity || intensityLabel,
+            reason: `matches ${workoutType} intensity`,
+            benefits: w.benefits || `Same training stimulus without running impact`,
+            equipmentType: equipmentType,
+            sourceWorkout: { ...w, structure: convertedStructure } // Store converted structure
+          });
+        });
+      } catch (e) {
+        // Fallback with generic workout
+        workouts.push({
+          name: `${emoji} ${equipmentName} ${intensityLabel}`,
+          description: `${intensityLabel} effort ${equipmentName.toLowerCase()} session`,
+          duration: '30-45 minutes',
+          intensity: intensityLabel,
+          reason: `matches ${workoutType} intensity`,
+          benefits: 'Cross-training at equivalent effort',
+          equipmentType: equipmentType
+        });
+      }
+    };
+
+    // Pool / Aqua Running
+    if (equipment.pool) {
+      getMatchingWorkouts(aquaLibrary, '🏊', 'pool', 'Pool Running');
+    }
+
+    // Elliptical
+    if (equipment.elliptical) {
+      getMatchingWorkouts(ellipticalLibrary, '🏃', 'elliptical', 'Elliptical');
+    }
+
+    // Stationary Bike
+    if (equipment.stationaryBike) {
+      getMatchingWorkouts(stationaryBikeLibrary, '🚴', 'stationaryBike', 'Stationary Bike');
+    }
+
+    // Swimming
+    if (equipment.swimming) {
+      getMatchingWorkouts(swimmingLibrary, '🏊', 'swimming', 'Swimming');
+    }
+
+    // Rowing
+    if (equipment.rowing) {
+      getMatchingWorkouts(rowingLibrary, '🚣', 'rowing', 'Rowing');
+    }
+
+    // NOTE: Stand-up bike (Cyclete/ElliptiGO) is NOT included here because
+    // it already has its own dedicated category via getEquipmentAlternatives()
+
+    // If no equipment selected in profile, show generic cross-training options
+    // This ensures the cross-training card always appears for hard workouts
+    if (workouts.length === 0) {
+      // Add pool running as a universal option (most running-specific)
+      getMatchingWorkouts(aquaLibrary, '🏊', 'pool', 'Pool Running');
+      // Add rowing as another good option
+      getMatchingWorkouts(rowingLibrary, '🚣', 'rowing', 'Rowing');
+      // Add elliptical as gym option
+      getMatchingWorkouts(ellipticalLibrary, '🏃', 'elliptical', 'Elliptical');
+    }
+
+    return workouts;
+  };
 
   // Helper to enhance workout descriptions for modal display
   const enhanceWorkoutDescription = (workout, library, category) => {
@@ -361,14 +972,20 @@ function SomethingElseModal({
       case 'tempo':
         const tempoCategories = ['TRADITIONAL_TEMPO', 'ALTERNATING_TEMPO', 'PROGRESSIVE_TEMPO'];
         tempoCategories.forEach(cat => {
-          const baseWorkout = tempoLibrary.getRandomWorkout(cat);
-          if (baseWorkout && baseWorkout.name !== currentWorkout.workout.name) {
-            // Prescribe with user-specific paces
-            const workout = tempoLibrary.prescribeTempoWorkout(baseWorkout.name, {
-              runEqPreference: userProfile?.runEqPreference || 0,
-              paces: userPaces
-            });
-            workouts.push(enhanceWorkoutDescription(workout, 'tempo', cat));
+          try {
+            const baseWorkout = tempoLibrary.getRandomWorkout(cat);
+            if (baseWorkout && baseWorkout.name !== currentWorkout.workout?.name) {
+              // Prescribe with user-specific paces and week info for structure conversion
+              const workout = tempoLibrary.prescribeTempoWorkout(baseWorkout.name, {
+                runEqPreference: userProfile?.runEqPreference || 0,
+                paces: userPaces,
+                weekNumber: weekNumber,
+                totalWeeks: totalWeeks
+              });
+              workouts.push(enhanceWorkoutDescription(workout, 'tempo', cat));
+            }
+          } catch (e) {
+            console.warn(`Failed to get tempo workout from ${cat}:`, e.message);
           }
         });
         break;
@@ -376,15 +993,19 @@ function SomethingElseModal({
       case 'intervals':
         const intervalCategories = ['SHORT_SPEED', 'VO2_MAX', 'LONG_INTERVALS'];
         intervalCategories.forEach(cat => {
-          const baseWorkout = intervalLibrary.getRandomWorkout(cat);
-          if (baseWorkout && baseWorkout.name !== currentWorkout.workout.name) {
-            // Prescribe with user-specific paces and track intervals
-            const workout = intervalLibrary.prescribeIntervalWorkout(baseWorkout.name, {
-              runEqPreference: userProfile?.runEqPreference || 0,
-              paces: userPaces,
-              trackIntervals: trackIntervals
-            });
-            workouts.push(enhanceWorkoutDescription(workout, 'interval', cat));
+          try {
+            const baseWorkout = intervalLibrary.getRandomWorkout(cat);
+            if (baseWorkout && baseWorkout.name !== currentWorkout.workout?.name) {
+              // Prescribe with user-specific paces and track intervals
+              const workout = intervalLibrary.prescribeIntervalWorkout(baseWorkout.name, {
+                runEqPreference: userProfile?.runEqPreference || 0,
+                paces: userPaces,
+                trackIntervals: trackIntervals
+              });
+              workouts.push(enhanceWorkoutDescription(workout, 'interval', cat));
+            }
+          } catch (e) {
+            console.warn(`Failed to get interval workout from ${cat}:`, e.message);
           }
         });
         break;
@@ -392,14 +1013,18 @@ function SomethingElseModal({
       case 'hills':
         const hillCategories = ['short_power', 'long_strength', 'hill_circuits'];
         hillCategories.forEach(cat => {
-          const baseWorkout = hillLibrary.getRandomWorkout(cat);
-          if (baseWorkout && baseWorkout.name !== currentWorkout.workout.name) {
-            // Prescribe with user-specific paces
-            const workout = hillLibrary.prescribeHillWorkout(baseWorkout.name, {
-              runEqPreference: userProfile?.runEqPreference || 0,
-              paces: userPaces
-            });
-            workouts.push(enhanceWorkoutDescription(workout, 'hill', cat));
+          try {
+            const baseWorkout = hillLibrary.getRandomWorkout(cat);
+            if (baseWorkout && baseWorkout.name !== currentWorkout.workout?.name) {
+              // Prescribe with user-specific paces
+              const workout = hillLibrary.prescribeHillWorkout(baseWorkout.name, {
+                runEqPreference: userProfile?.runEqPreference || 0,
+                paces: userPaces
+              });
+              workouts.push(enhanceWorkoutDescription(workout, 'hill', cat));
+            }
+          } catch (e) {
+            console.warn(`Failed to get hill workout from ${cat}:`, e.message);
           }
         });
         break;
@@ -411,15 +1036,19 @@ function SomethingElseModal({
 
         const longRunCategories = ['TRADITIONAL_EASY', 'PROGRESSIVE_RUNS', 'MIXED_PACE_LONG'];
         longRunCategories.forEach(cat => {
-          const baseWorkout = longRunLibrary.getRandomWorkout(cat);
-          if (baseWorkout && baseWorkout.name !== currentWorkout.workout.name) {
-            // Prescribe with user-specific paces and distance
-            const workout = longRunLibrary.prescribeLongRunWorkout(baseWorkout.name, {
-              runEqPreference: userProfile?.runEqPreference || 0,
-              distance: currentDistance,
-              paces: userPaces
-            });
-            workouts.push(enhanceWorkoutDescription(workout, 'longRun', cat));
+          try {
+            const baseWorkout = longRunLibrary.getRandomWorkout(cat);
+            if (baseWorkout && baseWorkout.name !== currentWorkout.workout?.name) {
+              // Prescribe with user-specific paces and distance
+              const workout = longRunLibrary.prescribeLongRunWorkout(baseWorkout.name, {
+                runEqPreference: userProfile?.runEqPreference || 0,
+                distance: currentDistance,
+                paces: userPaces
+              });
+              workouts.push(enhanceWorkoutDescription(workout, 'longRun', cat));
+            }
+          } catch (e) {
+            console.warn(`Failed to get long run workout from ${cat}:`, e.message);
           }
         });
         break;

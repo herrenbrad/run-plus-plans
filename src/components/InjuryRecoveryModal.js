@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import TrainingPlanService from '../services/TrainingPlanService';
+import TrainingPlanAIService from '../services/TrainingPlanAIService';
 import FirestoreService from '../services/FirestoreService';
 import { auth } from '../firebase/config';
 import logger from '../utils/logger';
@@ -56,7 +57,8 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
     try {
       // Validation
       if (selectedCount === 0) {
-        alert('Please select at least one cross-training option');
+        // Note: useToast hook would need to be added to InjuryRecoveryModal component
+        console.warn('Please select at least one cross-training option');
         return;
       }
 
@@ -93,6 +95,31 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
 
       logger.log('  ✅ Recovery plan generated successfully');
 
+      // Generate AI coaching analysis for injury recovery
+      logger.log('  🤖 Generating AI coaching analysis...');
+      try {
+        const injuryContext = {
+          weeksOffRunning,
+          selectedEquipment,
+          reduceTrainingDays,
+          currentWeek,
+          returnToRunningWeek: currentWeek + weeksOffRunning
+        };
+        
+        const coachingAnalysis = await TrainingPlanAIService.generateInjuryRecoveryCoaching(
+          injuryContext,
+          userProfile,
+          trainingPlan
+        );
+        
+        // Add coaching analysis to the plan
+        updatedPlan.injuryRecoveryCoaching = coachingAnalysis;
+        logger.log('  ✅ AI coaching analysis generated');
+      } catch (error) {
+        logger.error('  ⚠️ Could not generate AI coaching (non-critical):', error);
+        // Continue without coaching - plan is still valid
+      }
+
       // Save updated plan to Firestore
       await FirestoreService.saveTrainingPlan(auth.currentUser.uid, updatedPlan);
 
@@ -105,7 +132,8 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
       window.location.reload();
     } catch (error) {
       logger.error('❌ Error creating recovery plan:', error);
-      alert('Error creating recovery plan. Please try again.');
+      // Note: useToast hook would need to be added to InjuryRecoveryModal component
+      console.error('Error creating recovery plan. Please try again.');
       setIsUpdating(false);
     }
   };

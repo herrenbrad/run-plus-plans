@@ -3,6 +3,7 @@
  * Addresses Runna's limitation of repetitive "30-60 second hill reps"
  * Includes varied hill workouts with specific grade/distance requirements
  */
+import { convertWorkoutStructures } from './workout-structure-converter.js';
 
 export class HillWorkoutLibrary {
     constructor() {
@@ -297,18 +298,21 @@ export class HillWorkoutLibrary {
 
         if (!workout) return null;
 
+        // Convert vague structures in workout object (warmup, main, recovery, cooldown)
+        const convertedWorkout = convertWorkoutStructures(workout, null, null);
+
         const prescription = {
-            ...workout,
-            terrainInstructions: this.generateTerrainInstructions(workout.hillRequirement),
-            runEqAdaptation: this.adaptForRunEq(workout, runEqPreference),
-            safetyNotes: this.generateSafetyNotes(category, workout),
-            alternatives: this.suggestAlternatives(workout.hillRequirement)
+            ...convertedWorkout,
+            terrainInstructions: this.generateTerrainInstructions(convertedWorkout.hillRequirement),
+            runEqAdaptation: this.adaptForRunEq(convertedWorkout, runEqPreference),
+            safetyNotes: this.generateSafetyNotes(category, convertedWorkout),
+            alternatives: this.suggestAlternatives(convertedWorkout.hillRequirement)
         };
 
         // INJECT USER-SPECIFIC PACES if provided
         if (paces) {
             prescription.paces = paces;
-            prescription.name = this.injectPacesIntoName(workout.name, paces);  // NEW: Inject paces into name!
+            prescription.name = this.injectPacesIntoName(convertedWorkout.name, paces, convertedWorkout.intensity);  // Pass intensity
         }
 
         return prescription;
@@ -316,14 +320,21 @@ export class HillWorkoutLibrary {
 
     /**
      * Inject specific pace numbers into workout name
+     * Uses appropriate pace based on workout intensity
      */
-    injectPacesIntoName(name, paces) {
+    injectPacesIntoName(name, paces, intensity) {
         let updatedName = name;
 
-        // For hill workouts, add threshold or interval pace depending on intensity
-        if (paces.threshold) {
+        // For hill workouts, use pace based on intensity
+        // Hill workouts are typically threshold effort, but can be intervals for steep/short hills
+        if (intensity && intensity.toLowerCase().includes('short') && paces.interval) {
+            // Short/steep hills = interval pace
+            updatedName = `${name} (${paces.interval.pace}/mi)`;
+        } else if (paces.threshold) {
+            // Most hill workouts = threshold pace
             updatedName = `${name} (${paces.threshold.pace}/mi)`;
         } else if (paces.interval) {
+            // Fallback to interval pace if no threshold
             updatedName = `${name} (${paces.interval.pace}/mi)`;
         }
 

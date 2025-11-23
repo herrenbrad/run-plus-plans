@@ -1,0 +1,24 @@
+      // Generate training plan using AI Coach
+      logger.log('🤖 Generating AI-powered training plan...');
+
+      // Build user profile for AI
+      const userProfile = {
+        raceDistance: formData.raceType,
+        raceTime: formData.goalTime,
+        raceDate: formData.raceDate ? formData.raceDate.toISOString() : new Date().toISOString(),
+        currentWeeklyMileage: formData.currentWeeklyMileage,
+        currentLongRun: formData.longestRecentRun || '5',
+        recentRaceTime: formData.recentRaceTime,
+        recentRaceDistance: formData.recentRaceDistance,
+        runsPerWeek: formData.availableDays.length,
+        longRunDay: formData.longRunDay,
+        qualityDays: formData.hardSessionDays,
+        standUpBikeType: formData.standUpBikeType,
+        units: 'imperial'
+      };
+
+      logger.log('👤 User profile:', userProfile);
+
+      // Generate AI plan
+      const planResult = await TrainingPlanAIService.generateTrainingPlan(userProfile);
+      logger.log('✅ AI training plan created successfully');

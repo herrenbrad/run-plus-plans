@@ -1,0 +1,116 @@
+/* Coaching Analysis - Clean rewrite */
+
+.coaching-analysis-wrapper {
+    background: #2a2a2a;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    overflow: hidden;
+    border: 2px solid #00f5d4;
+}
+
+.coaching-header {
+    background: linear-gradient(135deg, #00f5d4 0%, #00d4b8 100%);
+    padding: 1.5rem;
+    color: #000;
+}
+
+.coaching-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.coaching-content {
+    padding: 2rem;
+    background: #2a2a2a;
+}
+
+/* Info boxes (blockquotes) - BABY BLUE */
+.info-box {
+    background: #4da6ff;
+    border-left: 4px solid #0066cc;
+    padding: 1rem 1.5rem;
+    margin: 1.5rem 0;
+    border-radius: 8px;
+}
+
+/* Force black text in info boxes */
+.info-box,
+.info-box * {
+    color: #000000 !important;
+}
+
+/* Paragraphs */
+.coaching-p {
+    margin: 1rem 0;
+    color: #e0e0e0;
+    line-height: 1.7;
+}
+
+/* Headers */
+.coaching-h1 {
+    font-size: 2rem;
+    color: #00f5d4;
+    margin: 2rem 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #444;
+}
+
+.coaching-h2 {
+    font-size: 1.5rem;
+    color: #00f5d4;
+    margin: 1.75rem 0 1rem 0;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid #444;
+}
+
+.coaching-h3 {
+    font-size: 1.25rem;
+    color: #00f5d4;
+    margin: 1.5rem 0 0.75rem 0;
+    font-weight: 600;
+}
+
+/* Lists */
+.coaching-ul,
+.coaching-ol {
+    margin: 1rem 0;
+    padding-left: 2rem;
+    color: #e0e0e0;
+}
+
+.coaching-ul li,
+.coaching-ol li {
+    margin: 0.5rem 0;
+    line-height: 1.7;
+    color: #e0e0e0;
+}
+
+.coaching-ul li::marker {
+    color: #00f5d4;
+}
+
+/* Strong text */
+.coaching-strong {
+    color: #00f5d4;
+    font-weight: 600;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .coaching-content {
+        padding: 1.25rem;
+    }
+
+    .coaching-h1 {
+        font-size: 1.5rem;
+    }
+
+    .coaching-h2 {
+        font-size: 1.25rem;
+    }
+
+    .coaching-h3 {
+        font-size: 1.125rem;
+    }
+}

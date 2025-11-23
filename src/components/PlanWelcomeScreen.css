@@ -1,0 +1,180 @@
+.plan-welcome-screen {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  padding: 40px 20px;
+  overflow-y: auto;
+}
+
+.welcome-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.welcome-header {
+  text-align: center;
+  margin-bottom: 40px;
+  padding: 30px 20px;
+  background: linear-gradient(135deg, #00f5d4 0%, #00d4b8 100%);
+  border-radius: 16px;
+  color: #000;
+}
+
+.welcome-header h1 {
+  font-size: 2.5rem;
+  margin: 0 0 10px 0;
+  font-weight: 700;
+}
+
+.welcome-header p {
+  font-size: 1.2rem;
+  margin: 0;
+  opacity: 0.9;
+  font-weight: 500;
+}
+
+/* Override CoachingAnalysis background to fit dark theme */
+.plan-welcome-screen .coaching-analysis {
+  background: #1a1a1a;
+  border: 2px solid #00f5d4;
+  box-shadow: 0 4px 20px rgba(0, 245, 212, 0.2);
+}
+
+.plan-welcome-screen .analysis-header {
+  background: linear-gradient(135deg, #00f5d4 0%, #00d4b8 100%);
+  color: #000;
+}
+
+.plan-welcome-screen .analysis-content {
+  background: #2a2a2a !important;
+  color: #e0e0e0 !important;
+}
+
+.plan-welcome-screen .coaching-analysis .analysis-content .md-h1,
+.plan-welcome-screen .coaching-analysis .analysis-content .md-h2,
+.plan-welcome-screen .coaching-analysis .analysis-content .md-h3 {
+  color: #00f5d4 !important;
+  border-bottom-color: #444 !important;
+}
+
+.plan-welcome-screen .coaching-analysis .analysis-content .md-p,
+.plan-welcome-screen .coaching-analysis .analysis-content p {
+  color: #e0e0e0 !important;
+}
+
+/* Blockquote paragraphs need dark background override */
+.plan-welcome-screen .coaching-analysis .analysis-content .md-blockquote,
+.plan-welcome-screen .coaching-analysis .analysis-content blockquote {
+  background: #4da6ff !important;
+  border-left: 4px solid #0066cc !important;
+  padding: 1rem 1.5rem !important;
+  margin: 1.5rem 0 !important;
+}
+
+.plan-welcome-screen .coaching-analysis .analysis-content .md-blockquote p,
+.plan-welcome-screen .coaching-analysis .analysis-content .md-blockquote .md-p {
+  color: #000000 !important;
+}
+
+.plan-welcome-screen .coaching-analysis .analysis-content .md-ul li,
+.plan-welcome-screen .coaching-analysis .analysis-content .md-ol li,
+.plan-welcome-screen .coaching-analysis .analysis-content ul li,
+.plan-welcome-screen .coaching-analysis .analysis-content ol li {
+  color: #e0e0e0 !important;
+}
+
+.plan-welcome-screen .coaching-analysis .analysis-content .md-ul li strong,
+.plan-welcome-screen .coaching-analysis .analysis-content .md-ol li strong,
+.plan-welcome-screen .coaching-analysis .analysis-content ul li strong,
+.plan-welcome-screen .coaching-analysis .analysis-content ol li strong {
+  color: #00f5d4 !important;
+}
+
+/* Blockquote styling moved to CoachingAnalysis.css */
+
+.plan-welcome-screen .md-table {
+  background: #1a1a1a;
+  border: 1px solid #333;
+}
+
+.plan-welcome-screen .md-table thead {
+  background: #00f5d4;
+  color: #000;
+}
+
+.plan-welcome-screen .md-table th {
+  border-bottom: 2px solid #00d4b8;
+}
+
+.plan-welcome-screen .md-table td {
+  border-bottom: 1px solid #333;
+  color: #e0e0e0;
+}
+
+.plan-welcome-screen .md-table tbody tr:hover {
+  background: #333;
+}
+
+.plan-welcome-screen .md-blockquote {
+  background: #4da6ff !important;
+  border-left: 4px solid #0066cc !important;
+  color: #000000 !important;
+  padding: 1rem 1.5rem !important;
+  margin: 1.5rem 0 !important;
+}
+
+.plan-welcome-screen .md-code-inline {
+  background: #333;
+  color: #00f5d4;
+}
+
+.plan-welcome-screen .md-code-block {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-left: 4px solid #00f5d4;
+  color: #e0e0e0;
+}
+
+.welcome-actions {
+  text-align: center;
+  margin-top: 40px;
+  padding: 30px;
+}
+
+.btn-continue {
+  background: linear-gradient(135deg, #00f5d4 0%, #00d4b8 100%);
+  color: #000;
+  border: none;
+  padding: 18px 48px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 245, 212, 0.3);
+}
+
+.btn-continue:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(0, 245, 212, 0.5);
+  background: linear-gradient(135deg, #00d4b8 0%, #00b89f 100%);
+}
+
+.btn-continue:active {
+  transform: translateY(0);
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .welcome-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .welcome-header p {
+    font-size: 1rem;
+  }
+
+  .btn-continue {
+    font-size: 1rem;
+    padding: 14px 32px;
+  }
+}

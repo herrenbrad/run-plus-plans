@@ -1,0 +1,213 @@
+/* Mobile-First Responsive Styles for WorkoutDetail */
+
+/* Mobile Base Styles (default) */
+@media (max-width: 767px) {
+  /* Hero Header - Reduce padding and font sizes */
+  .workout-detail .workout-detail-header {
+    padding: 20px 0 32px 0 !important;
+  }
+
+  /* H1 - Main workout title - MORE AGGRESSIVE */
+  .workout-detail h1 {
+    font-size: 1.5rem !important; /* 24px instead of 40px - MORE AGGRESSIVE */
+    line-height: 1.2 !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* H2 - Section headers - MORE AGGRESSIVE */
+  .workout-detail h2 {
+    font-size: 1.2rem !important; /* 19.2px instead of 28.8px - MORE AGGRESSIVE */
+    margin-bottom: 12px !important;
+  }
+
+  /* H3 - Subsection headers */
+  .workout-detail h3 {
+    font-size: 1.1rem !important; /* 17.6px instead of 20.8px */
+    margin-bottom: 10px !important;
+  }
+
+  /* H4 - Sub-subsection headers */
+  .workout-detail h4 {
+    font-size: 1.2rem !important; /* Instead of 1.4rem */
+    margin-bottom: 12px !important;
+  }
+
+  /* Container padding - tighter on mobile - MORE AGGRESSIVE */
+  .workout-detail .container {
+    padding: 12px 10px !important; /* Instead of 16px 12px - MORE AGGRESSIVE */
+  }
+
+  /* Card padding - reduce from 24px/20px to 12px - MORE AGGRESSIVE */
+  .workout-detail-card {
+    padding: 12px !important; /* Instead of 16px - MORE AGGRESSIVE */
+    margin-bottom: 12px !important; /* Instead of 16px - MORE AGGRESSIVE */
+    border-radius: 12px !important;
+  }
+
+  /* Structure text - reduce font size and line height - MORE AGGRESSIVE */
+  .workout-structure-text {
+    font-size: 0.85rem !important; /* 13.6px instead of 17.6px - MORE AGGRESSIVE */
+    line-height: 1.5 !important; /* Instead of 2.0 - MORE AGGRESSIVE */
+    padding: 12px !important; /* Instead of 16px - MORE AGGRESSIVE */
+  }
+
+  /* Description text - slightly smaller */
+  .workout-description-text {
+    font-size: 0.95rem !important;
+    line-height: 1.6 !important; /* Instead of 1.7 */
+  }
+
+  /* Body text - keep readable but compact */
+  .workout-body-text {
+    font-size: 0.95rem !important;
+    line-height: 1.5 !important;
+  }
+
+  /* All paragraph text in workout detail */
+  .workout-detail p {
+    font-size: 0.95rem !important;
+    line-height: 1.6 !important;
+  }
+
+  /* Bullet points - much smaller */
+  .workout-bullet,
+  .workout-safety-bullet {
+    font-size: 1rem !important; /* 16px instead of 24px */
+    min-width: 20px !important;
+  }
+
+  /* All bullets in workout detail */
+  .workout-detail span[style*="fontSize: '1.5rem'"] {
+    font-size: 1rem !important;
+    min-width: 20px !important;
+  }
+
+  /* Button text - slightly smaller */
+  .workout-button {
+    font-size: 1rem !important; /* Instead of 1.2rem */
+    padding: 14px 20px !important; /* Instead of 18px 24px */
+  }
+
+  /* Metric cards - smaller padding and font sizes - MORE AGGRESSIVE */
+  .workout-metric-card {
+    padding: 10px !important; /* Instead of 20px - MORE AGGRESSIVE */
+  }
+
+  .workout-metric-value {
+    font-size: 1rem !important; /* Instead of 1.5rem - MUCH MORE AGGRESSIVE */
+    line-height: 1.3 !important;
+  }
+
+  .workout-metric-label {
+    font-size: 0.65rem !important; /* Instead of 0.75rem - MORE AGGRESSIVE */
+    margin-bottom: 4px !important;
+  }
+
+  /* Equipment indicator - smaller */
+  .workout-equipment-indicator {
+    padding: 10px 16px !important; /* Instead of 12px 20px */
+    margin-top: 12px !important;
+  }
+
+  .workout-equipment-emoji {
+    font-size: 1.5rem !important; /* Instead of 2rem */
+  }
+
+  .workout-equipment-label {
+    font-size: 1.1rem !important; /* Instead of 1.3rem */
+  }
+
+  /* Section gaps - reduce spacing */
+  .workout-section {
+    margin-bottom: 16px !important; /* Instead of 24px */
+  }
+
+  /* Coaching analysis text */
+  .workout-coaching-text {
+    font-size: 0.95rem !important; /* Instead of 1.05rem */
+    line-height: 1.6 !important; /* Instead of 1.8 */
+  }
+
+  /* Badge/tag text */
+  .workout-badge {
+    font-size: 0.85rem !important; /* Instead of 0.9rem */
+    padding: 6px 12px !important; /* Instead of 8px 16px */
+  }
+
+  /* Subtitle text - MORE AGGRESSIVE */
+  .workout-subtitle {
+    font-size: 0.9rem !important; /* Instead of 1.1rem - MORE AGGRESSIVE */
+    margin-top: 4px !important;
+  }
+
+  /* All cards with large padding - reduce - MORE AGGRESSIVE */
+  .workout-detail > div > div[style*="padding: '24px'"],
+  .workout-detail > div > div[style*="padding: '20px'"] {
+    padding: 12px !important; /* Instead of 16px - MORE AGGRESSIVE */
+  }
+
+  /* Override inline styles for metric values - target all 1.5rem font sizes */
+  .workout-detail [style*="fontSize: '1.5rem'"],
+  .workout-detail [style*="fontSize: \"1.5rem\""] {
+    font-size: 1rem !important; /* Force override - MORE AGGRESSIVE */
+  }
+
+  /* Override inline styles for 1.8rem font sizes (Workout Structure heading) */
+  .workout-detail [style*="fontSize: '1.8rem'"],
+  .workout-detail [style*="fontSize: \"1.8rem\""] {
+    font-size: 1.2rem !important; /* Force override - MORE AGGRESSIVE */
+  }
+
+  /* Override inline styles for 2.5rem font sizes (main title) */
+  .workout-detail [style*="fontSize: '2.5rem'"],
+  .workout-detail [style*="fontSize: \"2.5rem\""] {
+    font-size: 1.5rem !important; /* Force override - MORE AGGRESSIVE */
+  }
+
+  /* Reduce gap between metric cards */
+  .workout-detail .container > div[style*="display: 'grid'"],
+  .workout-detail .container > div[style*="display: \"grid\""] {
+    gap: 10px !important; /* Instead of 16px - MORE AGGRESSIVE */
+    margin-bottom: 16px !important; /* Instead of 24px */
+  }
+
+  /* Reduce all section margins */
+  .workout-section {
+    margin-bottom: 12px !important; /* Instead of 16px - MORE AGGRESSIVE */
+  }
+
+  /* Reduce large font sizes in general */
+  .workout-detail [style*="fontSize: '1.8rem'"],
+  .workout-detail [style*="fontSize: '1.6rem'"],
+  .workout-detail [style*="fontSize: '1.5rem'"] {
+    font-size: 1.3rem !important;
+  }
+
+  /* Reduce line heights */
+  .workout-detail [style*="lineHeight: '2'"],
+  .workout-detail [style*="lineHeight: '1.8'"],
+  .workout-detail [style*="lineHeight: '1.7'"] {
+    line-height: 1.6 !important;
+  }
+}
+
+/* Tablet adjustments (768px - 1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .workout-detail h1 {
+    font-size: 2rem !important;
+  }
+
+  .workout-detail h2 {
+    font-size: 1.6rem !important;
+  }
+
+  .workout-detail-card {
+    padding: 20px !important;
+  }
+}
+
+/* Desktop - keep original sizes */
+@media (min-width: 1024px) {
+  /* Original desktop sizes are fine */
+}
+

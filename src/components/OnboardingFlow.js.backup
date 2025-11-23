@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import TrainingPlanService from '../services/TrainingPlanService.js';
 import TrainingPlanAIService from '../services/TrainingPlanAIService.js';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { formatEquipmentName } from '../utils/typography';
 import logger from '../utils/logger';
-import { useToast } from './Toast';
 
 // Modern Date Picker Component
 function ModernDatePicker({ selected, onChange, minDate, maxDate, placeholder }) {
@@ -251,9 +251,7 @@ function TrainingDial({ value, onChange, maxValue, unit, zones }) {
 
 function OnboardingFlow({ onComplete }) {
   const navigate = useNavigate();
-  const toast = useToast();
   const [currentStep, setCurrentStep] = useState(1);
-  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     // Basic Info (Steps 1-4 - Similar to Runna)
     goal: '',
@@ -263,10 +261,6 @@ function OnboardingFlow({ onComplete }) {
     currentRaceTime: '',
     currentWeeklyMileage: '',
     currentLongRunDistance: '',
-
-    // Recent race for VDOT fitness assessment
-    recentRaceDistance: '',
-    recentRaceTime: '',
 
     // Schedule (Steps 5-7 - Enhanced from Runna)
     runsPerWeek: '',
@@ -282,13 +276,6 @@ function OnboardingFlow({ onComplete }) {
     // Our Competitive Advantages (Steps 8-12)
     standUpBikeType: null,
     runningStatus: 'active', // 'active', 'bikeOnly', or 'transitioning'
-    crossTrainingEquipment: {
-      pool: false,
-      elliptical: false,
-      stationaryBike: false,
-      swimming: false,
-      rowing: false
-    },
     location: '',
     climate: '',
     trainingStyle: 'adventure', // Always use adventure mode - our core differentiator!
@@ -355,6 +342,38 @@ function OnboardingFlow({ onComplete }) {
     }
   };
 
+
+  // Helper method to extract goal race time from user input
+  const extractGoalRaceTimeFromUserInput = (formData) => {
+    const goalTime = {};
+
+    if (formData.currentRaceTime) {
+      // Parse the format: "distance-time" e.g., "5K-22:00" or "Marathon-3:45:00"
+      const [distance, time] = formData.currentRaceTime.split('-');
+      if (distance && time) {
+        // Map UI distance names to goal object keys
+        const distanceMap = {
+          '5K': '5K',
+          '10K': '10K',
+          'Half': 'halfMarathon',
+          'Marathon': 'marathon'
+        };
+
+        const goalKey = distanceMap[distance];
+        if (goalKey) {
+          goalTime[goalKey] = time;
+        }
+      }
+    }
+
+    // If no goal race time provided, we cannot generate training paces
+    if (Object.keys(goalTime).length === 0) {
+      throw new Error('Goal race time is required to calculate training paces. Please select your target race time.');
+    }
+
+    return goalTime;
+  };
+
   // Helper function to adjust start date to next available training day if needed
   const adjustStartDateIfNeeded = (startDate, availableDays) => {
     if (!startDate || !availableDays || availableDays.length === 0) {
@@ -399,7 +418,7 @@ function OnboardingFlow({ onComplete }) {
     try {
       // Validate required fields first - safety check!
       if (!formData.currentRaceTime) {
-        toast.warning('Goal race time is required to calculate your training paces. Please select your target race time.');
+        alert('Goal race time is required to calculate your training paces. Please select your target race time.');
         return;
       }
 
@@ -413,104 +432,80 @@ function OnboardingFlow({ onComplete }) {
         // Notify user about the adjustment
         const message = `Your start date has been automatically adjusted from ${dateAdjustment.originalDayName} to ${dateAdjustment.newDayName} because ${dateAdjustment.originalDayName} is marked as a rest day in your schedule.`;
         logger.log(`⚠️ ${message}`);
-        toast.info(message, 8000);
+        alert(message);
       }
 
-      setLoading(true);
-      logger.log('🤖 Generating AI training plan...');
+      // Generate training plan using TrainingPlanService
+      logger.log('🔧 Creating training plan service...');
+      const trainingPlanService = new TrainingPlanService();
+
+      logger.log('📋 Converting form data to training plan profile...', formData);
 
       // Calculate rest days (days not in availableDays)
       const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       const restDays = allDays.filter(day => !formData.availableDays.includes(day));
 
-      // Build user profile for AI service
-      const userProfile = {
-        raceDistance: formData.raceDistance,
-        raceTime: formData.currentRaceTime, // Goal time for race
-        raceDate: formData.raceDate ? new Date(formData.raceDate).toISOString() : new Date().toISOString(),
-        raceElevationProfile: formData.raceElevationProfile || '',
-        currentWeeklyMileage: formData.currentWeeklyMileage,
-        currentLongRun: formData.currentLongRunDistance,
-        recentRaceTime: formData.recentRaceTime || formData.currentRaceTime,
-        recentRaceDistance: formData.recentRaceDistance || formData.raceDistance,
-        runsPerWeek: formData.availableDays.length,
-        availableDays: formData.availableDays,
-        restDays: restDays,
-        longRunDay: formData.longRunDay,
-        qualityDays: formData.hardSessionDays,
-        standUpBikeType: formData.standUpBikeType,
-        preferredBikeDays: formData.preferredBikeDays,
-        crossTrainingEquipment: formData.crossTrainingEquipment,
-        experienceLevel: formData.experienceLevel,
-        // Extra fields for enhanced AI coaching
-        climate: formData.climate,
-        location: formData.location,
-        runningStatus: formData.runningStatus,
-        units: 'imperial'
-      };
+      // Use the exact hard session days selected by user
+      const hardDays = formData.hardSessionDays;
 
-      logger.log('👤 User profile:', userProfile);
+      logger.log('🔍 User selections:');
+      logger.log('   📅 Available training days:', formData.availableDays);
+      logger.log('   😴 Rest days:', restDays);
+      logger.log('   🚴 Cyclete days:', formData.preferredBikeDays);
+      logger.log('   💪 Hard session days:', hardDays);
+      logger.log('   🏃 Long run day:', formData.longRunDay);
+      logger.log('   📏 Current weekly mileage:', parseInt(formData.currentWeeklyMileage) || 'NOT PROVIDED', 'miles');
 
-      // Generate AI plan
-      const planResult = await TrainingPlanAIService.generateTrainingPlan(userProfile);
+      logger.log('🚀 Generating training plan with user profile');
+      // Generate plan using working service
+      const planResult = await trainingPlanService.generatePlanFromOnboarding(formData);
+      logger.log('✅ Training plan created successfully');
 
-      if (!planResult.success) {
-        throw new Error('Failed to generate plan');
+      if (planResult && planResult.plan) {
+        logger.log('Generated training plan:', planResult);
+        await onComplete(formData, planResult.plan);
+        logger.log('✅ Plan saved successfully, navigating to dashboard...');
+        navigate('/dashboard');
+      } else {
+        console.error('Failed to generate plan');
+        // Fall back to the mock plan
+        const mockPlan = generateMockPlan(formData);
+        await onComplete(formData, mockPlan);
+        logger.log('✅ Mock plan saved successfully, navigating to dashboard...');
+        navigate('/dashboard');
       }
-
-      logger.log('✅ AI training plan created successfully');
-
-      // Pass both form data and plan to parent
-      await onComplete(formData, planResult.plan);
-
-      // Navigate to welcome screen to show coaching analysis
-      navigate('/welcome');
     } catch (error) {
       console.error('Error in plan generation or saving:', error);
-      toast.error('There was a problem creating or saving your plan. Please try again. Error: ' + error.message, 10000);
+      alert('There was a problem creating or saving your plan. Please try again. Error: ' + error.message);
       // Don't navigate if there was an error - let user retry
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Loading screen while AI generates plan
-  if (loading) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '40px 20px',
-        textAlign: 'center'
-      }}>
-        <div style={{
-          width: '60px',
-          height: '60px',
-          border: '4px solid rgba(0, 212, 255, 0.2)',
-          borderTop: '4px solid #00d4ff',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-          marginBottom: '24px'
-        }}></div>
-        <h2 style={{ color: '#fff', marginBottom: '12px' }}>Generating Your Personalized Training Plan...</h2>
-        <p style={{ color: '#9CA3AF', maxWidth: '400px' }}>
-          Our AI coach is analyzing your goals, fitness level, and schedule to create a custom plan just for you.
-        </p>
-        <p style={{ color: '#6B7280', fontSize: '0.9rem', marginTop: '8px' }}>
-          This may take 10-15 seconds...
-        </p>
-        <style>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    );
-  }
+  const generateMockPlan = (data) => {
+    return {
+      planOverview: {
+        raceDistance: data.raceDistance,
+        raceDate: data.raceDate,
+        startDate: data.startDate,
+        totalWeeks: data.raceDate && data.startDate ? Math.ceil((new Date(data.raceDate) - new Date(data.startDate)) / (1000 * 60 * 60 * 24 * 7)) : 12,
+        runsPerWeek: data.runsPerWeek,
+        standUpBikeType: data.standUpBikeType,
+        location: data.location
+      },
+      weeks: [
+        {
+          week: 1,
+          phase: 'base',
+          totalMileage: 15,
+          workouts: [
+            { day: 'Tuesday', type: 'tempo', workout: { name: 'Sandwich Tempo' }, focus: 'Lactate Threshold' },
+            { day: 'Thursday', type: 'easy', workout: { name: 'Easy Run' }, focus: 'Recovery' },
+            { day: 'Sunday', type: 'longRun', workout: { name: 'Conversational Long Run' }, focus: 'Endurance' }
+          ]
+        }
+      ]
+    };
+  };
 
   return (
     <div style={{ minHeight: '100vh', padding: '20px 0' }}>
@@ -821,64 +816,6 @@ function OnboardingFlow({ onComplete }) {
                     </span>
                   </p>
                 </div>
-              )}
-            </div>
-
-            {/* Recent Race Result - for VDOT fitness assessment */}
-            <div style={{ marginBottom: '32px', marginTop: '40px' }}>
-              <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>Recent Race Result (Recommended)</h3>
-              <p style={{ marginBottom: '16px' }}>
-                <strong>📊 Help us assess your current fitness!</strong> A recent race time helps us set realistic training paces.
-              </p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#E5E7EB' }}>Race Distance</label>
-                  <select
-                    className="form-input form-select"
-                    value={formData.recentRaceDistance}
-                    onChange={(e) => updateFormData('recentRaceDistance', e.target.value)}
-                    style={{ width: '100%' }}
-                  >
-                    <option value="">Select distance</option>
-                    <option value="5K">5K</option>
-                    <option value="10K">10K</option>
-                    <option value="Half">Half Marathon</option>
-                    <option value="Marathon">Marathon</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#E5E7EB' }}>Finish Time</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g., 1:07:35 or 25:30"
-                    value={formData.recentRaceTime}
-                    onChange={(e) => updateFormData('recentRaceTime', e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </div>
-
-              {formData.recentRaceDistance && formData.recentRaceTime && (
-                <div style={{
-                  marginTop: '16px',
-                  padding: '12px 16px',
-                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.1) 100%)',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(16, 185, 129, 0.3)'
-                }}>
-                  <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                    <strong>✅ Got it!</strong> Your {formData.recentRaceDistance} time of {formData.recentRaceTime} will help us calculate your VDOT and set appropriate training paces.
-                  </p>
-                </div>
-              )}
-
-              {!formData.recentRaceDistance && !formData.recentRaceTime && (
-                <p style={{ marginTop: '12px', fontSize: '0.85rem', color: '#9CA3AF', fontStyle: 'italic' }}>
-                  💡 No recent race? No problem! We'll use your goal time to estimate training paces.
-                </p>
               )}
             </div>
 
@@ -1607,76 +1544,6 @@ function OnboardingFlow({ onComplete }) {
                 )}
               </div>
             )}
-
-            {/* Cross-Training Equipment */}
-            <div style={{ marginBottom: '32px' }}>
-              <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>
-                What other cross-training equipment do you have access to?
-              </h3>
-              <p style={{ marginBottom: '16px' }}>
-                <strong>🏊 Expand your options!</strong> Select any equipment you can use for cross-training when needed.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[
-                  { id: 'pool', name: 'Pool / Aqua Running', emoji: '🏊', description: 'Deep water running with flotation belt' },
-                  { id: 'elliptical', name: 'Elliptical Machine', emoji: '🏃', description: 'Gym elliptical or home machine' },
-                  { id: 'stationaryBike', name: 'Stationary Bike', emoji: '🚴', description: 'Spin bike, Peloton, or indoor trainer' },
-                  { id: 'swimming', name: 'Swimming', emoji: '🏊', description: 'Lap swimming (technique required)' },
-                  { id: 'rowing', name: 'Rowing Machine', emoji: '🚣', description: 'Concept2 or similar rowing erg' }
-                ].map(option => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => {
-                      const newEquipment = {
-                        ...formData.crossTrainingEquipment,
-                        [option.id]: !formData.crossTrainingEquipment[option.id]
-                      };
-                      updateFormData('crossTrainingEquipment', newEquipment);
-                    }}
-                    style={{
-                      padding: '12px 16px',
-                      fontSize: '0.9rem',
-                      border: formData.crossTrainingEquipment[option.id] ? '2px solid #22c55e' : '1px solid #333',
-                      background: formData.crossTrainingEquipment[option.id] ? 'rgba(34, 197, 94, 0.1)' : '#1a1a1a',
-                      color: formData.crossTrainingEquipment[option.id] ? '#22c55e' : '#999',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px'
-                    }}
-                  >
-                    <span style={{ fontSize: '1.5rem' }}>{option.emoji}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: '500' }}>
-                        {formData.crossTrainingEquipment[option.id] ? '✓ ' : ''}{option.name}
-                      </div>
-                      <div style={{
-                        fontSize: '0.8rem',
-                        color: formData.crossTrainingEquipment[option.id] ? '#86efac' : '#666',
-                        marginTop: '2px'
-                      }}>
-                        {option.description}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-              {Object.values(formData.crossTrainingEquipment).some(Boolean) && (
-                <div className="card" style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', marginTop: '16px' }}>
-                  <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                    <strong>💪 Great!</strong> You'll have these options available when you need to adapt your training.
-                  </p>
-                </div>
-              )}
-              {!Object.values(formData.crossTrainingEquipment).some(Boolean) && (
-                <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#666' }}>
-                  No equipment? No problem! You can always skip this section.
-                </p>
-              )}
-            </div>
 
           </div>
         );

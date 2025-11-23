@@ -3,6 +3,8 @@
  * Based on research from McMillan Running, Hal Higdon, Ben Parkes, and Runner's World
  * Addresses variety in lactate threshold training beyond basic tempo runs
  */
+import { convertVagueStructureToSpecific } from './workout-structure-converter.js';
+
 export class TempoWorkoutLibrary {
     constructor() {
         this.tempoIntensityGuidelines = {
@@ -168,15 +170,6 @@ export class TempoWorkoutLibrary {
                     progression: "Start at 6 miles, build by 1-2 miles every 2-3 weeks"
                 },
                 {
-                    name: "Half Marathon Simulation",
-                    duration: "50-60 minutes",
-                    structure: "Warmup + 3-4 miles easy + 6-8 miles @ half pace + 2-3 miles easy",
-                    intensity: "comfortablyHard",
-                    source: "Race simulation training",
-                    description: "Practice middle portion of half marathon at race pace", 
-                    benefits: "Race pacing, fueling practice, confidence building"
-                },
-                {
                     name: "10K Tempo Simulation", 
                     duration: "35-45 minutes",
                     structure: "Warmup + 2 miles easy + 4 miles @ 10K pace + 1-2 miles easy",
@@ -193,7 +186,7 @@ export class TempoWorkoutLibrary {
      * Get tempo workout prescription with RunEq adaptations and USER-SPECIFIC PACES
      */
     prescribeTempoWorkout(workoutName, options = {}) {
-        const { runEqPreference = 0, paces = null } = options;
+        const { runEqPreference = 0, paces = null, weekNumber = null, totalWeeks = null } = options;
 
         // Find the workout
         let workout = null;
@@ -232,8 +225,11 @@ export class TempoWorkoutLibrary {
         if (paces) {
             prescribedWorkout.paces = paces;
             prescribedWorkout.name = this.injectPacesIntoName(workout.name, paces);  // NEW: Inject paces into name too!
-            prescribedWorkout.structure = this.injectPacesIntoStructure(workout.structure, paces);
+            prescribedWorkout.structure = this.injectPacesIntoStructure(workout.structure, paces, weekNumber, totalWeeks);
             prescribedWorkout.description = this.injectPacesIntoDescription(workout.description, paces);
+        } else {
+            // Even without paces, convert vague structures to specific
+            prescribedWorkout.structure = convertVagueStructureToSpecific(workout.structure, weekNumber, totalWeeks);
         }
 
         return prescribedWorkout;
@@ -255,12 +251,13 @@ export class TempoWorkoutLibrary {
 
     /**
      * Inject specific pace numbers into workout structure
-     * IMPROVED: Avoids redundant pace injection
+     * IMPROVED: Converts vague ranges to specific values first, then injects paces
      */
-    injectPacesIntoStructure(structure, paces) {
-        let updatedStructure = structure;
+    injectPacesIntoStructure(structure, paces, weekNumber = null, totalWeeks = null) {
+        // First, convert any vague ranges to specific values
+        let updatedStructure = convertVagueStructureToSpecific(structure, weekNumber, totalWeeks);
 
-        // Replace generic pace terms with actual paces
+        // Then replace generic pace terms with actual paces
         if (paces.threshold) {
             updatedStructure = updatedStructure.replace(/@ tempo/g, `@ ${paces.threshold.pace}/mile`);
             updatedStructure = updatedStructure.replace(/\bmin tempo\b/g, `min @ ${paces.threshold.pace}/mile`);

@@ -20,7 +20,8 @@
       "Bash(git ls-tree:*)",
       "Bash(taskkill:*)",
       "Bash(.gradlew.bat --version)",
-      "Bash(./gradlew:*)"
+      "Bash(./gradlew:*)",
+      "Bash(npx cap:*)"
     ],
     "deny": [],
     "ask": []

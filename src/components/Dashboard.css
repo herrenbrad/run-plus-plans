@@ -1,0 +1,437 @@
+/* Mobile-First Responsive Styles for Dashboard */
+
+/* Accordion Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 🎨 MODERN NAVIGATION BUTTONS - Base Styles (All Screen Sizes) */
+.dashboard-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.02em;
+  min-height: 40px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.dashboard-nav-button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transform: translate(-50%, -50%);
+  transition: width 0.5s, height 0.5s;
+}
+
+.dashboard-nav-button:active::before {
+  width: 200px;
+  height: 200px;
+}
+
+.dashboard-nav-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Prev/Next Navigation Buttons */
+.dashboard-nav-button-prev,
+.dashboard-nav-button-next {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  color: var(--gray-600, #9ca3af);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.dashboard-nav-button-prev:hover:not(:disabled),
+.dashboard-nav-button-next:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(0, 212, 255, 0.4);
+  color: #00D4FF;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 212, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-nav-button-prev:active:not(:disabled),
+.dashboard-nav-button-next:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Manage Plan Button */
+.dashboard-nav-button-manage {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.1) 100%);
+  backdrop-filter: blur(10px);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-nav-button-manage:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.25) 0%, rgba(37, 99, 235, 0.2) 100%);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #93c5fd;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Injury Recovery Buttons */
+.dashboard-nav-button-injury {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%);
+  backdrop-filter: blur(10px);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-nav-button-injury:hover {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(220, 38, 38, 0.2) 100%);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.dashboard-nav-button-recovery {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(22, 163, 74, 0.1) 100%);
+  backdrop-filter: blur(10px);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-nav-button-recovery:hover {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.25) 0%, rgba(22, 163, 74, 0.2) 100%);
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #86efac;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Strava Buttons */
+.dashboard-nav-button-strava {
+  background: linear-gradient(135deg, rgba(252, 76, 2, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%);
+  backdrop-filter: blur(10px);
+  color: #fc6d4d;
+  border: 1px solid rgba(252, 76, 2, 0.3);
+  box-shadow: 0 2px 8px rgba(252, 76, 2, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-nav-button-strava:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(252, 76, 2, 0.25) 0%, rgba(220, 38, 38, 0.2) 100%);
+  border-color: rgba(252, 76, 2, 0.5);
+  color: #fd8a6f;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(252, 76, 2, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.dashboard-nav-button-strava:disabled {
+  background: rgba(100, 100, 100, 0.1);
+  color: #666;
+  border-color: rgba(100, 100, 100, 0.3);
+  opacity: 0.6;
+}
+
+/* Reset Button */
+.dashboard-nav-button-reset {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%);
+  backdrop-filter: blur(10px);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-nav-button-reset:hover {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(220, 38, 38, 0.2) 100%);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Logout Button */
+.dashboard-nav-button-logout {
+  background: rgba(156, 163, 175, 0.1);
+  backdrop-filter: blur(10px);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.dashboard-nav-button-logout:hover {
+  background: rgba(156, 163, 175, 0.15);
+  border-color: rgba(156, 163, 175, 0.3);
+  color: #cbd5e1;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Week Select Dropdown */
+.dashboard-week-select {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 180, 204, 0.15) 100%);
+  backdrop-filter: blur(10px);
+  color: #00D4FF;
+  border: 2px solid rgba(0, 212, 255, 0.4);
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 100px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2300D4FF' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px;
+}
+
+.dashboard-week-select:hover {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(0, 180, 204, 0.25) 100%);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 4px 16px rgba(0, 212, 255, 0.3);
+}
+
+.dashboard-week-select:focus {
+  outline: none;
+  border-color: rgba(0, 212, 255, 0.8);
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.2);
+}
+
+/* Mobile Base Styles (default) */
+@media (max-width: 767px) {
+  /* Account Pending Approval - Reduce emoji and padding */
+  .dashboard-pending-approval {
+    padding: 24px 16px !important;
+  }
+
+  .dashboard-pending-approval .pending-emoji {
+    font-size: 2.5rem !important; /* 40px instead of 64px */
+    margin-bottom: 16px !important;
+  }
+
+  .dashboard-pending-approval h1 {
+    font-size: 1.5rem !important; /* 24px instead of default */
+    margin-bottom: 12px !important;
+  }
+
+  .dashboard-pending-approval p {
+    font-size: 0.95rem !important;
+    line-height: 1.5 !important;
+  }
+
+  /* Stats badges - reduce font sizes - MORE AGGRESSIVE */
+  .dashboard-stats-badge {
+    font-size: 0.85rem !important; /* Instead of 1.1rem - MORE AGGRESSIVE */
+    padding: 5px 10px !important; /* Instead of 8px 14px - MORE AGGRESSIVE */
+    margin-bottom: 8px !important;
+  }
+
+  .dashboard-stats-badge .stats-subtext {
+    font-size: 0.7rem !important; /* Instead of 0.85rem - MORE AGGRESSIVE */
+    margin-top: 2px !important;
+  }
+
+  /* Phase banner - reduce icon size */
+  .dashboard-phase-icon {
+    font-size: 1.4rem !important; /* Instead of 1.8rem */
+  }
+
+  /* Alert emojis - reduce size */
+  .dashboard-alert-emoji {
+    font-size: 1.2rem !important; /* Instead of 1.5rem */
+  }
+
+  /* Coaching text - reduce font size and line height */
+  .dashboard-coaching-text {
+    font-size: 0.9rem !important; /* Instead of 1rem */
+    line-height: 1.6 !important; /* Instead of 1.8 */
+  }
+
+  /* Button row - better wrapping */
+  .dashboard-button-row {
+    gap: 6px !important;
+  }
+
+  .dashboard-button-row button {
+    font-size: 0.75rem !important; /* Instead of 0.8rem */
+    padding: 5px 10px !important; /* Instead of 6px 12px */
+  }
+
+  /* Container padding - tighter on mobile */
+  .dashboard-container {
+    padding: 16px 12px !important;
+  }
+
+  /* Card padding - reduce */
+  .dashboard-card {
+    padding: 16px !important;
+    margin-bottom: 16px !important;
+  }
+
+  /* Workout cards - reduce spacing - MORE AGGRESSIVE */
+  .dashboard-workout-card {
+    padding: 10px !important; /* Instead of 12px - MORE AGGRESSIVE */
+    margin-bottom: 10px !important; /* Instead of 12px - MORE AGGRESSIVE */
+  }
+
+  .dashboard-workout-card h3 {
+    font-size: 0.95rem !important; /* Instead of 1.1rem - MORE AGGRESSIVE */
+    margin-bottom: 6px !important;
+  }
+
+  .dashboard-workout-card h4 {
+    font-size: 0.95rem !important; /* Instead of 1.1rem - MORE AGGRESSIVE */
+    margin-bottom: 4px !important;
+  }
+
+  .dashboard-workout-card p {
+    font-size: 0.85rem !important; /* Instead of 1rem - MORE AGGRESSIVE */
+    line-height: 1.4 !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* Badges - smaller */
+  .dashboard-badge {
+    font-size: 0.75rem !important; /* Instead of 0.8rem */
+    padding: 3px 8px !important;
+  }
+
+  /* Section headers */
+  .dashboard-section-header {
+    font-size: 1.3rem !important; /* Instead of default h2 */
+    margin-bottom: 12px !important;
+  }
+
+  /* Week title - the big "Week 2" */
+  .dashboard-week-title {
+    font-size: 1.5rem !important; /* Instead of default h1 (usually 2rem+) - MORE AGGRESSIVE */
+    line-height: 1.2 !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* All h2 headers in dashboard */
+  .dashboard-container h2 {
+    font-size: 1.3rem !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* All h3 headers in dashboard */
+  .dashboard-container h3 {
+    font-size: 1.1rem !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* All h4 headers in dashboard */
+  .dashboard-container h4 {
+    font-size: 1rem !important;
+    margin-bottom: 6px !important;
+  }
+
+  /* Card spacing - reduce gaps between cards - MORE AGGRESSIVE */
+  .dashboard-container .card {
+    margin-bottom: 12px !important; /* Instead of 16px - MORE AGGRESSIVE */
+    padding: 12px !important; /* Instead of 16px - MORE AGGRESSIVE */
+  }
+
+  /* Workout card description text */
+  .dashboard-workout-card p {
+    font-size: 0.9rem !important;
+    line-height: 1.4 !important;
+    margin-bottom: 10px !important;
+  }
+
+  /* Badge text in workout cards */
+  .dashboard-workout-card .badge {
+    font-size: 0.75rem !important;
+    padding: 3px 8px !important;
+  }
+
+  /* "Add Second Workout" button - MORE AGGRESSIVE */
+  .dashboard-add-workout-button {
+    font-size: 0.8rem !important; /* MORE AGGRESSIVE */
+    padding: 8px 10px !important; /* MORE AGGRESSIVE */
+    margin-top: 6px !important;
+  }
+
+  /* Workout list gap - reduce spacing between cards */
+  .dashboard-workout-list {
+    gap: 10px !important; /* Instead of 16px - MORE AGGRESSIVE */
+  }
+
+  /* Workout card internal spacing */
+  .dashboard-workout-card > div[style*="display: 'flex'"] {
+    margin-bottom: 8px !important; /* Instead of 12px */
+    gap: 8px !important; /* Instead of 12px */
+  }
+
+  /* Badge sizes in workout cards */
+  .dashboard-workout-card .badge,
+  .dashboard-workout-card div[style*="display: 'inline-block'"] {
+    font-size: 0.7rem !important; /* Instead of 0.85rem */
+    padding: 3px 8px !important; /* Instead of 4px 10px */
+    margin-bottom: 6px !important; /* Instead of 8px */
+  }
+
+  /* Button sizes in workout cards */
+
+  .dashboard-workout-card .btn {
+    font-size: 0.75rem !important; /* Instead of 0.85rem */
+    padding: 8px 10px !important; /* Instead of 10px 12px */
+  }
+
+  /* Date text in workout cards */
+  .dashboard-workout-card span[style*="fontSize: '0.85rem'"] {
+    font-size: 0.75rem !important;
+  }
+
+  /* Mobile-specific button overrides */
+  .dashboard-nav-button {
+    padding: 6px 12px !important;
+    font-size: 0.75rem !important;
+    min-height: 36px !important;
+    border-radius: 8px !important;
+  }
+
+  .dashboard-week-select {
+    padding: 6px 32px 6px 12px !important;
+    font-size: 0.75rem !important;
+    min-width: 90px !important;
+  }
+}
+
+/* Tablet Styles */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .dashboard-pending-approval .pending-emoji {
+    font-size: 3rem !important;
+  }
+
+  .dashboard-stats-badge {
+    font-size: 1rem !important;
+  }
+}
+

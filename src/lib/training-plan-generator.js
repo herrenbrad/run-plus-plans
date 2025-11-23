@@ -169,7 +169,7 @@ export class TrainingPlanGenerator {
 
             // Estimate CURRENT FITNESS paces from long run + weekly mileage
             if (currentWeeklyMileage || options.currentLongRunDistance) {
-                const longRun = parseInt(options.currentLongRunDistance) || 0;
+                const longRun = 0;
                 const weeklyMiles = parseInt(currentWeeklyMileage) || 0;
 
                 logger.log(`📊 Estimating CURRENT fitness from:`);
@@ -364,11 +364,19 @@ export class TrainingPlanGenerator {
         logger.log('  currentWeeklyMileage:', currentWeeklyMileage);
 
         // Use USER inputs instead of hardcoded schedules
+        logger.log('📊 DIAGNOSTIC - Template values at structure creation:');
+        logger.log('  template.peakWeeklyMileage array:', template.peakWeeklyMileage);
+        logger.log('  template.longRunMax array:', template.longRunMax);
+        logger.log('  runIndex:', runIndex, '(for', runsPerWeek, 'runs/week)');
+        logger.log('  Selected peakMileage:', template.peakWeeklyMileage[runIndex]);
+        logger.log('  Selected longRunMax:', template.longRunMax[runIndex]);
+
         const structure = {
             runsPerWeek,
             peakMileage: template.peakWeeklyMileage[runIndex],
             longRunMax: template.longRunMax[runIndex],
             currentWeeklyMileage: currentWeeklyMileage, // Store for Week 1 calculation
+            currentLongRunDistance: 0, // Store current long run for progressive build
             // USER SCHEDULE - not hardcoded!
             availableDays: availableDays || this.getDefaultAvailableDays(runsPerWeek),
             hardSessionDays: hardSessionDays || [],
@@ -586,7 +594,14 @@ export class TrainingPlanGenerator {
         logger.log('  easyDays:', easyDays);
 
         // Distribute mileage across runs
-        const longRunMiles = this.calculateLongRunDistance(weeklyMileage, runsPerWeek);
+        const longRunMiles = this.calculateLongRunDistance(
+            weeklyMileage,
+            runsPerWeek,
+            weekNumber,
+            totalWeeks,
+            structure.currentLongRunDistance,
+            structure.longRunMax
+        );
         const remainingMiles = weeklyMileage - longRunMiles;
         const baseOtherMiles = Math.round(remainingMiles / (runsPerWeek - 1));
 
@@ -877,7 +892,12 @@ export class TrainingPlanGenerator {
         const category = categoryMap[phase.phase];
         const workouts = this.tempoLibrary.getWorkoutsByCategory(category);
         const selectedWorkout = this.selectWorkoutAvoidingRepetition(workouts, 'tempo');
-        return this.tempoLibrary.prescribeTempoWorkout(selectedWorkout.name, { runEqPreference, paces });
+        return this.tempoLibrary.prescribeTempoWorkout(selectedWorkout.name, { 
+            runEqPreference, 
+            paces, 
+            weekNumber, 
+            totalWeeks 
+        });
     }
 
     selectIntervalWorkout(phase, runEqPreference, paces, trackIntervals, weekNumber, totalWeeks) {
@@ -902,7 +922,9 @@ export class TrainingPlanGenerator {
             runEqPreference,
             paces,
             trackIntervals,
-            specificReps  // Pass the calculated specific rep count
+            specificReps,  // Pass the calculated specific rep count
+            weekNumber,
+            totalWeeks
         });
     }
 
@@ -953,10 +975,34 @@ export class TrainingPlanGenerator {
         };
     }
 
-    calculateLongRunDistance(weeklyMileage, runsPerWeek) {
-        // Long run should be 25-35% of weekly mileage
-        const longRunPercentage = runsPerWeek <= 4 ? 0.35 : 0.30;
-        return Math.round(weeklyMileage * longRunPercentage);
+    calculateLongRunDistance(weeklyMileage, runsPerWeek, weekNumber, totalWeeks, currentLongRun, longRunMax) {
+        // SMART PROGRESSIVE LONG RUN BUILD
+        // Start at current long run, build to max over the training cycle
+
+        if (!currentLongRun || !longRunMax || !weekNumber || !totalWeeks) {
+            // Fallback to percentage if inputs missing
+            logger.warn(`⚠️ Missing long run parameters, using percentage fallback`);
+            const longRunPercentage = runsPerWeek <= 4 ? 0.35 : 0.30;
+            return Math.round(weeklyMileage * longRunPercentage);
+        }
+
+        // Build from current to max over first 80% of training (before taper)
+        const buildWeeks = Math.floor(totalWeeks * 0.8); // ~14 weeks for 16-week plan
+
+        if (weekNumber <= buildWeeks) {
+            // Progressive build: start at current, reach max by week buildWeeks
+            const progress = (weekNumber - 1) / (buildWeeks - 1); // 0 to 1
+            const targetLongRun = currentLongRun + (progress * (longRunMax - currentLongRun));
+            const longRunMiles = Math.round(targetLongRun);
+
+            logger.log(`  📏 Week ${weekNumber} Long Run: ${longRunMiles} miles (${Math.round(progress * 100)}% build: ${currentLongRun}→${longRunMax})`);
+            return longRunMiles;
+        } else {
+            // Taper weeks: reduce long run
+            const longRunMiles = Math.round(longRunMax * 0.75);
+            logger.log(`  📏 Week ${weekNumber} Long Run: ${longRunMiles} miles (taper: 75% of ${longRunMax})`);
+            return longRunMiles;
+        }
     }
 
     getWorkoutFocus(workoutType) {

@@ -13,11 +13,14 @@ import logger from './utils/logger';
 import Auth from './components/Auth';
 import LandingPage from './components/LandingPage';
 import OnboardingFlow from './components/OnboardingFlow';
+import PlanWelcomeScreen from './components/PlanWelcomeScreen';
 import TrainingPlanPreview from './components/TrainingPlanPreview';
 import Dashboard from './components/Dashboard';
 import WorkoutDetail from './components/WorkoutDetail';
 import AdminApproval from './components/AdminApproval';
 import StravaCallback from './components/StravaCallback';
+import { ToastProvider, useToast } from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Scroll to top component
 function ScrollToTop() {
@@ -30,7 +33,9 @@ function ScrollToTop() {
   return null;
 }
 
-function App() {
+// Internal App component that uses hooks
+function AppContent() {
+  const toast = useToast();
   const APP_VERSION = 'v2.0-approval-fix-' + new Date().toISOString();
   logger.log('🚀 APP VERSION:', APP_VERSION);
   logger.log('📅 Build timestamp:', new Date().toISOString());
@@ -132,7 +137,7 @@ function App() {
         // Check if approval status changed from pending to approved
         if (userProfile?.approvalStatus === 'pending' && completeProfile.approvalStatus === 'approved') {
           logger.log('🎉 User approved! Showing notification...');
-          alert('Great news! Your account has been approved. Welcome to Run+ Plans!');
+          toast.success('Great news! Your account has been approved. Welcome to Run+ Plans!', 8000);
         }
 
         setUserProfile(completeProfile);
@@ -187,6 +192,16 @@ function App() {
       planKeys: plan ? Object.keys(plan) : []
     });
 
+    // Debug plan structure
+    if (plan && plan.weeks && plan.weeks[0]) {
+      logger.log('📊 First week structure:', {
+        weekNumber: plan.weeks[0].weekNumber,
+        totalMileage: plan.weeks[0].totalMileage,
+        workoutsCount: plan.weeks[0].workouts?.length,
+        firstWorkout: plan.weeks[0].workouts?.[0]
+      });
+    }
+
     setUserProfile(profile);
     setTrainingPlan(plan);
 
@@ -199,7 +214,7 @@ function App() {
       const profileResult = await FirestoreService.saveUserProfile(user.uid, profile);
       if (!profileResult.success) {
         console.error('❌ Failed to save profile:', profileResult.error);
-        alert('Warning: Failed to save your profile. Please try again or contact support.');
+        toast.error('Warning: Failed to save your profile. Please try again or contact support.', 10000);
         throw new Error('Profile save failed: ' + profileResult.error);
       }
 
@@ -207,7 +222,7 @@ function App() {
       const planResult = await FirestoreService.saveTrainingPlan(user.uid, plan);
       if (!planResult.success) {
         console.error('❌ Failed to save training plan:', planResult.error);
-        alert('Warning: Failed to save your training plan. Please try again or contact support.');
+        toast.error('Warning: Failed to save your training plan. Please try again or contact support.', 10000);
         throw new Error('Training plan save failed: ' + planResult.error);
       }
 
@@ -325,7 +340,7 @@ function App() {
             path="/"
             element={
               trainingPlan ?
-                <Navigate to="/dashboard" replace /> :
+                <Navigate to="/welcome" replace /> :
                 <LandingPage />
             }
           />
@@ -333,10 +348,18 @@ function App() {
             path="/onboarding"
             element={
               trainingPlan ?
-                <Navigate to="/dashboard" replace /> :
+                <Navigate to="/welcome" replace /> :
                 <OnboardingFlow
                   onComplete={handleOnboardingComplete}
                 />
+            }
+          />
+          <Route
+            path="/welcome"
+            element={
+              trainingPlan ?
+                <PlanWelcomeScreen trainingPlan={trainingPlan} /> :
+                <Navigate to="/onboarding" replace />
             }
           />
           <Route
@@ -383,6 +406,17 @@ function App() {
         </Routes>
       </div>
     </Router>
+  );
+}
+
+// Main App component with providers
+function App() {
+  return (
+    <ErrorBoundary>
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }
 

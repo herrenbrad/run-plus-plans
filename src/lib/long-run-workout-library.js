@@ -3,6 +3,8 @@
  * Based on research from McMillan Running, Hal Higdon, Ben Parkes, and Runner's World
  * Addresses the boring "run X miles easy" with varied long run formats
  */
+import { convertVagueStructureToSpecific } from './workout-structure-converter.js';
+
 export class LongRunWorkoutLibrary {
     constructor() {
         this.longRunIntensityGuidelines = {
@@ -294,9 +296,40 @@ export class LongRunWorkoutLibrary {
         // INJECT USER-SPECIFIC PACES if provided
         if (paces) {
             prescribedWorkout.paces = paces;
-            prescribedWorkout.name = this.injectPacesIntoName(workout.name, distance, paces);  // NEW: Inject distance and paces into name too!
-            prescribedWorkout.structure = this.injectPacesIntoStructure(workout.structure, paces);
+            prescribedWorkout.name = this.injectPacesIntoName(workout.name, distance, paces, workout.intensity);  // Pass intensity to show correct pace
+            // Convert vague structures first, then inject paces
+            const convertedStructure = convertVagueStructureToSpecific(workout.structure, null, null);
+            prescribedWorkout.structure = this.injectPacesIntoStructure(convertedStructure, paces);
             prescribedWorkout.description = this.injectPacesIntoDescription(workout.description, paces);
+
+            // Generate detailed mile-by-mile pacing for progression workouts
+            if (distance && category === 'PROGRESSIVE_RUNS') {
+                const mileByMile = this.generateProgressionPacing(workout.name, distance, paces);
+                if (mileByMile) {
+                    prescribedWorkout.mileByMilePacing = mileByMile;
+                    prescribedWorkout.structure = mileByMile;
+                }
+            }
+
+            // Generate detailed mile-by-mile pacing for sandwich/simulation workouts
+            if (distance && category === 'RACE_SIMULATION') {
+                const mileByMile = this.generateSandwichPacing(workout.name, distance, paces);
+                if (mileByMile) {
+                    prescribedWorkout.mileByMilePacing = mileByMile;
+                    prescribedWorkout.structure = mileByMile;
+                }
+            }
+        }
+
+        // Calculate realistic duration from distance and easy pace
+        if (distance && paces?.easy) {
+            prescribedWorkout.duration = this.calculateDurationFromDistance(distance, paces.easy);
+        }
+
+        // CRITICAL: Include the distance in the returned workout
+        // This is the distance assigned by the AI coach (e.g., "10-Second Dropdowns 8 miles" -> 8)
+        if (distance) {
+            prescribedWorkout.distance = distance;
         }
 
         return prescribedWorkout;
@@ -304,17 +337,68 @@ export class LongRunWorkoutLibrary {
 
     /**
      * Inject distance and pace numbers into workout name
+     * Uses appropriate pace based on workout intensity
+     *
+     * IMPORTANT: For progression runs (Dropdowns, Thirds, DUSA, etc.),
+     * show the STARTING pace (easy), not the ending pace (marathon).
+     * The intensity field "easy to marathonPace" describes the progression,
+     * but the workout STARTS at easy pace.
      */
-    injectPacesIntoName(name, distance, paces) {
+    injectPacesIntoName(name, distance, paces, intensity) {
         let updatedName = name;
+        let paceDisplay = null;
+        const nameLower = name.toLowerCase();
 
-        // Add distance and easy pace to the name
-        if (distance && paces.easy) {
-            updatedName = `${distance}-Mile ${name} (${paces.easy.min}-${paces.easy.max}/mi)`;
+        // PROGRESSION RUNS: Show easy pace as the starting pace
+        // These are identified by their names - they START easy and END fast
+        const isProgressionRun = nameLower.includes('dropdown') ||
+                                  nameLower.includes('10-second') ||
+                                  nameLower.includes('thirds') ||
+                                  nameLower.includes('dusa') ||
+                                  nameLower.includes('fast finish') ||
+                                  nameLower.includes('progressive');
+
+        // SANDWICH/SIMULATION WORKOUTS: Show marathon pace (the KEY portion)
+        // These have goal pace in the MIDDLE, sandwiched between easy miles
+        const isSandwichWorkout = nameLower.includes('sandwich') ||
+                                   nameLower.includes('simulation') ||
+                                   nameLower.includes('dress rehearsal') ||
+                                   nameLower.includes('marathon pace long') ||
+                                   nameLower.includes('goal pace');
+
+        // FAST FINISH WORKOUTS: Show both easy pace AND fast finish pace
+        const isFastFinish = nameLower.includes('fast finish') || nameLower.includes('super fast');
+        
+        if (isFastFinish && paces.easy && paces.interval) {
+            // Fast finish workouts show both starting easy pace AND fast finish pace (5K/interval effort)
+            paceDisplay = `${paces.easy.min}-${paces.easy.max}/mi → ${paces.interval.pace}/mi`;
+        } else if (isProgressionRun && paces.easy) {
+            // Other progression runs show easy pace (where they START)
+            paceDisplay = `${paces.easy.max}/mi start`;
+        } else if (isSandwichWorkout && (paces.racePace || paces.marathon)) {
+            // Sandwich workouts show ACTUAL RACE PACE (not marathon training pace)
+            // For half marathon: 9:09/mi for 2:00 goal, NOT marathon pace 9:27/mi
+            const goalPace = paces.racePace?.pace || paces.marathon?.pace;
+            paceDisplay = `${goalPace}/mi goal`;
+        } else if (intensity && intensity === 'marathonPace' && paces.marathon) {
+            // Pure marathon pace workouts (e.g., "Marathon Pace Long Run")
+            // Only match exact "marathonPace", not "easy to marathonPace"
+            paceDisplay = `${paces.marathon.pace}/mi`;
+        } else if (intensity && intensity.includes('threshold') && paces.threshold) {
+            // Threshold/tempo pace workouts
+            paceDisplay = `${paces.threshold.pace}/mi`;
+        } else if (paces.easy) {
+            // Default to easy pace for pure easy long runs
+            paceDisplay = `${paces.easy.min}-${paces.easy.max}/mi`;
+        }
+
+        // Build the name with distance and pace
+        if (distance && paceDisplay) {
+            updatedName = `${distance}-Mile ${name} (${paceDisplay})`;
         } else if (distance) {
             updatedName = `${distance}-Mile ${name}`;
-        } else if (paces.easy) {
-            updatedName = `${name} (${paces.easy.min}-${paces.easy.max}/mi)`;
+        } else if (paceDisplay) {
+            updatedName = `${name} (${paceDisplay})`;
         }
 
         return updatedName;
@@ -366,6 +450,185 @@ export class LongRunWorkoutLibrary {
         }
 
         return updated;
+    }
+
+    /**
+     * Calculate realistic duration from distance and easy pace
+     * Returns a range like "75-90 minutes" based on user's actual pace
+     */
+    calculateDurationFromDistance(distance, easyPace) {
+        if (!distance || !easyPace) return null;
+
+        // Parse easy pace - format is like "9:30" or could be min/max object
+        const minPace = easyPace.min || easyPace;
+        const maxPace = easyPace.max || easyPace;
+
+        // Convert pace string "MM:SS" to total minutes
+        const paceToMinutes = (pace) => {
+            if (typeof pace !== 'string') return 10; // fallback 10 min/mile
+            const parts = pace.split(':');
+            if (parts.length !== 2) return 10;
+            return parseInt(parts[0]) + parseInt(parts[1]) / 60;
+        };
+
+        const minPaceMinutes = paceToMinutes(minPace);
+        const maxPaceMinutes = paceToMinutes(maxPace);
+
+        // Calculate duration range (faster pace = less time, slower pace = more time)
+        const fastDuration = Math.round(distance * minPaceMinutes);
+        const slowDuration = Math.round(distance * maxPaceMinutes);
+
+        // Format as "X-Y minutes" or "X hours Y minutes" for long runs
+        const formatDuration = (mins) => {
+            if (mins >= 120) {
+                const hours = Math.floor(mins / 60);
+                const remainingMins = mins % 60;
+                return remainingMins > 0 ? `${hours}h ${remainingMins}min` : `${hours} hours`;
+            }
+            return `${mins} minutes`;
+        };
+
+        // Return range if there's meaningful difference, otherwise single value
+        if (slowDuration - fastDuration >= 5) {
+            return `${formatDuration(fastDuration)} - ${formatDuration(slowDuration)}`;
+        }
+        return formatDuration(Math.round((fastDuration + slowDuration) / 2));
+    }
+
+    /**
+     * Generate detailed mile-by-mile pacing for progression workouts
+     * Like Runna does: "Miles 1-3: 11:24, Miles 4-5: 10:55, Miles 6-8: 10:23"
+     */
+    generateProgressionPacing(workoutName, distance, paces) {
+        if (!distance || !paces?.easy) return null;
+
+        const name = workoutName.toLowerCase();
+        const easyPace = paces.easy.max; // Slowest easy pace
+        const moderatePace = paces.easy.min; // Faster easy pace
+        const strongPace = paces.marathon?.pace || paces.threshold?.pace || moderatePace;
+
+        // Helper to format mile ranges
+        const formatMileRange = (start, end, pace) => {
+            if (start === end) {
+                return `Mile ${start}: ${pace}/mile`;
+            }
+            return `Miles ${start}-${end}: ${pace}/mile`;
+        };
+
+        // Thirds Progression: 1/3 easy, 1/3 moderate, 1/3 strong
+        if (name.includes('thirds')) {
+            const third = Math.floor(distance / 3);
+            const remainder = distance - (third * 3);
+            const firstEnd = third;
+            const middleEnd = third * 2;
+
+            const segments = [];
+            segments.push(formatMileRange(1, firstEnd, easyPace));
+            segments.push(formatMileRange(firstEnd + 1, middleEnd, moderatePace));
+            segments.push(formatMileRange(middleEnd + 1, distance, strongPace));
+
+            return segments.join('\n');
+        }
+
+        // 10-Second Dropdowns: Drop pace by 10 seconds each mile
+        if (name.includes('dropdown') || name.includes('10-second')) {
+            // Parse easy pace to seconds
+            const paceToSeconds = (pace) => {
+                const [min, sec] = pace.split(':').map(Number);
+                return min * 60 + sec;
+            };
+            const secondsToPace = (secs) => {
+                const min = Math.floor(secs / 60);
+                const sec = Math.round(secs % 60);
+                return `${min}:${sec.toString().padStart(2, '0')}`;
+            };
+
+            const startPaceSeconds = paceToSeconds(easyPace);
+            const segments = [];
+
+            for (let mile = 1; mile <= distance; mile++) {
+                const dropSeconds = (mile - 1) * 10; // 10 seconds faster each mile
+                const currentPace = secondsToPace(Math.max(startPaceSeconds - dropSeconds, paceToSeconds(strongPace)));
+                segments.push(`Mile ${mile}: ${currentPace}/mile`);
+            }
+
+            return segments.join('\n');
+        }
+
+        // DUSA Progression: 75-90% easy, final 10-25% strong
+        if (name.includes('dusa')) {
+            const easyMiles = Math.ceil(distance * 0.8); // 80% easy
+            const strongMiles = distance - easyMiles;
+
+            const segments = [];
+            segments.push(formatMileRange(1, easyMiles, easyPace));
+            if (strongMiles > 0) {
+                segments.push(formatMileRange(easyMiles + 1, distance, strongPace));
+            }
+
+            return segments.join('\n');
+        }
+
+        // Super Fast Finish: Easy run + final 0.5-1 mile at 5K pace
+        if (name.includes('fast finish') || name.includes('super fast')) {
+            const easyMiles = distance - 1;
+            const intervalPace = paces.interval?.pace || strongPace;
+
+            const segments = [];
+            segments.push(formatMileRange(1, easyMiles, easyPace));
+            segments.push(`Mile ${distance}: ${intervalPace}/mile (5K effort)`);
+
+            return segments.join('\n');
+        }
+
+        // Default: just show easy pace
+        return `Miles 1-${distance}: ${easyPace}/mile`;
+    }
+
+    /**
+     * Generate mile-by-mile pacing for sandwich/simulation workouts
+     * Structure: Easy warmup miles + Goal pace block + Easy cooldown miles
+     * Example: 3 easy + 6 @ goal pace + 3 easy = 12 miles total
+     *
+     * IMPORTANT: Uses racePace (actual goal time / distance) NOT marathon training pace
+     * For half marathon: racePace = 9:09/mi for 2:00 goal, NOT marathon pace 9:27/mi
+     */
+    generateSandwichPacing(workoutName, distance, paces) {
+        if (!distance || !paces?.easy) return null;
+
+        // Use actual race pace if available, fall back to marathon pace
+        const goalPace = paces.racePace?.pace || paces.marathon?.pace;
+        if (!goalPace) return null;
+
+        const name = workoutName.toLowerCase();
+        const easyPace = paces.easy.max; // Slowest easy pace
+
+        // Helper to format mile ranges
+        const formatMileRange = (start, end, pace, label = '') => {
+            const labelSuffix = label ? ` (${label})` : '';
+            if (start === end) {
+                return `Mile ${start}: ${pace}/mile${labelSuffix}`;
+            }
+            return `Miles ${start}-${end}: ${pace}/mile${labelSuffix}`;
+        };
+
+        // Goal Pace Sandwich: ~25% easy + ~50% goal pace + ~25% easy
+        // Standard split for sandwich workouts
+        const warmupMiles = Math.max(2, Math.floor(distance * 0.25));
+        const cooldownMiles = Math.max(1, Math.floor(distance * 0.2));
+        const goalPaceMiles = distance - warmupMiles - cooldownMiles;
+
+        // Adjust if goal pace block would be too small
+        const adjustedGoalPaceMiles = Math.max(4, goalPaceMiles);
+
+        const segments = [];
+        segments.push(formatMileRange(1, warmupMiles, easyPace, 'warmup'));
+        segments.push(formatMileRange(warmupMiles + 1, warmupMiles + adjustedGoalPaceMiles, goalPace, 'goal pace'));
+        if (cooldownMiles > 0) {
+            segments.push(formatMileRange(warmupMiles + adjustedGoalPaceMiles + 1, distance, easyPace, 'cooldown'));
+        }
+
+        return segments.join('\n');
     }
 
     getIntensityGuidance(workout) {

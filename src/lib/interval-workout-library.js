@@ -3,6 +3,8 @@
  * Based on research from Runner's World, Hal Higdon, McMillan Running, and Ben Parkes
  * Covers short speed, VO2 max, and longer interval training
  */
+import { convertVagueStructureToSpecific } from './workout-structure-converter.js';
+
 export class IntervalWorkoutLibrary {
     constructor() {
         this.intervalIntensityGuidelines = {
@@ -235,9 +237,9 @@ export class IntervalWorkoutLibrary {
                 {
                     name: "10K Tempo-Speed Mix",
                     distance: "Variable",
-                    repetitions: "2 x (2K @ 10K pace + 4 x 400m @ 5K pace)", 
-                    intensity: "longIntervals to vo2Max", 
-                    recovery: "2 min between sets, 90s between 400s",
+                    repetitions: "2K @ 10K pace, then 4 x 400m @ 5K pace (repeat twice)",
+                    intensity: "longIntervals to vo2Max",
+                    recovery: "90s jog between 400s, 2 min between sets",
                     source: "10K race preparation",
                     description: "Combine race pace with speed finish",
                     pace: "10K pace + 5K pace",
@@ -259,10 +261,72 @@ export class IntervalWorkoutLibrary {
     }
 
     /**
+     * Calculate specific rep count from total workout distance
+     * Accounts for warmup (~2mi) + cooldown (~1.5mi) + recovery jog between reps
+     * @param {string} intervalDistance - e.g., "800m", "400m", "1200m"
+     * @param {number} totalWorkoutMiles - Total miles assigned (e.g., 6)
+     * @param {string} repetitionsRange - e.g., "4-8 x 800m"
+     * @returns {string} Specific reps like "4 x 800m"
+     */
+    calculateRepsFromDistance(intervalDistance, totalWorkoutMiles, repetitionsRange) {
+        if (!totalWorkoutMiles || totalWorkoutMiles <= 0) {
+            return repetitionsRange; // Keep original if no distance
+        }
+
+        // Parse interval distance to miles
+        const distanceMap = {
+            '100m': 0.062,
+            '200m': 0.124,
+            '300m': 0.186,
+            '400m': 0.249,
+            '600m': 0.373,
+            '800m': 0.497,
+            '1000m': 0.621,
+            '1200m': 0.746,
+            '1600m': 0.994,
+            'mile': 1.0
+        };
+
+        const intervalMiles = distanceMap[intervalDistance] || 0.5;
+
+        // Warmup + cooldown typically 3-4 miles for interval days
+        // Warmup: 1.5-2 miles, Cooldown: 1-1.5 miles
+        const warmupCooldown = 3.5;
+
+        // Recovery jog is typically 50-100% of interval distance
+        const recoveryFactor = 0.75; // 75% of interval distance for recovery jog
+
+        // Calculate available miles for actual interval work
+        const availableForIntervals = totalWorkoutMiles - warmupCooldown;
+
+        if (availableForIntervals <= 0) {
+            // Not enough distance, use minimum reps
+            const match = repetitionsRange.match(/(\d+)/);
+            return match ? `${match[1]} x ${intervalDistance}` : repetitionsRange;
+        }
+
+        // Each rep includes the interval + recovery jog
+        const milesPerRep = intervalMiles * (1 + recoveryFactor);
+        const calculatedReps = Math.floor(availableForIntervals / milesPerRep);
+
+        // Extract min/max from range like "4-8 x 800m"
+        const rangeMatch = repetitionsRange.match(/(\d+)-(\d+)/);
+        if (rangeMatch) {
+            const minReps = parseInt(rangeMatch[1], 10);
+            const maxReps = parseInt(rangeMatch[2], 10);
+            // Clamp to the valid range
+            const finalReps = Math.max(minReps, Math.min(maxReps, calculatedReps));
+            return `${finalReps} x ${intervalDistance}`;
+        }
+
+        return `${calculatedReps} x ${intervalDistance}`;
+    }
+
+    /**
      * Get interval workout prescription with RunEq adaptations and USER-SPECIFIC PACES
      */
     prescribeIntervalWorkout(workoutName, options = {}) {
-        const { runEqPreference = 0, paces = null, trackIntervals = null, specificReps = null } = options;
+        const { runEqPreference = 0, paces = null, trackIntervals = null, specificReps = null, totalDistance = null } = options;
 
         // Find the workout
         let workout = null;
@@ -286,8 +350,17 @@ export class IntervalWorkoutLibrary {
 
         const intensityInfo = this.intervalIntensityGuidelines[workout.intensity];
 
-        // Use specificReps if provided (from progression logic), otherwise use workout default
-        const repetitionsToUse = specificReps || workout.repetitions;
+        // Calculate specific reps from total distance if provided, otherwise use specificReps or default range
+        let repetitionsToUse;
+        if (specificReps) {
+            repetitionsToUse = specificReps;
+        } else if (totalDistance && totalDistance > 0 && workout.distance) {
+            // Calculate reps from the assigned total workout distance
+            repetitionsToUse = this.calculateRepsFromDistance(workout.distance, totalDistance, workout.repetitions);
+            console.log(`📊 Calculated reps: ${repetitionsToUse} from ${totalDistance} miles total`);
+        } else {
+            repetitionsToUse = workout.repetitions;
+        }
 
         // Build base workout object
         const prescribedWorkout = {
@@ -295,11 +368,11 @@ export class IntervalWorkoutLibrary {
             repetitions: repetitionsToUse,  // Override with specific reps
             category,
             intensityGuidance: intensityInfo,
-            totalWorkout: this.calculateTotalWorkout(workout, paces, repetitionsToUse),  // Pass specific reps
+            totalWorkout: this.calculateTotalWorkout(workout, paces, repetitionsToUse, options.weekNumber, options.totalWeeks),  // Pass specific reps and week info
             runEqOptions: this.generateRunEqOptions(workout, runEqPreference),
             safetyNotes: this.getIntervalSafetyNotes(workout),
             alternatives: this.getIntervalAlternatives(workout),
-            warmupCooldown: this.getWarmupCooldown(workout.intensity, paces)
+            warmupCooldown: this.getWarmupCooldown(workout.intensity, paces, options.weekNumber, options.totalWeeks)
         };
 
         // INJECT USER-SPECIFIC PACES if provided
@@ -389,6 +462,24 @@ export class IntervalWorkoutLibrary {
             }
         }
 
+        // Handle 2K pace (threshold/10K pace)
+        if (trackIntervals && trackIntervals.threshold) {
+            // 2K at 10K pace - use threshold
+            if (updated.includes('2K')) {
+                updated = updated.replace(/2K\s*@\s*10K pace/g, `2K @ ${paces.threshold?.pace || '10K pace'}/mile`);
+            }
+        }
+
+        // Replace "@ 5K pace" with actual pace
+        if (paces.interval) {
+            updated = updated.replace(/@\s*5K pace/g, `@ ${paces.interval.pace}/mile`);
+        }
+
+        // Replace "@ 10K pace" with actual pace
+        if (paces.threshold) {
+            updated = updated.replace(/@\s*10K pace/g, `@ ${paces.threshold.pace}/mile`);
+        }
+
         // Handle mile pace
         if (paces.interval) {
             updated = updated.replace(/(\d+)\s*x\s*1\s*mile/g, `$1 x 1 mile @ ${paces.interval.pace}/mile`);
@@ -418,13 +509,19 @@ export class IntervalWorkoutLibrary {
         return updated;
     }
 
-    calculateTotalWorkout(workout, paces = null, specificReps = null) {
+    calculateTotalWorkout(workout, paces = null, specificReps = null, weekNumber = null, totalWeeks = null) {
         let warmup = "15-20 minutes easy + dynamic warmup + 3-4 strides";
         let cooldown = "15-20 minutes easy";
 
+        // Convert vague ranges to specific values
+        warmup = convertVagueStructureToSpecific(warmup, weekNumber, totalWeeks);
+        cooldown = convertVagueStructureToSpecific(cooldown, weekNumber, totalWeeks);
+
         if (paces && paces.easy) {
-            warmup = `15-20 minutes easy (${paces.easy.min}-${paces.easy.max}/mile) + dynamic warmup + 3-4 strides`;
-            cooldown = `15-20 minutes easy (${paces.easy.min}-${paces.easy.max}/mile)`;
+            const warmupTime = warmup.match(/\d+ minutes/)?.[0] || '15 minutes';
+            const cooldownTime = cooldown.match(/\d+ minutes/)?.[0] || '15 minutes';
+            warmup = `${warmupTime} easy (${paces.easy.min}-${paces.easy.max}/mile) + dynamic warmup + 3-4 strides`;
+            cooldown = `${cooldownTime} easy (${paces.easy.min}-${paces.easy.max}/mile)`;
         }
 
         // Use specific reps if provided, otherwise use original workout reps
@@ -487,22 +584,27 @@ export class IntervalWorkoutLibrary {
         return baseNotes;
     }
 
-    getWarmupCooldown(intensity, paces = null) {
+    getWarmupCooldown(intensity, paces = null, weekNumber = null, totalWeeks = null) {
         const base = {
             warmup: "15-20 minutes easy running + 5 minutes dynamic exercises + 3-4 x 20-second strides",
             cooldown: "15-20 minutes easy running + stretching"
         };
 
+        // Convert vague ranges to specific values
+        base.warmup = convertVagueStructureToSpecific(base.warmup, weekNumber, totalWeeks);
+        base.cooldown = convertVagueStructureToSpecific(base.cooldown, weekNumber, totalWeeks);
+
         if (paces && paces.easy) {
-            base.warmup = `15-20 minutes easy running (${paces.easy.min}-${paces.easy.max}/mile) + 5 minutes dynamic exercises + 3-4 x 20-second strides`;
-            base.cooldown = `15-20 minutes easy running (${paces.easy.min}-${paces.easy.max}/mile) + stretching`;
+            base.warmup = `${base.warmup.replace(/15-20 minutes|20-25 minutes/, base.warmup.match(/\d+ minutes/)?.[0] || '15 minutes')} (${paces.easy.min}-${paces.easy.max}/mile) + 5 minutes dynamic exercises + 3-4 x 20-second strides`;
+            base.cooldown = `${base.cooldown.replace(/15-20 minutes/, base.cooldown.match(/\d+ minutes/)?.[0] || '15 minutes')} (${paces.easy.min}-${paces.easy.max}/mile) + stretching`;
         }
 
         if (intensity === "shortSpeed") {
+            const warmupTime = base.warmup.match(/\d+ minutes/)?.[0] || '20 minutes';
             if (paces && paces.easy) {
-                base.warmup = `20-25 minutes easy running (${paces.easy.min}-${paces.easy.max}/mile) + 10 minutes dynamic warmup + 4-6 progressive strides`;
+                base.warmup = `${warmupTime} easy running (${paces.easy.min}-${paces.easy.max}/mile) + 10 minutes dynamic warmup + 4-6 progressive strides`;
             } else {
-                base.warmup = "20-25 minutes easy running + 10 minutes dynamic warmup + 4-6 progressive strides";
+                base.warmup = `${warmupTime} easy running + 10 minutes dynamic warmup + 4-6 progressive strides`;
             }
             base.notes = "Extra warmup time crucial for speed work";
         }
