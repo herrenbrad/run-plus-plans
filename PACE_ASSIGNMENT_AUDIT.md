@@ -299,3 +299,4 @@ For each workout type, verify:
 - Need to ensure consistency across all layers
 - Priority: Library injection > WorkoutDetail extraction > Fallback
 
+

@@ -169,6 +169,7 @@ exports.callAnthropicAPI = onCall(
     cors: true,
     enforceAppCheck: false, // Set to true in production if you enable App Check
     secrets: [anthropicApiKey], // Reference the secret
+    runtime: 'nodejs20', // Use Node.js 20 runtime
   },
   async (request) => {
     // Verify user is authenticated

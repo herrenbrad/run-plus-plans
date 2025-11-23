@@ -135,3 +135,4 @@ Plan + coaching saved to Firestore
 
 **Result:** No more hardcoded defaults sneaking into plans! 🎉
 
+

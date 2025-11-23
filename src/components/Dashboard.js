@@ -2199,12 +2199,42 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 key={`${originalWorkout.day}-${workoutIdx}`}
                 className="card dashboard-workout-card"
                 style={{
-                  background: workout.type === 'rest' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.05)',
-                  border: `2px solid ${getWorkoutTypeColor(workout.type)}20`,
-                  borderLeft: `4px solid ${getWorkoutTypeColor(workout.type)}`,
+                  // Dynamic gradient backgrounds based on workout type
+                  background: workout.type === 'rest' 
+                    ? 'linear-gradient(135deg, rgba(160, 174, 192, 0.1) 0%, rgba(160, 174, 192, 0.05) 100%)'
+                    : workout.type === 'rest_or_xt'
+                    ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%)'
+                    : `linear-gradient(135deg, ${getWorkoutTypeColor(workout.type)}25 0%, ${getWorkoutTypeColor(workout.type)}08 50%, rgba(255, 255, 255, 0.05) 100%)`,
+                  border: `2px solid ${getWorkoutTypeColor(workout.type)}40`,
+                  borderLeft: `5px solid ${getWorkoutTypeColor(workout.type)}`,
+                  boxShadow: workout.type === 'rest' 
+                    ? '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+                    : `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(workout.type)}20, 0 0 20px ${getWorkoutTypeColor(workout.type)}15`,
                   opacity: (workout.type === 'rest' || workout.type === 'rest_or_xt') ? 0.7 : 1,
                   cursor: (workout.type === 'rest' || workout.type === 'rest_or_xt') ? 'default' : 'pointer',
-                  position: 'relative'
+                  position: 'relative',
+                  color: '#FFFFFF',
+                  WebkitFontSmoothing: 'antialiased',
+                  MozOsxFontSmoothing: 'grayscale',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  transform: 'translateY(0)',
+                  overflow: 'hidden'
+                }}
+                onMouseEnter={(e) => {
+                  if (workout.type !== 'rest' && workout.type !== 'rest_or_xt') {
+                    e.currentTarget.style.transform = 'translateY(-4px) scale(1.01)';
+                    e.currentTarget.style.boxShadow = `0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px ${getWorkoutTypeColor(workout.type)}50, 0 0 30px ${getWorkoutTypeColor(workout.type)}30`;
+                    e.currentTarget.style.borderColor = `${getWorkoutTypeColor(workout.type)}60`;
+                    e.currentTarget.style.borderLeftWidth = '6px';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                  e.currentTarget.style.boxShadow = workout.type === 'rest' 
+                    ? '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+                    : `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(workout.type)}20, 0 0 20px ${getWorkoutTypeColor(workout.type)}15`;
+                  e.currentTarget.style.borderColor = `${getWorkoutTypeColor(workout.type)}40`;
+                  e.currentTarget.style.borderLeftWidth = '5px';
                 }}
                 onClick={() => handleWorkoutClick(workout)}
               >

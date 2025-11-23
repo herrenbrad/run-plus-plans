@@ -1130,11 +1130,12 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     <div className="workout-detail" style={{ minHeight: '100vh', background: '#0a0a0a' }}>
       {/* Hero Header - Dark Theme */}
       <div className="workout-detail-header" style={{
-        background: '#1a1a1a',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}15 0%, #1a1a1a 50%, #0a0a0a 100%)`,
+        borderBottom: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}30`,
         padding: '32px 0 48px 0',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        boxShadow: `0 8px 32px rgba(0, 0, 0, 0.4), inset 0 -1px 0 ${getWorkoutTypeColor(currentWorkout.type)}20`
       }}>
         <div className="container" style={{ position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
@@ -1283,30 +1284,60 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         }}>
           {/* Pace Card */}
           <div className="workout-detail-card workout-metric-card" style={{
-            background: '#1a1a1a',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}25 0%, ${getWorkoutTypeColor(currentWorkout.type)}08 50%, rgba(255, 255, 255, 0.05) 100%)`,
             padding: '20px',
             borderRadius: '16px',
-            border: '2px solid #00D4FF'
-          }}>
-            <div className="workout-metric-label" style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}50`,
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}20, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}15`,
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
+            e.currentTarget.style.boxShadow = `0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}60, 0 0 30px ${getWorkoutTypeColor(currentWorkout.type)}30`;
+            e.currentTarget.style.borderColor = `${getWorkoutTypeColor(currentWorkout.type)}70`;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0) scale(1)';
+            e.currentTarget.style.boxShadow = `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}20, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}15`;
+            e.currentTarget.style.borderColor = `${getWorkoutTypeColor(currentWorkout.type)}50`;
+          }}
+          >
+            <div className="workout-metric-label" style={{ color: '#999', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Target Pace
             </div>
-            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
+            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2', textShadow: `0 2px 8px ${getWorkoutTypeColor(currentWorkout.type)}40` }}>
               {formatPaceGuidance(currentWorkout.paceGuidance)}
             </div>
           </div>
 
           {/* Intensity Card */}
           <div className="workout-detail-card workout-metric-card" style={{
-            background: '#1a1a1a',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}25 0%, ${getWorkoutTypeColor(currentWorkout.type)}08 50%, rgba(255, 255, 255, 0.05) 100%)`,
             padding: '20px',
             borderRadius: '16px',
-            border: '2px solid #00D4FF'
-          }}>
-            <div className="workout-metric-label" style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}50`,
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}20, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}15`,
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
+            e.currentTarget.style.boxShadow = `0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}60, 0 0 30px ${getWorkoutTypeColor(currentWorkout.type)}30`;
+            e.currentTarget.style.borderColor = `${getWorkoutTypeColor(currentWorkout.type)}70`;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0) scale(1)';
+            e.currentTarget.style.boxShadow = `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}20, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}15`;
+            e.currentTarget.style.borderColor = `${getWorkoutTypeColor(currentWorkout.type)}50`;
+          }}
+          >
+            <div className="workout-metric-label" style={{ color: '#999', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Intensity
             </div>
-            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.1rem', fontWeight: '700', lineHeight: '1.3' }}>
+            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.1rem', fontWeight: '700', lineHeight: '1.3', textShadow: `0 2px 6px ${getWorkoutTypeColor(currentWorkout.type)}40` }}>
               {typeof currentWorkout.intensity === 'string' ? formatIntensity(currentWorkout.intensity) :
                typeof currentWorkout.intensity === 'object' ? JSON.stringify(currentWorkout.intensity) :
                'Medium Effort'}
@@ -1315,15 +1346,30 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
           {/* Heart Rate Card */}
           <div className="workout-detail-card workout-metric-card" style={{
-            background: '#1a1a1a',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}25 0%, ${getWorkoutTypeColor(currentWorkout.type)}08 50%, rgba(255, 255, 255, 0.05) 100%)`,
             padding: '20px',
             borderRadius: '16px',
-            border: '2px solid #00D4FF'
-          }}>
-            <div className="workout-metric-label" style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}50`,
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}20, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}15`,
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
+            e.currentTarget.style.boxShadow = `0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}60, 0 0 30px ${getWorkoutTypeColor(currentWorkout.type)}30`;
+            e.currentTarget.style.borderColor = `${getWorkoutTypeColor(currentWorkout.type)}70`;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0) scale(1)';
+            e.currentTarget.style.boxShadow = `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}20, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}15`;
+            e.currentTarget.style.borderColor = `${getWorkoutTypeColor(currentWorkout.type)}50`;
+          }}
+          >
+            <div className="workout-metric-label" style={{ color: '#999', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
               Heart Rate Zone
             </div>
-            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
+            <div className="workout-metric-value" style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2', textShadow: `0 2px 8px ${getWorkoutTypeColor(currentWorkout.type)}40` }}>
               {typeof currentWorkout.heartRate === 'string' ? formatHeartRate(currentWorkout.heartRate) :
                typeof currentWorkout.heartRate === 'object' ? JSON.stringify(currentWorkout.heartRate) :
                '70-85% Max HR'}
@@ -1335,18 +1381,33 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             const calories = calorieCalculator.calculateWorkoutCalories(workoutData);
             return calories ? (
               <div style={{
-                background: '#1a1a1a',
+                background: 'linear-gradient(135deg, rgba(255, 149, 0, 0.25) 0%, rgba(255, 149, 0, 0.08) 50%, rgba(255, 255, 255, 0.05) 100%)',
                 padding: '20px',
                 borderRadius: '16px',
-                border: '1px solid rgba(255, 255, 255, 0.1)'
-              }}>
-                <div style={{ color: '#666', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+                border: '2px solid rgba(255, 149, 0, 0.5)',
+                boxShadow: '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 149, 0, 0.2), 0 0 20px rgba(255, 149, 0, 0.15)',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                position: 'relative',
+                overflow: 'hidden'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
+                e.currentTarget.style.boxShadow = '0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 149, 0, 0.6), 0 0 30px rgba(255, 149, 0, 0.3)';
+                e.currentTarget.style.borderColor = 'rgba(255, 149, 0, 0.7)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 149, 0, 0.2), 0 0 20px rgba(255, 149, 0, 0.15)';
+                e.currentTarget.style.borderColor = 'rgba(255, 149, 0, 0.5)';
+              }}
+              >
+                <div style={{ color: '#FFB84D', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
                   Expected Calorie Burn
                 </div>
-                <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2' }}>
+                <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2', textShadow: '0 2px 8px rgba(255, 149, 0, 0.4)' }}>
                   {calories.range} cal
                 </div>
-                <div style={{ color: '#666', fontSize: '0.75rem', marginTop: '6px', fontWeight: '500' }}>
+                <div style={{ color: '#FFB84D', fontSize: '0.75rem', marginTop: '6px', fontWeight: '500' }}>
                   Based on RunEQ equivalency
                 </div>
               </div>
@@ -1357,11 +1418,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* COMPLETED WORKOUT STATS - Show actual performance data */}
         {workoutData?.completed && completionData && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.15) 0%, rgba(0, 212, 255, 0.12) 50%, rgba(255, 255, 255, 0.05) 100%)',
+            border: '2px solid rgba(0, 255, 136, 0.4)',
             borderRadius: '20px',
             padding: '24px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 255, 136, 0.2), 0 0 25px rgba(0, 255, 136, 0.15)',
+            transition: 'all 0.3s ease'
           }}>
             <h2 style={{
               margin: '0 0 20px 0',
@@ -1384,15 +1447,26 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             }}>
               {completionData.distance && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '2px solid #00D4FF',
+                  border: '2px solid rgba(0, 212, 255, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  minHeight: '110px'
-                }}>
+                  minHeight: '110px',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.4), 0 0 25px rgba(0, 212, 255, 0.25)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)';
+                }}
+                >
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Distance
                   </div>
@@ -1409,15 +1483,26 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.duration && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '2px solid #00D4FF',
+                  border: '2px solid rgba(0, 212, 255, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  minHeight: '110px'
-                }}>
+                  minHeight: '110px',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.4), 0 0 25px rgba(0, 212, 255, 0.25)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)';
+                }}
+                >
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Duration
                   </div>
@@ -1434,15 +1519,26 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.pace && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '2px solid #00D4FF',
+                  border: '2px solid rgba(0, 212, 255, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  minHeight: '110px'
-                }}>
+                  minHeight: '110px',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.4), 0 0 25px rgba(0, 212, 255, 0.25)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)';
+                }}
+                >
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Pace
                   </div>
@@ -1459,15 +1555,26 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.avgHeartRate && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '2px solid #00D4FF',
+                  border: '2px solid rgba(0, 212, 255, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  minHeight: '110px'
-                }}>
+                  minHeight: '110px',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.4), 0 0 25px rgba(0, 212, 255, 0.25)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)';
+                }}
+                >
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Avg Heart Rate
                   </div>
@@ -1484,15 +1591,26 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.maxHeartRate && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '2px solid #00D4FF',
+                  border: '2px solid rgba(0, 212, 255, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  minHeight: '110px'
-                }}>
+                  minHeight: '110px',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.4), 0 0 25px rgba(0, 212, 255, 0.25)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)';
+                }}
+                >
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Max Heart Rate
                   </div>
@@ -1509,15 +1627,26 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.cadence && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '2px solid #00D4FF',
+                  border: '2px solid rgba(0, 212, 255, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  minHeight: '110px'
-                }}>
+                  minHeight: '110px',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.4), 0 0 25px rgba(0, 212, 255, 0.25)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)';
+                }}
+                >
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Cadence
                   </div>
@@ -1534,15 +1663,26 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
               {completionData.elevationGain && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '2px solid #00D4FF',
+                  border: '2px solid rgba(0, 212, 255, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  minHeight: '110px'
-                }}>
+                  minHeight: '110px',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.4), 0 0 25px rgba(0, 212, 255, 0.25)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.15)';
+                }}
+                >
                   <div style={{ color: '#666', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                     Elevation Gain
                   </div>
@@ -1714,11 +1854,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
         {/* WORKOUT STRUCTURE - VISUAL BREAKDOWN */}
         <div className="workout-detail-card workout-section" style={{
-          background: '#1a1a1a',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}15 0%, rgba(255, 255, 255, 0.05) 100%)`,
+          border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}30`,
           borderRadius: '20px',
           padding: '24px',
-          marginBottom: '24px'
+          marginBottom: '24px',
+          boxShadow: `0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 25px ${getWorkoutTypeColor(currentWorkout.type)}10`,
+          transition: 'all 0.3s ease'
         }}>
           <h2 style={{
             margin: '0 0 20px 0',
@@ -1733,15 +1875,16 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           </h2>
 
           <div className="workout-structure-text" style={{
-            background: '#0a0a0a',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}08 0%, rgba(0, 0, 0, 0.3) 100%)`,
             padding: '20px',
             borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}20`,
             fontSize: '1.1rem',
             lineHeight: '2',
             color: '#ddd',
             fontWeight: '500',
-            whiteSpace: 'pre-line'
+            whiteSpace: 'pre-line',
+            boxShadow: `inset 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}10, 0 0 15px ${getWorkoutTypeColor(currentWorkout.type)}08`
           }}>
             {formatStructure(currentWorkout.structure)}
           </div>
@@ -1750,11 +1893,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* DESCRIPTION */}
         {currentWorkout.description && (
           <div className="workout-detail-card workout-section" style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}25`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}10, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}08`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 12px 0',
@@ -1775,11 +1920,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* BENEFITS - Cross-Training Workouts */}
         {currentWorkout.benefits && (
           <div style={{
-            background: '#1a1a1a',
-            border: '2px solid rgba(34, 197, 94, 0.3)',
+            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.08) 50%, rgba(255, 255, 255, 0.05) 100%)',
+            border: '2px solid rgba(34, 197, 94, 0.4)',
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(34, 197, 94, 0.2), 0 0 20px rgba(34, 197, 94, 0.15)',
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 12px 0',
@@ -1804,11 +1951,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* TECHNIQUE - Cross-Training Workouts */}
         {currentWorkout.technique && (
           <div style={{
-            background: '#1a1a1a',
-            border: '2px solid rgba(59, 130, 246, 0.3)',
+            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0.08) 50%, rgba(255, 255, 255, 0.05) 100%)',
+            border: '2px solid rgba(59, 130, 246, 0.5)',
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.2), 0 0 20px rgba(59, 130, 246, 0.15)',
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 12px 0',
@@ -1832,11 +1981,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* EFFORT ZONES - Cross-Training Workouts */}
         {currentWorkout.effort && typeof currentWorkout.effort === 'object' && (
           <div style={{
-            background: '#1a1a1a',
-            border: '2px solid rgba(239, 68, 68, 0.3)',
+            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.08) 50%, rgba(255, 255, 255, 0.05) 100%)',
+            border: '2px solid rgba(239, 68, 68, 0.5)',
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(239, 68, 68, 0.2), 0 0 20px rgba(239, 68, 68, 0.15)',
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -1887,11 +2038,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* EQUIPMENT SETTINGS - Cross-Training Workouts */}
         {currentWorkout.settings && typeof currentWorkout.settings === 'object' && (
           <div style={{
-            background: '#1a1a1a',
-            border: '2px solid rgba(168, 85, 247, 0.3)',
+            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(255, 255, 255, 0.05) 100%)',
+            border: '2px solid rgba(168, 85, 247, 0.5)',
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(168, 85, 247, 0.2), 0 0 20px rgba(168, 85, 247, 0.15)',
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2015,11 +2168,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Climate Adaptation */}
         {userProfile?.climate === 'hot_humid' && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, rgba(255, 149, 0, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: '2px solid rgba(255, 149, 0, 0.4)',
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 149, 0, 0.2), 0 0 20px rgba(255, 149, 0, 0.15)',
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2063,11 +2218,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
         {/* Safety Notes */}
         <div style={{
-          background: '#1a1a1a',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}10 0%, rgba(255, 255, 255, 0.05) 100%)`,
+          border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}25`,
           borderRadius: '16px',
           padding: '20px',
-          marginBottom: '24px'
+          marginBottom: '24px',
+          boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}10, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}08`,
+          transition: 'all 0.3s ease'
         }}>
           <h3 style={{
             margin: '0 0 16px 0',
@@ -2099,11 +2256,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Hill Requirements - only for hill workouts */}
         {currentWorkout.hillRequirement && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2150,11 +2309,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Terrain Instructions */}
         {currentWorkout.terrainInstructions && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 12px 0',
@@ -2201,11 +2362,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Progression Guidance */}
         {currentWorkout.progression && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2240,11 +2403,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Variations */}
         {currentWorkout.variations && Array.isArray(currentWorkout.variations) && currentWorkout.variations.length > 0 && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2271,11 +2436,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Examples */}
         {currentWorkout.examples && Array.isArray(currentWorkout.examples) && currentWorkout.examples.length > 0 && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2302,11 +2469,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Track Intervals - for interval workouts */}
         {currentWorkout.trackIntervals && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2353,11 +2522,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Fueling - for long runs */}
         {currentWorkout.fueling && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2392,11 +2563,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* RunEQ Options */}
         {currentWorkout.runEqOptions && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}40`,
             borderRadius: '20px',
             padding: '24px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}20, 0 0 25px ${getWorkoutTypeColor(currentWorkout.type)}15`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 20px 0',
@@ -2412,10 +2585,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             <div style={{ display: 'grid', gap: '16px' }}>
               {currentWorkout.runEqOptions.optionA && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}08 0%, rgba(0, 0, 0, 0.3) 100%)`,
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}25`,
+                  boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}10, 0 0 10px ${getWorkoutTypeColor(currentWorkout.type)}08`
                 }}>
                   <strong style={{ color: '#999', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
                     Option A:
@@ -2427,10 +2601,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.runEqOptions.optionB && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}08 0%, rgba(0, 0, 0, 0.3) 100%)`,
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}25`,
+                  boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}10, 0 0 10px ${getWorkoutTypeColor(currentWorkout.type)}08`
                 }}>
                   <strong style={{ color: '#999', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
                     Option B:
@@ -2442,10 +2617,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.runEqOptions.optionC && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}08 0%, rgba(0, 0, 0, 0.3) 100%)`,
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}25`,
+                  boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}10, 0 0 10px ${getWorkoutTypeColor(currentWorkout.type)}08`
                 }}>
                   <strong style={{ color: '#999', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
                     Option C:
@@ -2457,10 +2633,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.runEqOptions.optionD && (
                 <div style={{
-                  background: '#0a0a0a',
+                  background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}08 0%, rgba(0, 0, 0, 0.3) 100%)`,
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                  border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}25`,
+                  boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}10, 0 0 10px ${getWorkoutTypeColor(currentWorkout.type)}08`
                 }}>
                   <strong style={{ color: '#999', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>
                     Option D:
@@ -2472,10 +2649,11 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
               )}
               {currentWorkout.runEqOptions.recommendation && (
                 <div style={{
-                  background: '#2a2a2a',
+                  background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}20 0%, ${getWorkoutTypeColor(currentWorkout.type)}10 100%)`,
                   padding: '16px',
                   borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}50`,
+                  boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}30, 0 0 15px ${getWorkoutTypeColor(currentWorkout.type)}20`
                 }}>
                   <strong style={{ color: 'white', fontSize: '1.2rem', display: 'block', marginBottom: '8px' }}>
                     Recommended for you:
@@ -2492,11 +2670,13 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         {/* Coaching Guidance */}
         {currentWorkout.coachingGuidance && (
           <div style={{
-            background: '#1a1a1a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
             borderRadius: '16px',
             padding: '20px',
-            marginBottom: '24px'
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
           }}>
             <h3 style={{
               margin: '0 0 16px 0',
@@ -2530,38 +2710,51 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
         {/* Action Buttons */}
         <div style={{
-          background: '#1a1a1a',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+          border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}30`,
           borderRadius: '20px',
           padding: '24px',
-          marginBottom: '24px'
+          marginBottom: '24px',
+          boxShadow: `0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 25px ${getWorkoutTypeColor(currentWorkout.type)}10`,
+          transition: 'all 0.3s ease'
         }}>
           <button
             onClick={handleSomethingElse}
             className="workout-button"
             style={{
               width: '100%',
-              background: '#2a2a2a',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f59e0b 100%)',
+              border: '2px solid rgba(255, 255, 255, 0.3)',
               color: 'white',
               fontSize: '1.2rem',
               fontWeight: '700',
               padding: '18px 24px',
               borderRadius: '16px',
               cursor: 'pointer',
-              transition: 'all 0.3s ease',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '12px'
+              gap: '12px',
+              boxShadow: '0 6px 20px rgba(139, 92, 246, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 30px rgba(236, 72, 153, 0.3)',
+              textShadow: '0 2px 8px rgba(0, 0, 0, 0.4)',
+              position: 'relative',
+              overflow: 'hidden'
             }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = '#3a3a3a';
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, #a78bfa 0%, #f472b6 50%, #fbbf24 100%)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+              e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)';
+              e.currentTarget.style.boxShadow = '0 12px 32px rgba(139, 92, 246, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 40px rgba(236, 72, 153, 0.5)';
             }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = '#2a2a2a';
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f59e0b 100%)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+              e.currentTarget.style.transform = 'translateY(0) scale(1)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(139, 92, 246, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 30px rgba(236, 72, 153, 0.3)';
             }}
           >
+            <span style={{ fontSize: '1.3rem' }}>✨</span>
             Something Else (Show Alternatives)
           </button>
 

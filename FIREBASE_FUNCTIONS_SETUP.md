@@ -51,3 +51,4 @@ All should work the same, but now the API key is secure!
 - User must be logged in to use AI features
 - This is by design for security
 
+

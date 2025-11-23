@@ -133,3 +133,4 @@ TrainingPlanService still uses **TrainingPlanGenerator** (rule-based) which has 
 
 **The Answer:** TrainingPlanService should become a **utility service** for technical plan manipulation, not plan generation. The plan generation should all use AI to eliminate defaults.
 
+

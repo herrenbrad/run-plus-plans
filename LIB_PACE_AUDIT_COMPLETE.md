@@ -214,3 +214,4 @@ const trackIntervals = paces.trackIntervals || null;
 
 **All pace assignment logic is now correct!** The only issue was fast finish workouts in the long-run library, which has been fixed.
 
+
