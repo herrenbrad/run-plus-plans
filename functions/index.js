@@ -8,8 +8,11 @@ const Anthropic = require("@anthropic-ai/sdk");
 
 initializeApp();
 
-// Define secret for Anthropic API key
+// Define secrets
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+const emailUserSecret = defineSecret("EMAIL_USER");
+const emailPassSecret = defineSecret("EMAIL_PASS");
+const adminEmailSecret = defineSecret("ADMIN_EMAIL");
 
 /**
  * Send email notification when a new user signs up
@@ -31,6 +34,9 @@ const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
  */
 
 exports.sendNewUserNotification = onDocumentCreated(
+  {
+    secrets: [emailUserSecret, emailPassSecret, adminEmailSecret],
+  },
   "users/{userId}",
   async (event) => {
     const snapshot = event.data;
@@ -54,16 +60,18 @@ exports.sendNewUserNotification = onDocumentCreated(
       displayName: userData.displayName,
     });
 
-    // Get email configuration from environment variables
-    // You can also hardcode these for testing, but use environment config for production
-    const emailUser = process.env.EMAIL_USER; // Your email address
-    const emailPass = process.env.EMAIL_PASS; // Your email app password
-    const adminEmail = process.env.ADMIN_EMAIL; // Email to receive notifications
+    // Get email configuration from Firebase Secrets
+    const emailUser = emailUserSecret.value();
+    const emailPass = emailPassSecret.value();
+    const adminEmail = adminEmailSecret.value();
 
     // If email is not configured, just log and return
     if (!emailUser || !emailPass || !adminEmail) {
-      console.log("⚠️ Email not configured. Set EMAIL_USER, EMAIL_PASS, and ADMIN_EMAIL environment variables.");
-      console.log("To configure: firebase functions:config:set email.user='your-email' email.pass='your-password' email.admin='admin-email'");
+      console.log("⚠️ Email not configured. Set EMAIL_USER, EMAIL_PASS, and ADMIN_EMAIL secrets.");
+      console.log("To configure:");
+      console.log("  firebase functions:secrets:set EMAIL_USER");
+      console.log("  firebase functions:secrets:set EMAIL_PASS");
+      console.log("  firebase functions:secrets:set ADMIN_EMAIL");
 
       // Store notification in Firestore as backup
       await getFirestore().collection("adminNotifications").add({
@@ -112,6 +120,10 @@ exports.sendNewUserNotification = onDocumentCreated(
           </div>
 
           <p style="color: #666; font-size: 14px; margin-top: 30px;">
+            <a href="https://runplusplans.com/admin/approvals"
+               style="color: #00D4FF; text-decoration: none; background: #00D4FF; color: white; padding: 10px 20px; border-radius: 5px; display: inline-block; margin-right: 10px;">
+              Approve User →
+            </a>
             <a href="https://console.firebase.google.com/project/run-plus-plans/firestore/databases/-default-/data/~2Fusers~2F${userId}"
                style="color: #00D4FF; text-decoration: none;">
               View in Firebase Console →
