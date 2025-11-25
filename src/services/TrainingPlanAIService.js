@@ -68,7 +68,7 @@ JASON FITZGERALD COACHING VOICE - KEY CHARACTERISTICS:
 - **Mental toughness**: Acknowledge the challenge, build confidence through checkpoints
 - **Conversational but professional**: Like talking to a friend who happens to be an expert
 - **Actionable specifics**: Not just "run tempo" but "run tempo at 9:35-9:50/mile for 20 minutes"
-- **Reality checks**: Set clear checkpoints with specific metrics (e.g., "10K under 65:00 by Week 8")
+- **Reality checks**: Set clear checkpoints with specific metrics (e.g., "10K under 65:00 by Week 8") - checkpoints must be within the plan duration (Week 1 to Week [totalWeeks])
 - **Explain the "why"**: Don't just say what to do - explain why it matters
 - **Encouraging but realistic**: "This is ambitious, but here's why it can work..."
 - **Personal connection**: Use the runner's name naturally, reference their specific situation
@@ -523,6 +523,20 @@ SEQUENCING RULES:
 
             // Transform to Dashboard format
             const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, userProfile);
+            
+            // CRITICAL: Run validations to catch regressions
+            try {
+                const { validateTrainingPlan } = await import('./TrainingPlanAIService.validators.js');
+                const validationResult = validateTrainingPlan(dashboardPlan, userProfile);
+                if (!validationResult.valid) {
+                    console.error('⚠️ Training plan validation failed - but continuing anyway:', validationResult.errors);
+                    // Don't throw - log the errors but allow the plan to be used
+                    // This helps catch regressions in development without breaking production
+                }
+            } catch (error) {
+                // Validators might not be available in all environments - don't break production
+                console.warn('⚠️ Could not run validations:', error.message);
+            }
 
             return {
                 success: true,
@@ -559,6 +573,15 @@ SEQUENCING RULES:
      * Build prompt for coaching analysis only (Step 1)
      * Focuses on assessment, paces, and strategy - NO week-by-week plan
      */
+    /**
+     * Determine if this is an injured runner requiring specialized coaching
+     */
+    isInjuredRunner(profile) {
+        return profile.runningStatus === 'crossTrainingOnly' || 
+               (profile.injuries && Object.values(profile.injuries).some(v => v === true)) ||
+               profile.injuryDescription;
+    }
+
     buildCoachingAnalysisPrompt(profile) {
         const units = profile.units || 'imperial';
         const distanceUnit = units === 'metric' ? 'kilometers' : 'miles';
@@ -571,14 +594,157 @@ SEQUENCING RULES:
             prompt += `**CRITICAL: Use the runner's actual name "${firstName}" throughout your response. DO NOT use example names like "Sarah" or any other placeholder names. The runner's name is ${firstName}.**\n\n`;
         }
 
+        // Route to specialized prompt builder based on runner status
+        if (this.isInjuredRunner(profile)) {
+            prompt += this.buildInjuredRunnerCoachingPrompt(profile);
+        } else {
+            prompt += this.buildRegularRunnerCoachingPrompt(profile);
+        }
+
+        return prompt;
+    }
+
+    /**
+     * Build coaching prompt for INJURED runners (cross-training only)
+     */
+    /**
+     * Build coaching prompt for INJURED runners (cross-training only)
+     * Specialized prompt with injury recovery focus and sports physiologist persona
+     */
+    buildInjuredRunnerCoachingPrompt(profile) {
+        // Validate required fields
+        if (!profile.raceDistance || !profile.raceTime || !profile.raceDate) {
+            throw new Error('Missing required fields for injured runner coaching prompt');
+        }
+
+        const units = profile.units || 'imperial';
+        const distanceUnit = units === 'metric' ? 'kilometers' : 'miles';
+        const fullName = profile.name || profile.displayName;
+        const firstName = fullName ? fullName.split(' ')[0] : null;
+        const today = new Date();
+        const startDateCoaching = profile.startDate ? new Date(profile.startDate + 'T00:00:00') : today;
+        const startDateFormattedCoaching = startDateCoaching.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const startDayOfWeekCoaching = startDateCoaching.getDay();
+        const startDayNameCoaching = dayNames[startDayOfWeekCoaching];
+        const raceDateObj = new Date(profile.raceDate);
+        const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+        const totalWeeks = Math.ceil((raceDateObj.getTime() - startDateCoaching.getTime()) / msPerWeek);
+        const raceDateFormatted = raceDateObj.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        const daysBetween = Math.ceil((raceDateObj.getTime() - startDateCoaching.getTime()) / (24 * 60 * 60 * 1000));
+        const monthsBetween = Math.round(daysBetween / 30.44);
+
+        // Extract injury information
+        const selectedInjuries = [];
+        if (profile.injuries) {
+            const injuryNames = {
+                itBand: 'IT Band Syndrome',
+                plantarFasciitis: 'Plantar Fasciitis',
+                shinSplints: 'Shin Splints',
+                kneeIssues: 'Knee Issues',
+                lowerBackPain: 'Lower Back Pain',
+                achillesTendonitis: 'Achilles Tendonitis',
+                stressFracture: 'Stress Fracture',
+                hipIssues: 'Hip Issues',
+                ankleIssues: 'Ankle Issues'
+            };
+            Object.entries(profile.injuries).forEach(([key, selected]) => {
+                if (selected && key !== 'other' && injuryNames[key]) {
+                    selectedInjuries.push(injuryNames[key]);
+                }
+            });
+            if (profile.injuries.other && profile.injuryDescription) {
+                selectedInjuries.push(`Other: ${profile.injuryDescription}`);
+            }
+        }
+
+        // Get available equipment
+        const availableEquipment = [];
+        if (profile.standUpBikeType) {
+            const bikeName = profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO';
+            availableEquipment.push(bikeName);
+        }
+        if (profile.crossTrainingEquipment) {
+            if (profile.crossTrainingEquipment.pool) availableEquipment.push('pool/aqua running');
+            if (profile.crossTrainingEquipment.rowing) availableEquipment.push('rowing machine');
+            if (profile.crossTrainingEquipment.elliptical) availableEquipment.push('elliptical');
+            if (profile.crossTrainingEquipment.stationaryBike) availableEquipment.push('stationary bike');
+            if (profile.crossTrainingEquipment.swimming) availableEquipment.push('swimming');
+            if (profile.crossTrainingEquipment.walking) availableEquipment.push('walking');
+        }
+
+        console.log('🚨 BUILDING INJURED RUNNER PROMPT - Injuries:', selectedInjuries, 'Equipment:', availableEquipment);
+
+        let prompt = `The training plan starts on ${startDateFormattedCoaching} (${startDayNameCoaching}). Please create a training plan for me:\n\n`;
+        prompt += `**IMPORTANT: All distances should be in ${distanceUnit}. The user is using ${units} units.**\n\n`;
+        
+        prompt += `**🚨🚨🚨 CRITICAL - PLAN DURATION AND RACE DATE 🚨🚨🚨**\n`;
+        prompt += `**CALCULATION:** From ${startDateFormattedCoaching} to ${raceDateFormatted} = ${daysBetween} days = EXACTLY ${totalWeeks} weeks (${monthsBetween} months)\n`;
+        prompt += `- **START DATE:** ${startDateFormattedCoaching} (${profile.startDate})\n`;
+        prompt += `- **RACE DATE:** ${raceDateFormatted} (${profile.raceDate})\n`;
+        prompt += `- **EXACT DURATION:** ${daysBetween} days = EXACTLY ${totalWeeks} weeks\n`;
+        prompt += `- **🚨🚨🚨 YOU MUST SAY:** "${totalWeeks} weeks" when describing the plan duration. DO NOT say "a year", "10 months", "30 weeks", or any other duration.\n`;
+        prompt += `- **🚨🚨🚨 CHECKPOINTS:** All checkpoints MUST be between Week 1 and Week ${totalWeeks} ONLY.\n`;
+        prompt += `  * For a ${totalWeeks}-week plan, example checkpoints: Week ${Math.max(4, Math.floor(totalWeeks * 0.3))}, Week ${Math.floor(totalWeeks * 0.6)}, Week ${Math.floor(totalWeeks * 0.85)}\n`;
+        prompt += `  * DO NOT create checkpoints at Week 8, 16, 24, 30, etc. if the plan is only ${totalWeeks} weeks long.\n`;
+        prompt += `  * The plan ends at Week ${totalWeeks}, so ALL checkpoints must be BEFORE Week ${totalWeeks}.\n\n`;
+
+        if (firstName) {
+            prompt += `**PERSONALIZATION: The runner's name is ${firstName}. Use their ACTUAL name "${firstName}" naturally 2-3 times throughout your coaching analysis. DO NOT use example names like "Sarah" or any placeholder names.**\n\n`;
+        }
+
         prompt += `**Goal Race:**\n`;
         prompt += `- Distance: ${profile.raceDistance}\n`;
         prompt += `- Goal Time: ${profile.raceTime}\n`;
-        prompt += `- Race Date: ${profile.raceDate}\n\n`;
+        prompt += `- Race Date: ${profile.raceDate}\n`;
+        if (profile.raceElevationProfile) {
+            const terrainDescriptions = {
+                'flat': 'Flat course (minimal elevation change)',
+                'rolling': 'Rolling hills (moderate elevation changes)',
+                'hilly': 'Hilly course (significant elevation gain)'
+            };
+            prompt += `- Course Terrain: ${terrainDescriptions[profile.raceElevationProfile] || profile.raceElevationProfile}\n`;
+        }
+        prompt += `\n`;
+
+        // INJURY SECTION - CRITICAL AND PROMINENT
+        if (selectedInjuries.length > 0) {
+            prompt += `**🚨🚨🚨 CRITICAL - INJURY RECOVERY SITUATION 🚨🚨🚨**\n`;
+            prompt += `**THE RUNNER IS CURRENTLY INJURED AND CANNOT RUN. THIS IS AN INJURY RECOVERY PLAN.**\n\n`;
+            prompt += `**INJURIES:** ${selectedInjuries.join(', ')}\n\n`;
+            prompt += `**AVAILABLE CROSS-TRAINING EQUIPMENT:** ${availableEquipment.length > 0 ? availableEquipment.join(', ') : 'None specified - use walking only'}\n\n`;
+            
+            prompt += `**🚨🚨🚨 ABSOLUTE REQUIREMENT - YOU MUST ADDRESS THESE INJURIES IN YOUR COACHING ANALYSIS 🚨🚨🚨**\n`;
+            prompt += `**YOUR FIRST SENTENCE MUST ACKNOWLEDGE THE INJURIES. FOR EXAMPLE:**\n`;
+            prompt += `"${firstName || 'Runner'}, I see you're recovering from ${selectedInjuries.join(' and ')}. As a sports physiologist, let me explain how we'll handle this injury recovery plan..."\n\n`;
+            
+            prompt += `**THEN YOU MUST (as a sports physiologist):**\n`;
+            prompt += `1. **EXPLAIN BIOMECHANICAL REASONING:** For ${selectedInjuries.join(' and ')}, explain:\n`;
+            prompt += `   - Which cross-training equipment is SAFEST for this injury and WHY (movement patterns, joint loading, muscle engagement)\n`;
+            prompt += `   - Which equipment could AGGRAVATE this injury and WHY (biomechanical contraindications)\n`;
+            prompt += `   - Reference sports medicine principles (e.g., "Shin splints benefit from zero-impact activities like pool running because it eliminates ground reaction forces that stress the tibia...")\n`;
+            prompt += `2. **EQUIPMENT RECOMMENDATIONS:** Explicitly state which of the available equipment (${availableEquipment.join(', ')}) is best for ${selectedInjuries.join(' and ')} and why\n`;
+            prompt += `3. **EQUIPMENT ROTATION:** You MUST rotate through ALL available equipment types throughout the plan. Do NOT only use one type. Variety prevents overuse and provides comprehensive fitness.\n`;
+            prompt += `4. **RETURN-TO-RUNNING PROTOCOL:** Provide evidence-based guidance on when and how to safely return to running after ${selectedInjuries.join(' and ')}\n`;
+            prompt += `5. **MEDICAL DISCLAIMER:** Include: "⚠️ This is not medical advice. Consult your healthcare provider for injury diagnosis and treatment."\n`;
+            prompt += `\n`;
+            prompt += `**DO NOT SKIP THIS. The injuries (${selectedInjuries.join(', ')}) MUST be mentioned in the FIRST PARAGRAPH of your coaching analysis.**\n\n`;
+        } else {
+            prompt += `**🚨 INJURY RECOVERY STATUS:** Runner cannot run right now (cross-training only)\n`;
+            prompt += `**AVAILABLE EQUIPMENT:** ${availableEquipment.length > 0 ? availableEquipment.join(', ') : 'None specified - use walking only'}\n\n`;
+        }
 
         prompt += `**Current Fitness:**\n`;
-        prompt += `- Weekly Mileage: ${profile.currentWeeklyMileage} ${distanceUnit}\n`;
-        prompt += `- Current Long Run: ${profile.currentLongRun} ${distanceUnit}\n`;
         if (profile.recentRaceTime && profile.recentRaceDistance) {
             prompt += `- Recent Race: ${profile.recentRaceTime} for ${profile.recentRaceDistance}\n`;
             const fitnessContext = this.buildFitnessAssessmentContext(profile);
@@ -586,16 +752,26 @@ SEQUENCING RULES:
                 prompt += fitnessContext;
             }
         }
+        prompt += `- Cross-Training Status: Cannot run - using cross-training equipment only\n`;
         prompt += `\n`;
 
-        prompt += `**OUTPUT REQUIRED (Jason Fitzgerald voice):**\n`;
-        prompt += `1. Honest assessment with data (e.g., "39 min improvement = 3 min/week")\n`;
-        prompt += `2. Key training paces with specific ranges\n`;
-        prompt += `3. Race day strategy: pacing plan, fueling, terrain tactics\n`;
-        prompt += `4. Checkpoints with metrics (e.g., "Week 8: 10K under 65:00")\n`;
-        prompt += `5. Final notes: why plan works, what to watch, encouragement\n\n`;
+        prompt += `**Training Preferences:**\n`;
+        prompt += `- Available Training Days: ${(profile.availableDays || []).join(', ')}\n`;
+        if (profile.restDays && profile.restDays.length > 0) {
+            prompt += `- Rest Days: ${profile.restDays.join(', ')}\n`;
+        }
+        prompt += `- Experience Level: ${profile.experienceLevel}\n\n`;
+
+        prompt += `**OUTPUT REQUIREMENTS (Sports Physiologist / Injury Recovery Coach voice):**\n`;
+        prompt += `1. **OPEN WITH INJURY ACKNOWLEDGMENT:** First sentence must acknowledge the injuries and recovery situation\n`;
+        prompt += `2. **BIOMECHANICAL EXPLANATION:** Explain why specific equipment is safe/unsafe for the injuries\n`;
+        prompt += `3. **EQUIPMENT ROTATION STRATEGY:** Explain how you'll rotate through all available equipment\n`;
+        prompt += `4. **CROSS-TRAINING PACES/EFFORTS:** Provide effort-based guidance (since we're not running, focus on perceived effort, heart rate zones, or time-based progression)\n`;
+        prompt += `5. **RETURN-TO-RUNNING PROTOCOL:** Evidence-based guidance on when/how to return to running\n`;
+        prompt += `6. **CHECKPOINTS:** Reality checks for cross-training fitness (e.g., "Week 8: Can you hold moderate effort for 60 minutes?")\n`;
+        prompt += `7. **MEDICAL DISCLAIMER:** Include medical disclaimer\n`;
         prompt += `**DO NOT include week-by-week plan yet - that comes in a separate request.**\n`;
-        prompt += `Keep response focused and concise (150-200 words for assessment, then paces and strategy).\n`;
+        prompt += `Keep response focused on injury recovery, biomechanics, and cross-training strategy.\n`;
 
         return prompt;
     }
@@ -603,12 +779,37 @@ SEQUENCING RULES:
     /**
      * Build prompt for plan structure only (Step 2)
      * Focuses on week-by-week schedule - concise format
+     * Routes to specialized methods for injured vs regular runners
      */
     buildPlanStructurePrompt(profile, coachingAnalysis) {
-        const today = new Date();
+        // Route to specialized prompt builder based on runner status
+        if (this.isInjuredRunner(profile)) {
+            return this.buildInjuredRunnerPlanStructurePrompt(profile, coachingAnalysis);
+        } else {
+            return this.buildRegularRunnerPlanStructurePrompt(profile, coachingAnalysis);
+        }
+    }
+
+    /**
+     * Build plan structure prompt for INJURED runners (cross-training only)
+     */
+    buildInjuredRunnerPlanStructurePrompt(profile, coachingAnalysis) {
+        // For now, use the regular one but we can specialize later
+        // The cross-training logic is already in buildRegularRunnerPlanStructurePrompt
+        return this.buildRegularRunnerPlanStructurePrompt(profile, coachingAnalysis);
+    }
+
+    /**
+     * Build plan structure prompt for REGULAR runners
+     */
+    buildRegularRunnerPlanStructurePrompt(profile, coachingAnalysis) {
+        // CRITICAL: Use actual start date from profile (may be adjusted if today is a rest day)
+        // If no startDate in profile, fall back to today
+        const startDate = profile.startDate ? new Date(profile.startDate + 'T00:00:00') : new Date();
+        const today = new Date(); // Keep for reference/comparison
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const dayAbbrevs = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const startDayOfWeek = today.getDay();
+        const startDayOfWeek = startDate.getDay();
         const startDayName = dayNames[startDayOfWeek];
         const startDayAbbrev = dayAbbrevs[startDayOfWeek];
         // CRITICAL: If starting on Sunday, Week 1 only has 1 day (Sunday). Otherwise, days from start day through Sunday.
@@ -618,13 +819,13 @@ SEQUENCING RULES:
         const distanceUnit = units === 'metric' ? 'kilometers' : 'miles';
         const restDays = profile.restDays || [];
 
-        // CRITICAL: Calculate total weeks from today to race date
+        // CRITICAL: Calculate total weeks from start date to race date
         const raceDateObj = new Date(profile.raceDate);
         const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-        const totalWeeks = Math.ceil((raceDateObj.getTime() - today.getTime()) / msPerWeek);
+        const totalWeeks = Math.ceil((raceDateObj.getTime() - startDate.getTime()) / msPerWeek);
         
-        // Format today's date for the prompt
-        const todayFormatted = today.toLocaleDateString('en-US', {
+        // Format start date for the prompt (this is when Week 1 actually starts)
+        const startDateFormatted = startDate.toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
@@ -632,13 +833,13 @@ SEQUENCING RULES:
         });
         
         // Calculate Week 1 date range
-        const week1EndDate = new Date(today);
+        const week1EndDate = new Date(startDate);
         if (startDayOfWeek === 0) {
             // Starting on Sunday - Week 1 is just Sunday
             // Week 1 end is also Sunday (same day)
         } else {
             // Week 1 ends on Sunday (7 - startDayOfWeek days later)
-            week1EndDate.setDate(today.getDate() + (7 - startDayOfWeek));
+            week1EndDate.setDate(startDate.getDate() + (7 - startDayOfWeek));
         }
         const week1EndFormatted = week1EndDate.toLocaleDateString('en-US', {
             month: 'short',
@@ -667,24 +868,28 @@ SEQUENCING RULES:
         prompt += `- Race Distance: ${raceDistanceDisplay}\n`;
         prompt += `- Goal Time: ${profile.raceTime}\n`;
         prompt += `- Race Date: ${profile.raceDate}\n`;
-        prompt += `- **TODAY'S DATE: ${todayFormatted} (${startDayName})**\n`;
-        prompt += `- **WEEK 1 STARTS: ${todayFormatted} (${startDayName})**\n`;
+        // Format start date for short display (e.g., "Nov 25")
+        const startDateShort = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        
+        prompt += `- **🚨 CRITICAL - START DATE: ${startDateFormatted} (${startDayName})**\n`;
+        prompt += `- **🚨 CRITICAL - WEEK 1 STARTS: ${startDateFormatted} (${startDayName}), NOT today, NOT any other date**\n`;
+        prompt += `- **Week 1 date range: ${startDateFormatted} through ${week1EndFormatted} (${daysInWeek1} days)**\n`;
         if (startDayOfWeek === 0) {
-            prompt += `- **WEEK 1 DATE RANGE: ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} only (1 day)**\n`;
+            prompt += `- **WEEK 1 DATE RANGE: ${startDateShort} only (1 day)**\n`;
         } else {
-            prompt += `- **WEEK 1 DATE RANGE: ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${week1EndFormatted}**\n`;
+            prompt += `- **WEEK 1 DATE RANGE: ${startDateShort} - ${week1EndFormatted}**\n`;
         }
         prompt += `- **TOTAL WEEKS: Generate EXACTLY ${totalWeeks} weeks (Week 1 through Week ${totalWeeks})**\n`;
         prompt += `**DO NOT confuse this with a different race distance. The race is ${raceDistanceDisplay}, NOT a marathon unless explicitly stated above.**\n`;
         prompt += `**DO NOT generate more than ${totalWeeks} weeks. The plan must be exactly ${totalWeeks} weeks long, ending on the race date.**\n`;
-        prompt += `**CRITICAL: Week 1 starts TODAY (${todayFormatted}), NOT next Monday or any other date. Use the actual date range shown above.**\n\n`;
+        prompt += `**CRITICAL: Week 1 starts on ${startDateFormatted} (${startDayName}), NOT today or any other date. Use the actual date range shown above.**\n\n`;
 
         prompt += `**CRITICAL FORMAT:**\n`;
         if (startDayOfWeek === 0) {
             // Starting on Sunday - Week 1 is ONLY Sunday
-            prompt += `- Week 1: ONLY ${startDayAbbrev} (1 day - just today, ${startDayName})\n`;
+            prompt += `- Week 1: ONLY ${startDayAbbrev} (1 day - starts ${startDateShort}, ${startDayName})\n`;
         } else {
-            prompt += `- Week 1: Only ${startDayAbbrev}-Sun (${daysInWeek1} days, starts ${startDayName})\n`;
+            prompt += `- Week 1: Only ${startDayAbbrev}-Sun (${daysInWeek1} days, starts ${startDateShort}, ${startDayName})\n`;
         }
         prompt += `- Week 2+: Full Mon-Sun (7 days)\n`;
         prompt += `- Use [WORKOUT_ID: type_category_index] for quality workouts\n`;
@@ -694,44 +899,219 @@ SEQUENCING RULES:
         prompt += `  * "Classic Hill Repeats 6 miles" (NOT "[WORKOUT_ID: hill_medium_vo2_0] Classic Hill Repeats 6 miles")\n`;
         prompt += `  * "Classic Tempo Run 6 miles" (NOT "[WORKOUT_ID: tempo_TRADITIONAL_TEMPO_0] Classic Tempo Run 6 miles")\n`;
         prompt += `  The system will automatically match workouts using the library, but users should see clean, readable names.\n`;
+        
+        // CRITICAL: Add hard workout days requirement
+        if (profile.qualityDays && profile.qualityDays.length > 0) {
+            prompt += `- **🚨 CRITICAL - HARD WORKOUT DAYS: ${profile.qualityDays.join(' and ')} MUST have hard workouts (tempo, intervals, or hills)**\n`;
+            prompt += `  - ${profile.qualityDays[0]} MUST be a hard workout (tempo, intervals, or hills) - NOT easy run, NOT rest\n`;
+            if (profile.qualityDays[1]) {
+                prompt += `  - ${profile.qualityDays[1]} MUST be a hard workout (tempo, intervals, or hills) - NOT easy run, NOT rest\n`;
+            }
+            prompt += `  - DO NOT schedule hard workouts on other days\n`;
+            prompt += `  - DO NOT make these days easy runs or rest days\n`;
+        }
+        
         if (restDays.length > 0) {
-            prompt += `- **REST DAYS: ${restDays.join(', ')} = "Rest" ONLY**\n`;
+            prompt += `- **🚨 CRITICAL - REST DAYS: ${restDays.join(', ')} = "Rest" ONLY (no workouts, no cross-training)**\n`;
+            prompt += `  - DO NOT schedule any workouts on ${restDays.join(' or ')}\n`;
+            prompt += `  - DO NOT schedule hard workouts on rest days\n`;
         }
         if (bikeDays.length > 0 && bikeType) {
             prompt += `- **IMPORTANT: ${bikeDays.join(' and ')} should be ${bikeType} rides, NOT runs**\n`;
             prompt += `  Format: "Tue: Ride 4 RunEQ miles on your ${bikeType}" (NOT "Easy 4 mile run")\n`;
+            prompt += `  **CRITICAL: Keep as "RunEQ miles" - do NOT convert to actual bike miles. The system handles conversion.**\n`;
         }
+        
+        // CRITICAL: Handle injured runners who cannot run
+        if (profile.runningStatus === 'crossTrainingOnly') {
+            const availableEquipment = [];
+            if (profile.standUpBikeType) {
+                const bikeName = profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO';
+                availableEquipment.push(bikeName);
+            }
+            if (profile.crossTrainingEquipment) {
+                if (profile.crossTrainingEquipment.pool) availableEquipment.push('pool/aqua running');
+                if (profile.crossTrainingEquipment.rowing) availableEquipment.push('rowing machine');
+                if (profile.crossTrainingEquipment.elliptical) availableEquipment.push('elliptical');
+                if (profile.crossTrainingEquipment.stationaryBike) availableEquipment.push('stationary bike');
+                if (profile.crossTrainingEquipment.swimming) availableEquipment.push('swimming');
+                if (profile.crossTrainingEquipment.walking) availableEquipment.push('walking');
+            }
+            
+            const primaryEquipment = profile.primaryCrossTrainingEquipment 
+                ? (profile.primaryCrossTrainingEquipment === 'cyclete' ? 'Cyclete' : 
+                   profile.primaryCrossTrainingEquipment === 'elliptigo' ? 'ElliptiGO' :
+                   profile.primaryCrossTrainingEquipment === 'pool' ? 'pool/aqua running' :
+                   profile.primaryCrossTrainingEquipment === 'rowing' ? 'rowing machine' :
+                   profile.primaryCrossTrainingEquipment === 'elliptical' ? 'elliptical' :
+                   profile.primaryCrossTrainingEquipment === 'stationaryBike' ? 'stationary bike' :
+                   profile.primaryCrossTrainingEquipment === 'swimming' ? 'swimming' :
+                   profile.primaryCrossTrainingEquipment === 'walking' ? 'walking' : profile.primaryCrossTrainingEquipment)
+                : (availableEquipment.length > 0 ? availableEquipment[0] : 'cross-training');
+            
+            prompt += `\n**🚨 CRITICAL - INJURY RECOVERY / CROSS-TRAINING ONLY PLAN:**\n`;
+            prompt += `- **RUNNING STATUS: Cannot run right now - cross-training only**\n`;
+            prompt += `- **AVAILABLE EQUIPMENT: ${availableEquipment.length > 0 ? availableEquipment.join(', ') : 'None specified'}\n`;
+            prompt += `- **PRIMARY EQUIPMENT: ${primaryEquipment}**\n`;
+            prompt += `- **🚨 ABSOLUTE REQUIREMENT: DO NOT assign ANY running workouts. ZERO running. NO "Easy run", NO "Tempo run", NO "Long run", NO running of any kind.**\n`;
+            prompt += `- **🚨 CRITICAL - USE ALL SELECTED EQUIPMENT:** You MUST rotate through ALL available equipment types throughout the plan. Do NOT only use ${primaryEquipment}. Distribute workouts across:\n`;
+            if (availableEquipment.length > 0) {
+                availableEquipment.forEach((eq, idx) => {
+                    prompt += `  ${idx + 1}. ${eq}\n`;
+                });
+            }
+            prompt += `  **Example distribution:** If user has 4 equipment types, use each one 1-2 times per week. Vary the equipment to prevent overuse and provide variety.\n`;
+            prompt += `  **Injury consideration:** If injury information was provided in the coaching analysis, prioritize equipment that is safest for those specific injuries.\n`;
+            prompt += `- **ONLY assign workouts using the selected equipment (use ALL of them):**\n`;
+            if (profile.standUpBikeType) {
+                const bikeName = profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO';
+                prompt += `  * ${bikeName}: "Ride X RunEQ miles on your ${bikeName}" (tempo rides, interval rides, long rides)\n`;
+            }
+            if (profile.crossTrainingEquipment?.pool) {
+                prompt += `  * Pool/Aqua Running: "Aqua run X minutes" or "Pool running X minutes" (tempo, intervals, long sessions)\n`;
+            }
+            if (profile.crossTrainingEquipment?.rowing) {
+                prompt += `  * Rowing: "Row X minutes" or "Rowing machine X minutes" (tempo, intervals, long sessions)\n`;
+            }
+            if (profile.crossTrainingEquipment?.elliptical) {
+                prompt += `  * Elliptical: "Elliptical X minutes" (tempo, intervals, long sessions)\n`;
+            }
+            if (profile.crossTrainingEquipment?.stationaryBike) {
+                prompt += `  * Stationary Bike: "Bike X minutes" (tempo, intervals, long sessions)\n`;
+            }
+            if (profile.crossTrainingEquipment?.swimming) {
+                prompt += `  * Swimming: "Swim X minutes" or "Lap swimming X minutes" (tempo, intervals, long sessions)\n`;
+            }
+            if (profile.crossTrainingEquipment?.walking) {
+                prompt += `  * Walking: "Walk X minutes" or "Walking workout X minutes" (easy, tempo, long walks)\n`;
+            }
+            prompt += `- **Workout structure:** Match training phases (base → build → peak → taper) but use cross-training equipment\n`;
+            prompt += `- **Long sessions:** Use "long [equipment] session" instead of "long run" (e.g., "Long Cyclete ride 60 minutes")\n`;
+            prompt += `- **Quality workouts:** Use tempo/intervals on selected equipment (e.g., "Tempo ride on Cyclete 30 minutes")\n`;
+            prompt += `- **Rest days:** Still respect rest days (${restDays.length > 0 ? restDays.join(', ') : 'as specified'})\n`;
+            prompt += `- **If no equipment selected:** Use walking workouts only (low-impact, no equipment needed)\n`;
+        } else if (profile.runningStatus === 'transitioning') {
+            prompt += `\n**🔄 TRANSITIONING BACK TO RUNNING:**\n`;
+            prompt += `- Weeks 1-2: 100% cross-training (no running)\n`;
+            prompt += `- Weeks 3-4: Gradually introduce easy runs (25% running, 75% cross-training)\n`;
+            prompt += `- Week 5+: Normal mix of running and cross-training\n`;
+        }
+        
         prompt += `\n`;
 
         prompt += `**EXAMPLE FORMAT:**\n`;
-        const week1StartDate = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        if (startDayOfWeek === 0) {
-            // Starting on Sunday - Week 1 is ONLY Sunday
-            prompt += `### Week 1 (${week1StartDate} only) - XX ${distanceUnit}\n`;
-            if (bikeDays.includes(startDayName) && bikeType) {
-                prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
+        const week1StartDate = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        
+        // Show cross-training examples if user can't run
+        if (profile.runningStatus === 'crossTrainingOnly') {
+            // Build available equipment list for this function
+            const availableEquipment = [];
+            if (profile.standUpBikeType) {
+                const bikeName = profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO';
+                availableEquipment.push(bikeName);
+            }
+            if (profile.crossTrainingEquipment) {
+                if (profile.crossTrainingEquipment.pool) availableEquipment.push('pool/aqua running');
+                if (profile.crossTrainingEquipment.rowing) availableEquipment.push('rowing machine');
+                if (profile.crossTrainingEquipment.elliptical) availableEquipment.push('elliptical');
+                if (profile.crossTrainingEquipment.stationaryBike) availableEquipment.push('stationary bike');
+                if (profile.crossTrainingEquipment.swimming) availableEquipment.push('swimming');
+                if (profile.crossTrainingEquipment.walking) availableEquipment.push('walking');
+            }
+            
+            const exampleEquipment = profile.standUpBikeType 
+                ? (profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO')
+                : (profile.crossTrainingEquipment?.pool ? 'pool/aqua running' :
+                   profile.crossTrainingEquipment?.walking ? 'walking' :
+                   profile.crossTrainingEquipment?.elliptical ? 'elliptical' :
+                   'cross-training');
+            
+            if (startDayOfWeek === 0) {
+                prompt += `### Week 1 (${week1StartDate} only) - Cross-Training Only\n`;
+                if (profile.standUpBikeType) {
+                    prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${exampleEquipment}\n`;
+                } else if (profile.crossTrainingEquipment?.walking) {
+                    prompt += `- ${startDayAbbrev}: Walk 30 minutes\n`;
+                } else {
+                    prompt += `- ${startDayAbbrev}: ${exampleEquipment} 30 minutes\n`;
+                }
+                prompt += `\n`;
             } else {
-                prompt += `- ${startDayAbbrev}: Easy 3 ${distanceUnit}\n`;
+                prompt += `### Week 1 (${week1StartDate} - ${week1EndFormatted}) - Cross-Training Only\n`;
+                if (profile.standUpBikeType) {
+                    prompt += `- ${startDayAbbrev}: Tempo ride on your ${exampleEquipment} 30 minutes\n`;
+                    prompt += `- Sun: Long ride on your ${exampleEquipment} 60 minutes\n`;
+                } else if (profile.crossTrainingEquipment?.walking) {
+                    prompt += `- ${startDayAbbrev}: Walk 30 minutes\n`;
+                    prompt += `- Sun: Long walk 60 minutes\n`;
+                } else {
+                    prompt += `- ${startDayAbbrev}: Tempo ${exampleEquipment} 30 minutes\n`;
+                    prompt += `- Sun: Long ${exampleEquipment} session 60 minutes\n`;
+                }
+                prompt += `\n`;
+            }
+            prompt += `### Week 2 - Cross-Training Only\n`;
+            prompt += `- Mon: Rest\n`;
+            // Show example with multiple equipment types if available
+            if (availableEquipment.length > 1) {
+                prompt += `- Tue: Easy ride on your ${profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} 30 minutes\n`;
+                if (profile.crossTrainingEquipment?.pool) {
+                    prompt += `- Wed: Aqua run 30 minutes\n`;
+                } else if (profile.crossTrainingEquipment?.elliptical) {
+                    prompt += `- Wed: Elliptical 30 minutes\n`;
+                } else if (profile.crossTrainingEquipment?.rowing) {
+                    prompt += `- Wed: Row 30 minutes\n`;
+                } else {
+                    prompt += `- Wed: Interval ride on your ${profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} 30 minutes\n`;
+                }
+                prompt += `- Thu: Easy ride on your ${profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} 20 minutes\n`;
+                prompt += `- Sun: Long ride on your ${profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} 70 minutes\n`;
+                prompt += `\n`;
+                prompt += `**Note:** Rotate through ALL equipment types (${availableEquipment.join(', ')}) throughout the plan, not just one type.\n`;
+            } else if (profile.standUpBikeType) {
+                prompt += `- Wed: Interval ride on your ${exampleEquipment} 30 minutes\n`;
+                prompt += `- Thu: Easy ride on your ${exampleEquipment} 20 minutes\n`;
+                prompt += `- Sun: Long ride on your ${exampleEquipment} 70 minutes\n`;
+            } else if (profile.crossTrainingEquipment?.walking) {
+                prompt += `- Wed: Walk 30 minutes\n`;
+                prompt += `- Thu: Walk 20 minutes\n`;
+                prompt += `- Sun: Long walk 60 minutes\n`;
+            } else {
+                prompt += `- Wed: Interval ${exampleEquipment} 30 minutes\n`;
+                prompt += `- Thu: Easy ${exampleEquipment} 20 minutes\n`;
+                prompt += `- Sun: Long ${exampleEquipment} session 60 minutes\n`;
             }
             prompt += `\n`;
         } else {
-            prompt += `### Week 1 (${week1StartDate} - ${week1EndFormatted}) - XX ${distanceUnit}\n`;
-            if (bikeDays.includes(startDayName) && bikeType) {
-                prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
+            // Normal running examples
+            if (startDayOfWeek === 0) {
+                // Starting on Sunday - Week 1 is ONLY Sunday
+                prompt += `### Week 1 (${week1StartDate} only) - XX ${distanceUnit}\n`;
+                if (bikeDays.includes(startDayName) && bikeType) {
+                    prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
+                } else {
+                    prompt += `- ${startDayAbbrev}: Easy 3 ${distanceUnit}\n`;
+                }
+                prompt += `\n`;
             } else {
-                prompt += `- ${startDayAbbrev}: [WORKOUT_ID: tempo_THRESHOLD_0] Tempo Run 6 ${distanceUnit}\n`;
+                prompt += `### Week 1 (${week1StartDate} - ${week1EndFormatted}) - XX ${distanceUnit}\n`;
+                if (bikeDays.includes(startDayName) && bikeType) {
+                    prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
+                } else {
+                    prompt += `- ${startDayAbbrev}: [WORKOUT_ID: tempo_THRESHOLD_0] Tempo Run 6 ${distanceUnit}\n`;
+                }
+                prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 5 ${distanceUnit}\n\n`;
             }
-            prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 5 ${distanceUnit}\n\n`;
+            prompt += `### Week 2 - XX ${distanceUnit}\n`;
+            prompt += `- Mon: Rest\n`;
+            prompt += `- Wed: [WORKOUT_ID: interval_VO2_MAX_2] 800m Intervals 6 ${distanceUnit}\n`;
+            if (bikeDays.includes('Thursday') && bikeType) {
+                prompt += `- Thu: Ride 3 RunEQ miles on your ${bikeType}\n`;
+            } else {
+                prompt += `- Thu: Easy 3 ${distanceUnit}\n`;
+            }
+            prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 7 ${distanceUnit}\n\n`;
         }
-        prompt += `### Week 2 - XX ${distanceUnit}\n`;
-        prompt += `- Mon: Rest\n`;
-        prompt += `- Wed: [WORKOUT_ID: interval_VO2_MAX_2] 800m Intervals 6 ${distanceUnit}\n`;
-        if (bikeDays.includes('Thursday') && bikeType) {
-            prompt += `- Thu: Ride 3 RunEQ miles on your ${bikeType}\n`;
-        } else {
-            prompt += `- Thu: Easy 3 ${distanceUnit}\n`;
-        }
-        prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 7 ${distanceUnit}\n\n`;
 
         // Calculate taper weeks (last 2-3 weeks before race)
         const taperStartWeek = Math.max(totalWeeks - 2, 1);
@@ -742,14 +1122,45 @@ SEQUENCING RULES:
         
         prompt += `**REQUIREMENTS:**\n`;
         prompt += `- **CRITICAL: Generate EXACTLY ${totalWeeks} weeks (Week 1 through Week ${totalWeeks})**\n`;
-        prompt += `- Start conservatively (Week 1 long run ≤ ${profile.currentLongRun} ${distanceUnit})\n`;
-        prompt += `- Progressive overload (increase 1-2 ${distanceUnit}/week)\n`;
-        prompt += `- Recovery weeks every 3-4 weeks\n`;
-        prompt += `- **TAPER WEEKS (Weeks ${taperWeeks.join(', ')}):**\n`;
-        prompt += `  * Reduce volume by 30-50% compared to peak weeks\n`;
-        prompt += `  * Maintain intensity but reduce frequency (1 quality workout per week max)\n`;
-        prompt += `  * Long runs should be 50-60% of peak long run distance\n`;
-        prompt += `  * Week ${totalWeeks} (race week): Minimal volume, easy runs only, no hard workouts\n`;
+        
+        if (profile.runningStatus === 'crossTrainingOnly') {
+            // Cross-training only progression
+            prompt += `- **LONG SESSION PROGRESSION (STRICT - using selected equipment):**\n`;
+            prompt += `  * Week 1: Start with 30-45 minutes (easy effort)\n`;
+            prompt += `  * Week 2+: Increase by 5-10 minutes per week MAXIMUM (no jumps of 15+ minutes)\n`;
+            prompt += `  * Example: Week 1 = 30-45 min, Week 2 = 40-55 min, Week 3 = 50-65 min\n`;
+            prompt += `  * Recovery weeks: Reduce by 10-15 minutes (not more than 20 minutes)\n`;
+            prompt += `  * Peak long sessions: 60-90 minutes (depending on equipment and fitness)\n`;
+            prompt += `- **WEEKLY TIME PROGRESSION (STRICT):**\n`;
+            prompt += `  * Week 1: Start with 2-3 hours total per week\n`;
+            prompt += `  * Week 2+: Increase by 10-15% OR 15-30 minutes per week MAXIMUM\n`;
+            prompt += `  * Example: Week 1 = 2-3 hours, Week 2 = 2.5-3.5 hours, Week 3 = 3-4 hours\n`;
+            prompt += `  * Recovery weeks: Reduce by 20-30% (not more than 50%)\n`;
+            prompt += `- Recovery weeks every 3-4 weeks\n`;
+            prompt += `- **TAPER WEEKS (Weeks ${taperWeeks.join(', ')}):**\n`;
+            prompt += `  * Reduce volume by 30-50% compared to peak weeks\n`;
+            prompt += `  * Maintain intensity but reduce frequency (1 quality workout per week max)\n`;
+            prompt += `  * Long sessions should be 50-60% of peak long session duration\n`;
+            prompt += `  * Week ${totalWeeks} (race week): Minimal volume, easy cross-training only, no hard workouts\n`;
+        } else {
+            // Normal running progression
+            prompt += `- **LONG RUN PROGRESSION (STRICT):**\n`;
+            prompt += `  * Week 1: AT OR BELOW current long run (${profile.currentLongRun} ${distanceUnit}) - do NOT exceed\n`;
+            prompt += `  * Week 2+: Increase by 1-2 ${distanceUnit} per week MAXIMUM (no jumps of 3+ ${distanceUnit})\n`;
+            prompt += `  * Example: Week 1 = ${profile.currentLongRun} ${distanceUnit}, Week 2 = ${parseInt(profile.currentLongRun) + 1}-${parseInt(profile.currentLongRun) + 2} ${distanceUnit}, Week 3 = ${parseInt(profile.currentLongRun) + 2}-${parseInt(profile.currentLongRun) + 4} ${distanceUnit}\n`;
+            prompt += `  * Recovery weeks: Reduce long run by 1-2 ${distanceUnit} (not more than 3 ${distanceUnit})\n`;
+            prompt += `- **WEEKLY MILEAGE PROGRESSION (STRICT):**\n`;
+            prompt += `  * Week 1: Start at or near current weekly mileage (${profile.currentWeeklyMileage} ${distanceUnit})\n`;
+            prompt += `  * Week 2+: Increase by 10% OR 2-3 ${distanceUnit} per week MAXIMUM (no jumps of 5+ ${distanceUnit})\n`;
+            prompt += `  * Example: Week 1 = ${profile.currentWeeklyMileage} ${distanceUnit}, Week 2 = ${parseInt(profile.currentWeeklyMileage) + 2}-${parseInt(profile.currentWeeklyMileage) + 3} ${distanceUnit}\n`;
+            prompt += `  * Recovery weeks: Reduce by 20-30% (not more than 50%)\n`;
+            prompt += `- Recovery weeks every 3-4 weeks\n`;
+            prompt += `- **TAPER WEEKS (Weeks ${taperWeeks.join(', ')}):**\n`;
+            prompt += `  * Reduce volume by 30-50% compared to peak weeks\n`;
+            prompt += `  * Maintain intensity but reduce frequency (1 quality workout per week max)\n`;
+            prompt += `  * Long runs should be 50-60% of peak long run distance\n`;
+            prompt += `  * Week ${totalWeeks} (race week): Minimal volume, easy runs only, no hard workouts\n`;
+        }
         prompt += `- Include week header with mileage for each week\n`;
         prompt += `- Brief "Notes" for each week explaining focus\n`;
         prompt += `- Week ${totalWeeks} should end on or just before the race date (${profile.raceDate})\n`;
@@ -956,10 +1367,10 @@ SEQUENCING RULES:
     }
 
     /**
-     * Build coaching prompt from user profile
+     * Build coaching prompt for REGULAR runners (not injured)
      * CRITICAL: No defaults - all data must come from user profile
      */
-    buildCoachingPrompt(profile) {
+    buildRegularRunnerCoachingPrompt(profile) {
         // Validate required fields - no defaults allowed
         if (!profile.raceDistance) {
             throw new Error('Missing required field: raceDistance');
@@ -993,15 +1404,27 @@ SEQUENCING RULES:
             day: 'numeric'
         });
 
+        // CRITICAL: Use actual start date from profile (may be adjusted if today is a rest day)
+        // Must be defined BEFORE it's used in daysInWeek1Coaching calculation
+        const startDateCoaching = profile.startDate ? new Date(profile.startDate + 'T00:00:00') : today;
+        const startDateFormattedCoaching = startDateCoaching.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+
         // Calculate start day info for partial Week 1
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const dayAbbrevs = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const startDayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
         const startDayName = dayNames[startDayOfWeek];
         const startDayAbbrev = dayAbbrevs[startDayOfWeek];
+        const startDayOfWeekCoaching = startDateCoaching.getDay();
+        const startDayNameCoaching = dayNames[startDayOfWeekCoaching];
 
-        // Days remaining in Week 1 (from start day through Sunday)
-        const daysInWeek1 = startDayOfWeek === 0 ? 7 : (7 - startDayOfWeek + 1); // +1 to include Sunday
+        // Days remaining in Week 1 (from start day through Sunday) - use coaching start date
+        const daysInWeek1Coaching = startDayOfWeekCoaching === 0 ? 1 : (7 - startDayOfWeekCoaching + 1);
         const week1Days = [];
         for (let i = startDayOfWeek; i <= 6; i++) {
             week1Days.push(dayAbbrevs[i]);
@@ -1021,9 +1444,40 @@ SEQUENCING RULES:
         // Extract first name for personalization - only if explicitly provided
         const fullName = profile.name || profile.displayName;
         const firstName = fullName ? fullName.split(' ')[0] : null;
-
-        let prompt = `Today is ${todayFormatted} (${startDayName}). Please create a training plan for me:\n\n`;
+        
+        // CRITICAL: Calculate total weeks from start date to race date for coaching analysis
+        const raceDateObj = new Date(profile.raceDate);
+        const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+        const totalWeeks = Math.ceil((raceDateObj.getTime() - startDateCoaching.getTime()) / msPerWeek);
+        
+        // Format race date for display
+        const raceDateFormatted = raceDateObj.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        
+        // Calculate approximate months (for comparison, to tell AI NOT to use this)
+        const monthsApprox = Math.round((raceDateObj.getTime() - startDateCoaching.getTime()) / (30.44 * 24 * 60 * 60 * 1000));
+        
+        let prompt = `The training plan starts on ${startDateFormattedCoaching} (${startDayNameCoaching}). Please create a training plan for me:\n\n`;
         prompt += `**IMPORTANT: All distances should be in ${distanceUnit}. The user is using ${units} units.**\n\n`;
+        // Calculate exact days for clarity
+        const daysBetween = Math.ceil((raceDateObj.getTime() - startDateCoaching.getTime()) / (24 * 60 * 60 * 1000));
+        const monthsBetween = Math.round(daysBetween / 30.44);
+        console.log(`📅 DATE CALCULATION: Start=${startDateFormattedCoaching}, Race=${raceDateFormatted}, Days=${daysBetween}, Weeks=${totalWeeks}, Months=${monthsBetween}`);
+        
+        prompt += `**🚨🚨🚨 CRITICAL - PLAN DURATION AND RACE DATE 🚨🚨🚨**\n`;
+        prompt += `**CALCULATION:** From ${startDateFormattedCoaching} to ${raceDateFormatted} = ${daysBetween} days = EXACTLY ${totalWeeks} weeks (${monthsBetween} months)\n`;
+        prompt += `- **START DATE:** ${startDateFormattedCoaching} (${profile.startDate})\n`;
+        prompt += `- **RACE DATE:** ${raceDateFormatted} (${profile.raceDate})\n`;
+        prompt += `- **EXACT DURATION:** ${daysBetween} days = EXACTLY ${totalWeeks} weeks\n`;
+        prompt += `- **🚨🚨🚨 YOU MUST SAY:** "${totalWeeks} weeks" when describing the plan duration. DO NOT say "a year", "10 months", "30 weeks", or any other duration.\n`;
+        prompt += `- **🚨🚨🚨 CHECKPOINTS:** All checkpoints MUST be between Week 1 and Week ${totalWeeks} ONLY.\n`;
+        prompt += `  * For a ${totalWeeks}-week plan, example checkpoints: Week ${Math.max(4, Math.floor(totalWeeks * 0.3))}, Week ${Math.floor(totalWeeks * 0.6)}, Week ${Math.floor(totalWeeks * 0.85)}\n`;
+        prompt += `  * DO NOT create checkpoints at Week 8, 16, 24, 30, etc. if the plan is only ${totalWeeks} weeks long.\n`;
+        prompt += `  * The plan ends at Week ${totalWeeks}, so ALL checkpoints must be BEFORE Week ${totalWeeks}.\n\n`;
 
         // Add personalization instruction if we have a name
         if (firstName) {
@@ -1045,6 +1499,9 @@ SEQUENCING RULES:
             prompt += `- Course Terrain: ${terrainDescriptions[profile.raceElevationProfile] || profile.raceElevationProfile}\n`;
         }
         prompt += `\n`;
+
+        // NOTE: Injury logic is now handled in buildInjuredRunnerCoachingPrompt()
+        // Regular runners should NOT have injury information in their prompt
 
         prompt += `**Current Fitness:**\n`;
         prompt += `- Weekly Mileage: ${profile.currentWeeklyMileage} ${distanceUnit}\n`;
@@ -1180,9 +1637,9 @@ SEQUENCING RULES:
         };
 
         // Example Week 1 - PARTIAL (only days from start day to Sunday)
-        let exampleWeek1 = `### Week 1 (${todayFormatted.split(',')[0]}) - ${daysInWeek1 * 3} miles (PARTIAL WEEK - starts ${startDayName})\n`;
+        let exampleWeek1 = `### Week 1 (${startDateFormattedCoaching.split(',')[0]}) - ${daysInWeek1Coaching * 3} miles (PARTIAL WEEK - starts ${startDayNameCoaching})\n`;
         let qIdx = 0;
-        for (let i = startDayOfWeek; i <= 6; i++) { // startDayOfWeek to Saturday (6)
+        for (let i = startDayOfWeekCoaching; i <= 6; i++) { // startDayOfWeekCoaching to Saturday (6)
             exampleWeek1 += getWorkoutForDay(dayAbbrevs[i], dayNames[i], qIdx);
             if (qualityDays.includes(dayNames[i])) qIdx++;
         }
@@ -1226,7 +1683,7 @@ SEQUENCING RULES:
 
         prompt += `EVERY week MUST include:\n`;
         prompt += `1. Week header with week number, date range, and total mileage\n`;
-        prompt += `2. Week 1: Only ${startDayAbbrev}-Sun (${daysInWeek1} days). Week 2+: Full Mon-Sun (7 days)\n`;
+        prompt += `2. Week 1: Only ${dayAbbrevs[startDayOfWeekCoaching]}-Sun (${daysInWeek1Coaching} days). Week 2+: Full Mon-Sun (7 days)\n`;
         prompt += `3. [WORKOUT_ID: ...] format for quality workouts from the library\n`;
         prompt += `4. **CRITICAL: Include distance in ${distanceUnit} for EVERY workout** (e.g., "Long Run 10 miles", "Tempo Run 6 miles")\n`;
         prompt += `5. Simple descriptions for easy runs and rest days (must include distance)\n`;
@@ -1235,24 +1692,35 @@ SEQUENCING RULES:
         }
         prompt += `\n`;
 
-        prompt += `**PROGRESSIVE TRAINING PRINCIPLES:**\n`;
-        prompt += `1. **Week 1 MUST start conservatively:** First long run should be AT OR BELOW current long run distance (${profile.currentLongRun} ${distanceUnit})\n`;
-        prompt += `2. Increase long run by 1-2 ${distanceUnit} per week, with recovery weeks every 3-4 weeks\n`;
-        prompt += `3. Build from current fitness level (${profile.currentWeeklyMileage} ${distanceUnit}/week) - don't jump more than 10% weekly\n\n`;
+        prompt += `**PROGRESSIVE TRAINING PRINCIPLES (STRICT):**\n`;
+        prompt += `1. **Week 1 MUST start conservatively:** First long run should be AT OR BELOW current long run distance (${profile.currentLongRun} ${distanceUnit}) - DO NOT EXCEED\n`;
+        prompt += `2. **LONG RUN PROGRESSION (STRICT):** Increase by 1-2 ${distanceUnit} per week MAXIMUM - NO JUMPS OF 3+ ${distanceUnit}\n`;
+        prompt += `   Example: Week 1 = ${profile.currentLongRun} ${distanceUnit}, Week 2 = ${parseInt(profile.currentLongRun) + 1}-${parseInt(profile.currentLongRun) + 2} ${distanceUnit}, Week 3 = ${parseInt(profile.currentLongRun) + 2}-${parseInt(profile.currentLongRun) + 4} ${distanceUnit}\n`;
+        prompt += `3. **WEEKLY MILEAGE PROGRESSION (STRICT):** Build from current fitness (${profile.currentWeeklyMileage} ${distanceUnit}/week) - increase by 10% OR 2-3 ${distanceUnit} per week MAXIMUM - NO JUMPS OF 5+ ${distanceUnit}\n`;
+        prompt += `   Example: Week 1 = ${profile.currentWeeklyMileage} ${distanceUnit}, Week 2 = ${parseInt(profile.currentWeeklyMileage) + 2}-${parseInt(profile.currentWeeklyMileage) + 3} ${distanceUnit}\n`;
+        prompt += `4. Recovery weeks every 3-4 weeks (reduce long run by 1-2 ${distanceUnit}, reduce weekly mileage by 20-30%)\n\n`;
 
-        // CRITICAL: Calculate total weeks from today to race date
-        const raceDateObj = new Date(profile.raceDate);
-        const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-        const totalWeeks = Math.ceil((raceDateObj.getTime() - today.getTime()) / msPerWeek);
+        // Note: totalWeeks is already calculated earlier in this function (line 624)
 
+        // Format race date for display in prompt
+        const raceDateFormattedPlan = raceDateObj.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        
         prompt += `**OUTPUT REQUIREMENTS (Jason Fitzgerald voice):**\n`;
         prompt += `1. Honest assessment with data (e.g., "39 min improvement = 3 min/week")\n`;
         prompt += `2. Key training paces with ranges\n`;
         prompt += `3. Week-by-week plan: **EXACTLY ${totalWeeks} weeks** (Week 1 through Week ${totalWeeks}), header, all days, brief notes\n`;
-        prompt += `4. Race day strategy: pacing, fueling, terrain\n`;
-        prompt += `5. Checkpoints with metrics (e.g., "Week 8: 10K under 65:00")\n`;
+        prompt += `4. Race day strategy: pacing, fueling, terrain (race date is ${raceDateFormattedPlan})\n`;
+        prompt += `5. Checkpoints with metrics (e.g., "Week 8: 10K under 65:00") - ALL checkpoints must be Week 1 through Week ${totalWeeks}, NO checkpoints beyond Week ${totalWeeks}\n`;
         prompt += `6. Final notes: why plan works, what to watch, encouragement\n`;
-        prompt += `**CRITICAL: The week-by-week plan must be exactly ${totalWeeks} weeks long. Do not generate more or fewer weeks.**\n\n`;
+        prompt += `**CRITICAL:**\n`;
+        prompt += `- The week-by-week plan must be exactly ${totalWeeks} weeks long (Week 1 through Week ${totalWeeks})\n`;
+        prompt += `- The race date is ${raceDateFormattedPlan} (${profile.raceDate}) - DO NOT mention a different date like "Feb 15"\n`;
+        prompt += `- All checkpoints must be between Week 1 and Week ${totalWeeks} (no Week 16, Week 20, etc. if plan is only ${totalWeeks} weeks)\n\n`;
 
         return prompt;
     }
@@ -1290,7 +1758,27 @@ SEQUENCING RULES:
         const totalWeeks = trainingPlan?.weeks?.length || 0;
         const weeksRemaining = totalWeeks - currentWeek + 1;
 
-        const prompt = `You are a USATF-certified running coach providing injury recovery guidance. Your coaching style is direct, honest, and encouraging - like Jason Fitzgerald.
+        const prompt = `You are a USATF-certified running coach with advanced knowledge of sports physiology and injury rehabilitation. 
+When working with injured runners, you MUST adopt a research-oriented, safety-first approach:
+
+**CRITICAL PROTOCOL - RESEARCH BEFORE RECOMMENDING:**
+1. **CONSIDER BIOMECHANICS FIRST:** Before recommending any equipment or workout, think through:
+   - What movements/muscles does this equipment engage?
+   - What are the biomechanical implications for this specific injury?
+   - Could this movement pattern aggravate the injury?
+   - What does sports medicine research say about this injury + equipment combination?
+
+2. **DRAW UPON YOUR KNOWLEDGE:** Consider established principles of:
+   - Sports physiology (how different activities affect the body)
+   - Biomechanics (movement patterns, joint loading, muscle engagement)
+   - Injury rehabilitation protocols (evidence-based safe/unsafe activities)
+   - Exercise science research (what the literature says)
+
+3. **SAFETY-FIRST:** When in doubt, choose the SAFEST option. It's better to be overly conservative 
+   than to risk aggravating an injury. Always explain the WHY behind recommendations.
+
+**YOUR COACHING STYLE:** Direct, honest, and encouraging - like Jason Fitzgerald, but with added 
+scientific rigor when dealing with injuries. Be conversational but evidence-based.
 
 INJURY RECOVERY SITUATION:
 - Runner: ${firstName ? firstName : 'The runner'}
@@ -1307,17 +1795,21 @@ ${equipmentList.map(eq => `- ${eq}`).join('\n')}
 TRAINING ADJUSTMENTS:
 - Training days reduced by: ${reduceTrainingDays} day${reduceTrainingDays !== 1 ? 's' : ''} during recovery
 
-COACHING REQUIREMENTS (Jason Fitzgerald voice):
+COACHING REQUIREMENTS:
 1. **Start with honest assessment**: "Let's be real - injuries happen, but here's how we'll handle this..."
-2. **Explain the strategy**: Why cross-training maintains fitness, what each equipment type does
+2. **Explain the strategy with biomechanical reasoning**: Why cross-training maintains fitness, what each equipment type does, 
+   and WHY certain equipment is safer for this injury (reference movement patterns, not just "it's safer")
 3. **Address mental aspect**: Staying motivated during injury, trust in the process
 4. **Set expectations**: What to expect when returning to running, how fitness may have changed
-5. **Provide specific guidance**: 
-   - Which equipment is best for maintaining running fitness
+5. **Provide specific, evidence-based guidance**: 
+   - Which equipment is best for maintaining running fitness AND why (biomechanical reasoning)
    - How to structure cross-training workouts
    - What to watch for when returning to running
+   - If any equipment could aggravate the injury, explain WHY and recommend safer alternatives
 6. **Race goal reality check**: How this affects the race goal, whether adjustments are needed
-7. **Encouragement**: End with confidence-building message
+7. **Safety reminder**: "If any activity causes pain, stop immediately and consult your healthcare provider"
+8. **Medical disclaimer**: Always include: "This is not medical advice. Consult your healthcare provider for injury diagnosis and treatment."
+9. **Encouragement**: End with confidence-building message
 
 Keep response to 200-250 words. Be conversational, direct, and actionable. Use the runner's name naturally if provided.`;
 
@@ -1486,12 +1978,23 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
             if (line.toLowerCase().includes('week')) {
                 console.log(`Line ${lineIndex} contains "week": "${line}"`);
             }
+            
+            // DEBUG: Log lines that might be workouts (contain day names)
+            const dayPattern = /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i;
+            if (dayPattern.test(line) && currentWeek && line.trim().length > 0 && !line.match(/^[\s#*]*Week/i)) {
+                console.log(`  🔍 Line ${lineIndex} might be a workout: "${line.substring(0, 100)}"`);
+            }
 
             // Detect week headers - can have markdown headers (###), bold (**), etc.
             // Format: "### Week 1 (dates) - XX miles" or "**Week 1** - XX miles" or "Week 1 - XX miles"
             // Also support "kilometers" for metric users
+            // Also support cross-training plans with hours: "Week 1 - Base Building Phase | ~2.5 hours total"
             // Match various dash types: hyphen (-), en-dash (–), em-dash (—)
-            const weekMatch = line.match(/^[\s#*]*Week\s+(\d+).*?[-–—]\s*(\d+)\s*(miles|kilometers|km|mi)/i);
+            // Make mileage optional for cross-training plans
+            const weekMatchWithMileage = line.match(/^[\s#*]*Week\s+(\d+).*?[-–—]\s*(\d+)\s*(miles|kilometers|km|mi)/i);
+            const weekMatchWithoutMileage = line.match(/^[\s#*]*Week\s+(\d+)(?:\s*\([^)]+\))?\s*[-–—]/i);
+            
+            let weekMatch = weekMatchWithMileage || weekMatchWithoutMileage;
             if (weekMatch) {
                 const weekNum = parseInt(weekMatch[1]);
                 console.log(`✅ REGEX MATCHED Week ${weekNum}!`);
@@ -1513,18 +2016,50 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 }
 
                 seenWeekNumbers.add(weekNum);
+                // For cross-training plans, mileage might not be specified - use 0 as placeholder
+                const mileage = weekMatchWithMileage ? parseInt(weekMatch[2]) : 0;
                 currentWeek = {
                     weekNumber: weekNum,
-                    totalMileage: parseInt(weekMatch[2]),
+                    totalMileage: mileage,
                     workouts: []
                 };
                 console.log(`Found Week ${weekNum} at line ${lineIndex}: ${line.substring(0, 80)}`);
             }
 
             // Detect workout lines with potential WORKOUT_ID
-            // Allow leading whitespace, bullets (-, *), and markdown formatting before day names
-            const workoutMatch = line.match(/^\s*[-*]*\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun):\s*(.+)/i);
+            // Allow leading whitespace, bullets (-, *), markdown formatting, and various separators
+            // Also support full day names (Monday, Tuesday, etc.) for flexibility
+            // Support formats like: "- Tue: workout", "Tue: workout", "**Tue:** workout", etc.
+            // More flexible regex to match various formats:
+            // - **Tue**: workout
+            // - Tue: workout  
+            // - **Tue** - workout
+            // - Tue - workout
+            const workoutMatch = line.match(/^\s*[-*\s]*\**\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\**\s*[:\-]\s*(.+)/i);
             if (workoutMatch && currentWeek) {
+                console.log(`  ✅ MATCHED workout line ${lineIndex}: "${line.substring(0, 80)}"`);
+                // Normalize day name to abbreviation for consistency, then convert to full name
+                const dayInput = workoutMatch[1];
+                const dayAbbrevMap = {
+                    'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 'Thursday': 'Thu',
+                    'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun',
+                    'Mon': 'Mon', 'Tue': 'Tue', 'Wed': 'Wed', 'Thu': 'Thu',
+                    'Fri': 'Fri', 'Sat': 'Sat', 'Sun': 'Sun'
+                };
+                const normalizedDayAbbrev = dayAbbrevMap[dayInput] || dayInput;
+                
+                // Convert to full day name for Dashboard compatibility
+                const dayAbbrevToFull = {
+                    'Mon': 'Monday',
+                    'Tue': 'Tuesday',
+                    'Wed': 'Wednesday',
+                    'Thu': 'Thursday',
+                    'Fri': 'Friday',
+                    'Sat': 'Saturday',
+                    'Sun': 'Sunday'
+                };
+                const fullDayName = dayAbbrevToFull[normalizedDayAbbrev] || normalizedDayAbbrev;
+                
                 const rawDescription = workoutMatch[2].trim();
 
                 // Extract workout ID if present: [WORKOUT_ID: type_category_index]
@@ -1554,7 +2089,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 }
 
                 currentWeek.workouts.push({
-                    day: workoutMatch[1],
+                    day: fullDayName, // Use full day name for Dashboard compatibility
                     description: cleanDescription,
                     originalDescription: originalDescription, // Store original for distance extraction
                     workoutId: idMatch ? idMatch[0] : null,
@@ -1562,7 +2097,8 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                     workoutCategory: idMatch ? idMatch[2] : null,
                     workoutIndex: idMatch ? parseInt(idMatch[3]) : null
                 });
-                console.log(`  Added workout: ${workoutMatch[1]} - ${cleanDescription.substring(0, 50)}`);
+                console.log(`  ✅ Added workout: ${fullDayName} - ${cleanDescription.substring(0, 50)}`);
+                console.log(`     Day abbreviation: ${workoutMatch[1]}, Full name: ${fullDayName}`);
             }
 
             // Extract paces - more flexible matching
@@ -1625,37 +2161,83 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
         console.log(`Parsed ${weeks.length} weeks:`, weeks.map(w => `Week ${w.weekNumber} (${w.totalMileage}mi, ${w.workouts.length} workouts)`));
         console.log(`Paces from AI text:`, paces);
 
-        // CRITICAL: Calculate proper VDOT-based structured paces from user's goal time
-        // The AI text paces are just for reference - we use PaceCalculator for actual training paces
+        // CRITICAL: Calculate progressive paces - start from CURRENT FITNESS, progress toward GOAL
+        // Use recent race time for current fitness, goal time for target
         let structuredPaces = null;
         let trackIntervals = null;
+        let currentFitnessPaces = null;
+        let goalPaces = null;
+        const totalWeeks = weeks.length;
 
+        // Step 1: Calculate CURRENT FITNESS paces from recent race time
+        if (userProfile.recentRaceTime && userProfile.recentRaceDistance) {
+            try {
+                let recentTime = userProfile.recentRaceTime;
+                // Handle format like "1:07:35" or "10K-1:07:35"
+                if (recentTime.includes('-')) {
+                    recentTime = recentTime.split('-').pop();
+                }
+
+                console.log(`📊 Calculating CURRENT FITNESS paces from ${userProfile.recentRaceDistance} @ ${recentTime}`);
+                const currentPaceData = this.paceCalculator.calculateFromGoal(userProfile.recentRaceDistance, recentTime);
+
+                if (currentPaceData && currentPaceData.paces) {
+                    currentFitnessPaces = currentPaceData;
+                    console.log(`✅ Current Fitness Paces:`, {
+                        easy: `${currentPaceData.paces.easy.min}-${currentPaceData.paces.easy.max}/mi`,
+                        threshold: `${currentPaceData.paces.threshold.pace}/mi`,
+                        interval: `${currentPaceData.paces.interval.pace}/mi`
+                    });
+                }
+            } catch (error) {
+                console.warn('⚠️ Could not calculate current fitness paces:', error.message);
+            }
+        }
+
+        // Step 2: Calculate GOAL paces from goal race time
         if (userProfile.raceTime && userProfile.raceDistance) {
             try {
-                // Extract time from format like "Half-1:45:00" or "1:45:00"
                 let goalTime = userProfile.raceTime;
                 if (goalTime.includes('-')) {
                     goalTime = goalTime.split('-')[1];
                 }
 
-                console.log(`📊 Calculating VDOT paces for ${userProfile.raceDistance} @ ${goalTime}`);
-                const vdotPaceData = this.paceCalculator.calculateFromGoal(userProfile.raceDistance, goalTime);
+                console.log(`🎯 Calculating GOAL paces for ${userProfile.raceDistance} @ ${goalTime}`);
+                const goalPaceData = this.paceCalculator.calculateFromGoal(userProfile.raceDistance, goalTime);
 
-                if (vdotPaceData && vdotPaceData.paces) {
-                    structuredPaces = vdotPaceData.paces;
-                    trackIntervals = vdotPaceData.trackIntervals;
-
-                    console.log(`✅ VDOT Paces calculated:`, {
-                        easy: `${structuredPaces.easy.min}-${structuredPaces.easy.max}/mi`,
-                        marathon: `${structuredPaces.marathon.pace}/mi`,
-                        threshold: `${structuredPaces.threshold.pace}/mi`,
-                        interval: `${structuredPaces.interval.pace}/mi`
+                if (goalPaceData && goalPaceData.paces) {
+                    goalPaces = goalPaceData;
+                    trackIntervals = goalPaceData.trackIntervals;
+                    console.log(`✅ Goal Paces:`, {
+                        easy: `${goalPaceData.paces.easy.min}-${goalPaceData.paces.easy.max}/mi`,
+                        threshold: `${goalPaceData.paces.threshold.pace}/mi`,
+                        interval: `${goalPaceData.paces.interval.pace}/mi`
                     });
                 }
             } catch (error) {
-                console.warn('⚠️ Could not calculate VDOT paces:', error.message);
-                // Fall back to AI-extracted paces (simple strings) if VDOT calculation fails
+                console.warn('⚠️ Could not calculate goal paces:', error.message);
             }
+        }
+
+        // Step 3: Use progressive pacing if we have both current and goal paces
+        if (currentFitnessPaces && goalPaces && totalWeeks > 1) {
+            console.log(`📈 Using PROGRESSIVE PACING: Week 1 = current fitness, Week ${totalWeeks} = near goal`);
+            // For Week 1, use current fitness paces (will be blended per week in enrichPlanWithWorkouts)
+            structuredPaces = currentFitnessPaces.paces;
+            // Store both for progressive blending
+            structuredPaces._progressive = {
+                current: currentFitnessPaces,
+                goal: goalPaces,
+                totalWeeks: totalWeeks
+            };
+        } else if (currentFitnessPaces) {
+            // Only current fitness available - use it
+            console.log(`📊 Using CURRENT FITNESS paces only (no goal paces available)`);
+            structuredPaces = currentFitnessPaces.paces;
+        } else if (goalPaces) {
+            // Only goal paces available - use them (fallback to old behavior)
+            console.warn(`⚠️ Using GOAL paces only (no recent race time provided) - this may be too aggressive`);
+            structuredPaces = goalPaces.paces;
         }
 
         console.log(`===================\n`);
@@ -1675,8 +2257,31 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
     enrichPlanWithWorkouts(structuredPlan) {
         console.log('\n🔍 ENRICHING WORKOUTS WITH LIBRARY DETAILS');
         const totalWeeks = structuredPlan.weeks.length;
+        
+        // Get progressive pacing data if available
+        const progressiveData = structuredPlan.paces?._progressive;
+        const hasProgressivePacing = progressiveData && progressiveData.current && progressiveData.goal;
+        
         const enrichedWeeks = structuredPlan.weeks.map(week => {
             const weekNumber = week.weekNumber || 1;
+            
+            // Calculate week-specific paces using progressive blending
+            let weekPaces = structuredPlan.paces;
+            if (hasProgressivePacing) {
+                const blendedPaces = this.paceCalculator.blendPaces(
+                    progressiveData.current,
+                    progressiveData.goal,
+                    weekNumber,
+                    totalWeeks
+                );
+                weekPaces = blendedPaces.paces;
+                console.log(`\n📊 Week ${weekNumber} Progressive Paces:`, {
+                    easy: `${weekPaces.easy.min}-${weekPaces.easy.max}/mi`,
+                    threshold: `${weekPaces.threshold.pace}/mi`,
+                    interval: `${weekPaces.interval.pace}/mi`
+                });
+            }
+            
             const enrichedWorkouts = week.workouts.map(workout => {
                 if (!workout.workoutId) {
                     return { ...workout, hasStructuredWorkout: false };
@@ -1706,7 +2311,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                         const rawWorkout = workouts[workout.workoutIndex];
                         if (rawWorkout) {
                             fullWorkout = this.hillLibrary.prescribeHillWorkout(rawWorkout.name, {
-                                paces: structuredPlan.paces
+                                paces: weekPaces
                             });
                         }
                     } else if (workout.workoutType === 'interval') {
@@ -1717,7 +2322,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                         if (rawWorkout) {
                             // Prescribe with distance to get specific rep count
                             fullWorkout = this.intervalLibrary.prescribeIntervalWorkout(rawWorkout.name, {
-                                paces: structuredPlan.paces,
+                                paces: weekPaces,
                                 trackIntervals: structuredPlan.trackIntervals,
                                 totalDistance: totalDistance,
                                 weekNumber: weekNumber,
@@ -1731,7 +2336,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                         const rawWorkout = workouts[workout.workoutIndex];
                         if (rawWorkout) {
                             fullWorkout = this.tempoLibrary.prescribeTempoWorkout(rawWorkout.name, {
-                                paces: structuredPlan.paces,
+                                paces: weekPaces,
                                 totalDistance: totalDistance,
                                 weekNumber: weekNumber,
                                 totalWeeks: totalWeeks
@@ -1745,7 +2350,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                         if (rawWorkout) {
                             // Prescribe with distance and paces to get personalized workout
                             fullWorkout = this.longRunLibrary.prescribeLongRunWorkout(rawWorkout.name, {
-                                paces: structuredPlan.paces,
+                                paces: weekPaces,
                                 distance: totalDistance
                             });
                         }
@@ -1753,7 +2358,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
 
                     if (fullWorkout) {
                         console.log(`    ✅ Found workout: ${fullWorkout.name}`);
-                        const enriched = this.injectUserPaces(fullWorkout, structuredPlan.paces);
+                        const enriched = this.injectUserPaces(fullWorkout, weekPaces);
                         
                         // CRITICAL: Ensure distance is preserved from AI's description
                         if (totalDistance && !enriched.distance) {
@@ -2001,6 +2606,13 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                     fallbackType = 'rest';
                 } else if (descLower.includes('ride') || descLower.includes('runeq') || descLower.includes('bike')) {
                     fallbackType = 'bike';
+                    // CRITICAL: For bike workouts, extract RunEQ miles (not convert to bike miles)
+                    // The AI generates "Ride 3 RunEQ miles" - we want to preserve the RunEQ value
+                    const runEqMatch = workout.description.match(/(\d+(?:\.\d+)?)\s*RunEQ/i);
+                    if (runEqMatch) {
+                        extractedDistance = parseFloat(runEqMatch[1]);
+                        console.log(`  📏 Extracted RunEQ distance: ${extractedDistance} RunEQ miles`);
+                    }
                 } else if (descLower.includes('easy')) {
                     fallbackType = 'easy';
                 } else if (descLower.includes('tempo')) {
@@ -2028,16 +2640,28 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 let cleanFallbackName = workout.description;
                 cleanFallbackName = cleanFallbackName.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/g, '').trim();
 
+                // CRITICAL: For bike workouts, preserve RunEQ in the name
+                let finalName = cleanFallbackName;
+                let finalDescription = cleanFallbackName;
+                if (fallbackType === 'bike' && workout.description.match(/RunEQ/i)) {
+                    // Preserve "RunEQ miles" in the name/description
+                    const runEqMatch = workout.description.match(/(\d+(?:\.\d+)?)\s*RunEQ\s*miles?/i);
+                    if (runEqMatch) {
+                        finalName = `Ride ${runEqMatch[1]} RunEQ miles`;
+                        finalDescription = workout.description; // Keep original description with RunEQ
+                    }
+                }
+                
                 const fallbackWorkout = {
                     day: workout.day,
                     type: fallbackType,
-                    name: cleanFallbackName,
-                    description: cleanFallbackName,
+                    name: finalName,
+                    description: finalDescription,
                     distance: extractedDistance,
                     focus: fallbackFocusMap[fallbackType] || 'Training', // Keep this fallback for safety, but type should be determined above
                     workout: {
-                        name: workout.description,
-                        description: workout.description
+                        name: finalName,
+                        description: finalDescription
                     },
                     metadata: {
                         aiGenerated: true,
