@@ -20,6 +20,18 @@ import logger from '../utils/logger';
 class TrainingPlanAIService {
     constructor() {
         // Use Firebase Functions to proxy Anthropic API calls (keeps API key secure)
+        
+        // Helper to parse date strings (handles both ISO strings and date-only strings)
+        this.parseDate = (dateString) => {
+            if (!dateString) return null;
+            if (dateString.includes('T')) {
+                // Already an ISO string
+                return new Date(dateString);
+            } else {
+                // Date-only string, append time
+                return new Date(`${dateString}T00:00:00`);
+            }
+        };
         // Function has 540s timeout, but client-side httpsCallable has default 60s timeout
         // We'll wrap calls with a custom timeout handler to allow up to 180 seconds
         this.callAnthropicAPI = httpsCallable(functions, 'callAnthropicAPI');
@@ -136,6 +148,64 @@ SEQUENCING RULES:
 - To replace an easy run → prefer Cyclete (running-specific)
 - User has both? Alternate based on previous day's muscle loading
 - Never schedule Cyclete day after hill repeats (quad overload)`;
+    }
+
+    /**
+     * Calculate structured phase blocks for a given plan length
+     */
+    getPhasePlan(totalWeeks) {
+        if (!totalWeeks || totalWeeks <= 0) {
+            return [{
+                phase: 'Base',
+                startWeek: 1,
+                endWeek: totalWeeks || 1
+            }];
+        }
+
+        // Calculate phase boundaries as percentages of total weeks
+        // Ensure at least 2 weeks for taper (race week + taper week)
+        const taperWeeks = Math.max(2, Math.ceil(totalWeeks * 0.1));
+        const trainingWeeks = totalWeeks - taperWeeks;
+        
+        // Distribute training weeks across Base, Build, Peak
+        const baseWeeks = Math.max(1, Math.round(trainingWeeks * 0.4));
+        const buildWeeks = Math.max(1, Math.round(trainingWeeks * 0.35));
+        const peakWeeks = Math.max(1, trainingWeeks - baseWeeks - buildWeeks); // Remaining weeks go to peak
+        
+        // Calculate cumulative week boundaries
+        const baseEnd = baseWeeks;
+        const buildEnd = baseEnd + buildWeeks;
+        const peakEnd = buildEnd + peakWeeks;
+        const taperEnd = totalWeeks;
+
+        const phases = [
+            { phase: 'Base', startWeek: 1, endWeek: baseEnd },
+            { phase: 'Build', startWeek: baseEnd + 1, endWeek: buildEnd },
+            { phase: 'Peak', startWeek: buildEnd + 1, endWeek: peakEnd },
+            { phase: 'Taper', startWeek: peakEnd + 1, endWeek: taperEnd }
+        ];
+
+        // Filter out invalid phases and log for debugging
+        const validPhases = phases.filter(block => block.startWeek <= block.endWeek);
+        console.log(`📊 Phase Plan for ${totalWeeks} weeks:`, validPhases.map(p => 
+            `${p.phase}: weeks ${p.startWeek}-${p.endWeek}`
+        ).join(', '));
+
+        return validPhases;
+    }
+
+    /**
+     * Get phase label for a specific week number
+     */
+    getPhaseForWeek(weekNumber, totalWeeks) {
+        const plan = this.getPhasePlan(totalWeeks);
+        const block = plan.find(phase => weekNumber >= phase.startWeek && weekNumber <= phase.endWeek);
+        const phase = block ? block.phase : 'Base';
+        if (!block) {
+            console.warn(`⚠️ No phase found for week ${weekNumber} of ${totalWeeks} weeks. Defaulting to Base.`);
+            console.log('Available phases:', plan);
+        }
+        return phase;
     }
 
     /**
@@ -622,7 +692,7 @@ SEQUENCING RULES:
         const fullName = profile.name || profile.displayName;
         const firstName = fullName ? fullName.split(' ')[0] : null;
         const today = new Date();
-        const startDateCoaching = profile.startDate ? new Date(profile.startDate + 'T00:00:00') : today;
+        const startDateCoaching = profile.startDate ? this.parseDate(profile.startDate) : today;
         const startDateFormattedCoaching = startDateCoaching.toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
@@ -632,7 +702,7 @@ SEQUENCING RULES:
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const startDayOfWeekCoaching = startDateCoaching.getDay();
         const startDayNameCoaching = dayNames[startDayOfWeekCoaching];
-        const raceDateObj = new Date(profile.raceDate);
+        const raceDateObj = this.parseDate(profile.raceDate);
         const msPerWeek = 7 * 24 * 60 * 60 * 1000;
         const totalWeeks = Math.ceil((raceDateObj.getTime() - startDateCoaching.getTime()) / msPerWeek);
         const raceDateFormatted = raceDateObj.toLocaleDateString('en-US', {
@@ -805,7 +875,7 @@ SEQUENCING RULES:
     buildRegularRunnerPlanStructurePrompt(profile, coachingAnalysis) {
         // CRITICAL: Use actual start date from profile (may be adjusted if today is a rest day)
         // If no startDate in profile, fall back to today
-        const startDate = profile.startDate ? new Date(profile.startDate + 'T00:00:00') : new Date();
+        const startDate = profile.startDate ? this.parseDate(profile.startDate) : new Date();
         const today = new Date(); // Keep for reference/comparison
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const dayAbbrevs = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -820,9 +890,10 @@ SEQUENCING RULES:
         const restDays = profile.restDays || [];
 
         // CRITICAL: Calculate total weeks from start date to race date
-        const raceDateObj = new Date(profile.raceDate);
+        const raceDateObj = this.parseDate(profile.raceDate);
         const msPerWeek = 7 * 24 * 60 * 60 * 1000;
         const totalWeeks = Math.ceil((raceDateObj.getTime() - startDate.getTime()) / msPerWeek);
+        const phasePlan = this.getPhasePlan(totalWeeks);
         
         // Format start date for the prompt (this is when Week 1 actually starts)
         const startDateFormatted = startDate.toLocaleDateString('en-US', {
@@ -884,6 +955,15 @@ SEQUENCING RULES:
         prompt += `**DO NOT generate more than ${totalWeeks} weeks. The plan must be exactly ${totalWeeks} weeks long, ending on the race date.**\n`;
         prompt += `**CRITICAL: Week 1 starts on ${startDateFormatted} (${startDayName}), NOT today or any other date. Use the actual date range shown above.**\n\n`;
 
+        prompt += `**PHASE PLAN (use these exact labels in every week header):**\n`;
+        phasePlan.forEach(block => {
+            const rangeLabel = block.startWeek === block.endWeek
+                ? `Week ${block.startWeek}`
+                : `Weeks ${block.startWeek}-${block.endWeek}`;
+            prompt += `- ${rangeLabel}: ${block.phase} Phase\n`;
+        });
+        prompt += `Always reference the correct phase for each week. Example: "### Week 8 (Jan 12 - Jan 18) • Build Phase • 32 miles".\n\n`;
+
         prompt += `**CRITICAL FORMAT:**\n`;
         if (startDayOfWeek === 0) {
             // Starting on Sunday - Week 1 is ONLY Sunday
@@ -899,6 +979,15 @@ SEQUENCING RULES:
         prompt += `  * "Classic Hill Repeats 6 miles" (NOT "[WORKOUT_ID: hill_medium_vo2_0] Classic Hill Repeats 6 miles")\n`;
         prompt += `  * "Classic Tempo Run 6 miles" (NOT "[WORKOUT_ID: tempo_TRADITIONAL_TEMPO_0] Classic Tempo Run 6 miles")\n`;
         prompt += `  The system will automatically match workouts using the library, but users should see clean, readable names.\n`;
+        prompt += `- If you start to type "[WORKOUT_ID:" in the visible text, DELETE it entirely before responding.\n\n`;
+
+        prompt += `**RESPONSE RULES (follow 100%):**\n`;
+        prompt += `1. Begin with "# Week-by-Week Training Schedule" – absolutely no introduction or recap before this header.\n`;
+        prompt += `2. Write the schedule ONCE. Do not repeat weeks, do not restate the plan after the schedule, and do not add narrative sections besides the final Notes block.\n`;
+        prompt += `3. Each week header MUST be "### Week {number} (MMM DD - MMM DD) • {Phase} Phase • XX miles". Use the phase plan above for the {Phase} label.\n`;
+        prompt += `4. List days Monday → Sunday (or the actual Week 1 partial sequence) with one bullet per day. No paragraphs, no combined days.\n`;
+        prompt += `5. After Week ${totalWeeks}, add "## Notes" with 2-3 concise bullets (checkpoint reminders, fueling, etc.). Do NOT introduce new workouts there.\n`;
+        prompt += `6. Never include [WORKOUT_ID: ...] in visible text, never say "see above", and never paste the plan twice.\n\n`;
         
         // CRITICAL: Add hard workout days requirement
         if (profile.qualityDays && profile.qualityDays.length > 0) {
@@ -999,119 +1088,33 @@ SEQUENCING RULES:
         
         prompt += `\n`;
 
-        prompt += `**EXAMPLE FORMAT:**\n`;
+        prompt += `**EXAMPLE FORMAT (structure only – replace with real data):**\n`;
         const week1StartDate = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const exampleWeek2Start = new Date(startDate);
+        const daysUntilWeekTwo = startDayOfWeek === 0 ? 1 : (7 - startDayOfWeek + 1);
+        exampleWeek2Start.setDate(startDate.getDate() + daysUntilWeekTwo);
+        const exampleWeek2End = new Date(exampleWeek2Start);
+        exampleWeek2End.setDate(exampleWeek2Start.getDate() + 6);
+        const week2StartFormatted = exampleWeek2Start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const week2EndFormatted = exampleWeek2End.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const exampleBikeName = bikeType || (profile.standUpBikeType === 'elliptigo' ? 'ElliptiGO' : 'stand-up bike');
         
-        // Show cross-training examples if user can't run
-        if (profile.runningStatus === 'crossTrainingOnly') {
-            // Build available equipment list for this function
-            const availableEquipment = [];
-            if (profile.standUpBikeType) {
-                const bikeName = profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO';
-                availableEquipment.push(bikeName);
-            }
-            if (profile.crossTrainingEquipment) {
-                if (profile.crossTrainingEquipment.pool) availableEquipment.push('pool/aqua running');
-                if (profile.crossTrainingEquipment.rowing) availableEquipment.push('rowing machine');
-                if (profile.crossTrainingEquipment.elliptical) availableEquipment.push('elliptical');
-                if (profile.crossTrainingEquipment.stationaryBike) availableEquipment.push('stationary bike');
-                if (profile.crossTrainingEquipment.swimming) availableEquipment.push('swimming');
-                if (profile.crossTrainingEquipment.walking) availableEquipment.push('walking');
-            }
-            
-            const exampleEquipment = profile.standUpBikeType 
-                ? (profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO')
-                : (profile.crossTrainingEquipment?.pool ? 'pool/aqua running' :
-                   profile.crossTrainingEquipment?.walking ? 'walking' :
-                   profile.crossTrainingEquipment?.elliptical ? 'elliptical' :
-                   'cross-training');
-            
-            if (startDayOfWeek === 0) {
-                prompt += `### Week 1 (${week1StartDate} only) - Cross-Training Only\n`;
-                if (profile.standUpBikeType) {
-                    prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${exampleEquipment}\n`;
-                } else if (profile.crossTrainingEquipment?.walking) {
-                    prompt += `- ${startDayAbbrev}: Walk 30 minutes\n`;
-                } else {
-                    prompt += `- ${startDayAbbrev}: ${exampleEquipment} 30 minutes\n`;
-                }
-                prompt += `\n`;
-            } else {
-                prompt += `### Week 1 (${week1StartDate} - ${week1EndFormatted}) - Cross-Training Only\n`;
-                if (profile.standUpBikeType) {
-                    prompt += `- ${startDayAbbrev}: Tempo ride on your ${exampleEquipment} 30 minutes\n`;
-                    prompt += `- Sun: Long ride on your ${exampleEquipment} 60 minutes\n`;
-                } else if (profile.crossTrainingEquipment?.walking) {
-                    prompt += `- ${startDayAbbrev}: Walk 30 minutes\n`;
-                    prompt += `- Sun: Long walk 60 minutes\n`;
-                } else {
-                    prompt += `- ${startDayAbbrev}: Tempo ${exampleEquipment} 30 minutes\n`;
-                    prompt += `- Sun: Long ${exampleEquipment} session 60 minutes\n`;
-                }
-                prompt += `\n`;
-            }
-            prompt += `### Week 2 - Cross-Training Only\n`;
-            prompt += `- Mon: Rest\n`;
-            // Show example with multiple equipment types if available
-            if (availableEquipment.length > 1) {
-                prompt += `- Tue: Easy ride on your ${profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} 30 minutes\n`;
-                if (profile.crossTrainingEquipment?.pool) {
-                    prompt += `- Wed: Aqua run 30 minutes\n`;
-                } else if (profile.crossTrainingEquipment?.elliptical) {
-                    prompt += `- Wed: Elliptical 30 minutes\n`;
-                } else if (profile.crossTrainingEquipment?.rowing) {
-                    prompt += `- Wed: Row 30 minutes\n`;
-                } else {
-                    prompt += `- Wed: Interval ride on your ${profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} 30 minutes\n`;
-                }
-                prompt += `- Thu: Easy ride on your ${profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} 20 minutes\n`;
-                prompt += `- Sun: Long ride on your ${profile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} 70 minutes\n`;
-                prompt += `\n`;
-                prompt += `**Note:** Rotate through ALL equipment types (${availableEquipment.join(', ')}) throughout the plan, not just one type.\n`;
-            } else if (profile.standUpBikeType) {
-                prompt += `- Wed: Interval ride on your ${exampleEquipment} 30 minutes\n`;
-                prompt += `- Thu: Easy ride on your ${exampleEquipment} 20 minutes\n`;
-                prompt += `- Sun: Long ride on your ${exampleEquipment} 70 minutes\n`;
-            } else if (profile.crossTrainingEquipment?.walking) {
-                prompt += `- Wed: Walk 30 minutes\n`;
-                prompt += `- Thu: Walk 20 minutes\n`;
-                prompt += `- Sun: Long walk 60 minutes\n`;
-            } else {
-                prompt += `- Wed: Interval ${exampleEquipment} 30 minutes\n`;
-                prompt += `- Thu: Easy ${exampleEquipment} 20 minutes\n`;
-                prompt += `- Sun: Long ${exampleEquipment} session 60 minutes\n`;
-            }
-            prompt += `\n`;
-        } else {
-            // Normal running examples
-            if (startDayOfWeek === 0) {
-                // Starting on Sunday - Week 1 is ONLY Sunday
-                prompt += `### Week 1 (${week1StartDate} only) - XX ${distanceUnit}\n`;
-                if (bikeDays.includes(startDayName) && bikeType) {
-                    prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
-                } else {
-                    prompt += `- ${startDayAbbrev}: Easy 3 ${distanceUnit}\n`;
-                }
-                prompt += `\n`;
-            } else {
-                prompt += `### Week 1 (${week1StartDate} - ${week1EndFormatted}) - XX ${distanceUnit}\n`;
-                if (bikeDays.includes(startDayName) && bikeType) {
-                    prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${bikeType}\n`;
-                } else {
-                    prompt += `- ${startDayAbbrev}: [WORKOUT_ID: tempo_THRESHOLD_0] Tempo Run 6 ${distanceUnit}\n`;
-                }
-                prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 5 ${distanceUnit}\n\n`;
-            }
-            prompt += `### Week 2 - XX ${distanceUnit}\n`;
-            prompt += `- Mon: Rest\n`;
-            prompt += `- Wed: [WORKOUT_ID: interval_VO2_MAX_2] 800m Intervals 6 ${distanceUnit}\n`;
-            if (bikeDays.includes('Thursday') && bikeType) {
-                prompt += `- Thu: Ride 3 RunEQ miles on your ${bikeType}\n`;
-            } else {
-                prompt += `- Thu: Easy 3 ${distanceUnit}\n`;
-            }
-            prompt += `- Sun: [WORKOUT_ID: longrun_CONVERSATIONAL_0] Long Run 7 ${distanceUnit}\n\n`;
-        }
+        prompt += `# Week-by-Week Training Schedule\n`;
+        prompt += `### Week 1 (${startDayOfWeek === 0 ? week1StartDate : `${week1StartDate} - ${week1EndFormatted}`}) • Base Phase • 16 miles\n`;
+        prompt += `- ${startDayAbbrev}: Ride 3 RunEQ miles on your ${exampleBikeName} (easy aerobic)\n`;
+        prompt += `- Wed: Classic Tempo Run 5 miles (2 mi warmup, 1.5 mi @ tempo, 1.5 mi cooldown)\n`;
+        prompt += `- Thu: Ride 3 RunEQ miles on your ${exampleBikeName} (recovery spin)\n`;
+        prompt += `- Fri: Hill Strides 4 miles (warmup, 6x30sec hills, cooldown)\n`;
+        prompt += `- Sun: Classic Easy Long Run 6 miles (conversational)\n`;
+        prompt += `### Week 2 (${week2StartFormatted} - ${week2EndFormatted}) • Base Phase • 19 miles\n`;
+        prompt += `- Mon: Rest\n`;
+        prompt += `- Tue: Ride 3 RunEQ miles on your ${exampleBikeName} (easy flush)\n`;
+        prompt += `- Wed: 800m Track Intervals 6 miles (2 mi warmup, 6x800m @ VO2 pace, 2 mi cooldown)\n`;
+        prompt += `- Thu: Ride 4 RunEQ miles on your ${exampleBikeName} (steady aerobic)\n`;
+        prompt += `- Fri: Classic Tempo Run 5 miles (1 mi warmup, 3 mi @ tempo, 1 mi cooldown)\n`;
+        prompt += `- Sun: Classic Easy Long Run 7 miles (build endurance)\n`;
+        prompt += `## Notes\n`;
+        prompt += `- Follow this structure exactly, swap in real dates/mileage/phases, and only write ONE complete schedule followed by concise notes.\n\n`;
 
         // Calculate taper weeks (last 2-3 weeks before race)
         const taperStartWeek = Math.max(totalWeeks - 2, 1);
@@ -1231,7 +1234,7 @@ SEQUENCING RULES:
         const dayAbbrevs = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         
         // Get the date of the current week's start (Monday of that week)
-        const raceDateObj = new Date(raceDate);
+        const raceDateObj = this.parseDate(raceDate);
         const msPerWeek = 7 * 24 * 60 * 60 * 1000;
         const planStartDate = new Date(raceDateObj.getTime() - (totalWeeks * msPerWeek));
         const currentWeekStartDate = new Date(planStartDate.getTime() + ((currentWeek - 1) * msPerWeek));
@@ -1446,7 +1449,7 @@ SEQUENCING RULES:
         const firstName = fullName ? fullName.split(' ')[0] : null;
         
         // CRITICAL: Calculate total weeks from start date to race date for coaching analysis
-        const raceDateObj = new Date(profile.raceDate);
+        const raceDateObj = this.parseDate(profile.raceDate);
         const msPerWeek = 7 * 24 * 60 * 60 * 1000;
         const totalWeeks = Math.ceil((raceDateObj.getTime() - startDateCoaching.getTime()) / msPerWeek);
         
@@ -2457,6 +2460,91 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
      */
     transformToDashboardFormat(enrichedPlan, userProfile) {
         console.log('\n🔧 TRANSFORMING TO DASHBOARD FORMAT');
+        const totalWeeks = enrichedPlan.weeks.length;
+        const phasePlan = this.getPhasePlan(totalWeeks);
+        const phaseFocusMap = {
+            Base: 'Aerobic foundation & durability',
+            Build: 'Strength & speed development',
+            Peak: 'Race-specific sharpening',
+            Taper: 'Freshen up & execute'
+        };
+        const motivationMap = {
+            Base: [
+                'Consistency right now builds race-day confidence 💪',
+                'Aerobic base today = faster workouts later ⚙️',
+                'Keep stacking easy miles – durability wins 🧱',
+                'Recovery matters as much as the miles 😴'
+            ],
+            Build: [
+                'Dial in effort – smooth, fast, controlled 🚀',
+                'This phase teaches you to love the grind 🔁',
+                'Every quality day is sharpening your edge ✂️',
+                'Fuel, sleep, repeat – you’re in the work zone 🧪'
+            ],
+            Peak: [
+                'Race-specific work now = calm on race day 🏁',
+                'Trust your legs – they know what to do 👣',
+                'Two words: race rehearsals 🧠',
+                'Your engine is built. Now we fine tune 🔧'
+            ],
+            Taper: [
+                'Less work, more readiness – let freshness build 🌱',
+                'Nothing new. Stay sharp, stay calm 🎯',
+                'Visualize success – you’ve earned this 💫',
+                'Rest is training. Really. 😴'
+            ]
+        };
+        // Parse start date - handle both ISO strings and date-only strings
+        let planStartDate;
+        if (userProfile.startDate) {
+            if (userProfile.startDate.includes('T')) {
+                // Already an ISO string
+                planStartDate = new Date(userProfile.startDate);
+            } else {
+                // Date-only string, append time
+                planStartDate = new Date(`${userProfile.startDate}T00:00:00`);
+            }
+        } else {
+            planStartDate = new Date();
+        }
+        
+        // Parse race date - handle both ISO strings and date-only strings
+        let raceDate;
+        if (userProfile.raceDate) {
+            if (userProfile.raceDate.includes('T')) {
+                // Already an ISO string
+                raceDate = new Date(userProfile.raceDate);
+            } else {
+                // Date-only string, append time
+                raceDate = new Date(`${userProfile.raceDate}T00:00:00`);
+            }
+        } else {
+            raceDate = new Date(planStartDate);
+        }
+        
+        // Validate dates
+        if (isNaN(planStartDate.getTime())) {
+            throw new Error(`Invalid start date: ${userProfile.startDate}`);
+        }
+        if (isNaN(raceDate.getTime())) {
+            throw new Error(`Invalid race date: ${userProfile.raceDate}`);
+        }
+        const formatWeekDates = (weekNumber) => {
+            const start = new Date(planStartDate);
+            start.setDate(planStartDate.getDate() + (weekNumber - 1) * 7);
+            const end = new Date(start);
+            end.setDate(start.getDate() + 6);
+            return {
+                start: start.toISOString().split('T')[0],
+                end: end.toISOString().split('T')[0],
+                displayText: `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+            };
+        };
+        const getMotivation = (phase, weekNumber) => {
+            const options = motivationMap[phase] || motivationMap.Base;
+            return options[(weekNumber - 1) % options.length];
+        };
+
         const dashboardWeeks = enrichedPlan.weeks.map(week => {
             console.log(`\n📅 Week ${week.weekNumber} - ${week.workouts.length} workouts`);
             const dashboardWorkouts = week.workouts.map(workout => {
@@ -2672,10 +2760,19 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 return fallbackWorkout;
             });
 
+            const phaseLabel = this.getPhaseForWeek(week.weekNumber, totalWeeks);
+            const phaseKey = phaseLabel.toLowerCase();
+            if (week.weekNumber === 1 || week.weekNumber === Math.ceil(totalWeeks * 0.5) || week.weekNumber === totalWeeks) {
+                console.log(`📅 Week ${week.weekNumber}/${totalWeeks}: Phase = ${phaseLabel} (${phaseKey})`);
+            }
             return {
                 weekNumber: week.weekNumber,
                 totalMileage: week.totalMileage,
-                workouts: dashboardWorkouts
+                workouts: dashboardWorkouts,
+                phase: phaseKey,
+                weeklyFocus: phaseFocusMap[phaseLabel] || 'Periodized training',
+                motivation: getMotivation(phaseLabel, week.weekNumber),
+                weekDates: formatWeekDates(week.weekNumber)
             };
         });
 
@@ -2686,15 +2783,8 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
             ? enrichedPlan.fullPlanText.replace(workoutIdRegex, '').trim()
             : enrichedPlan.fullPlanText;
 
-        // CRITICAL: Plan starts TODAY, not calculated backwards from race date
-        // Week 1 starts on the day the user onboarded (today)
-        const totalWeeks = enrichedPlan.weeks.length;
-        const today = new Date();
-        const startDate = new Date(today); // Start date is TODAY
-        const raceDate = new Date(userProfile.raceDate);
-
         // Format as YYYY-MM-DD for consistency
-        const startDateString = startDate.toISOString().split('T')[0];
+        const startDateString = planStartDate.toISOString().split('T')[0];
         const raceDateString = raceDate.toISOString().split('T')[0];
 
         return {
@@ -2709,7 +2799,9 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 raceDate: raceDateString,
                 totalWeeks: totalWeeks,
                 raceDistance: userProfile.raceDistance,
-                goalTime: userProfile.raceTime
+                goalTime: userProfile.raceTime,
+                trainingPhilosophy: userProfile.trainingPhilosophy || userProfile.trainingStyle || 'practical_periodization',
+                phasePlan
             }
         };
     }

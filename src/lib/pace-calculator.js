@@ -10,6 +10,9 @@ class PaceCalculator {
     constructor() {
         // Distance mapping for human-readable input to data keys
         this.distanceMap = {
+            '5K': '5K',
+            '5k': '5K',
+            '5 K': '5K',
             '10K': '10K',
             '10k': '10K',
             '10 K': '10K',
@@ -25,6 +28,7 @@ class PaceCalculator {
 
         // Valid ranges for each distance
         this.validRanges = {
+            '5K': { min: "15:00", max: "45:00" },
             '10K': { min: "30:00", max: "90:00" },
             marathon: { min: "2:00:00", max: "6:00:00" },
             halfMarathon: { min: "1:00:00", max: "3:00:00" }
@@ -57,12 +61,23 @@ class PaceCalculator {
     }
 
     /**
+     * Convert 5K time to equivalent 10K time using VDOT principles
+     * Formula: 10K time ≈ 5K time × 2.08 (standard race time equivalency)
+     */
+    convert5KTo10K(fiveKTime) {
+        const fiveKSeconds = this.timeToSeconds(fiveKTime);
+        const tenKSeconds = Math.round(fiveKSeconds * 2.08);
+        return this.secondsToTime(tenKSeconds);
+    }
+
+    /**
      * Normalize distance input to internal key
+     * Converts 5K to equivalent 10K for pace calculation
      */
     normalizeDistance(distance) {
         const normalized = this.distanceMap[distance];
         if (!normalized) {
-            throw new Error(`Unsupported race distance: ${distance}. Use 'Marathon' or 'Half Marathon'`);
+            throw new Error(`Unsupported race distance: ${distance}. Use '5K', '10K', 'Marathon', or 'Half Marathon'`);
         }
         return normalized;
     }
@@ -82,7 +97,11 @@ class PaceCalculator {
      */
     getRangeMessage(distance) {
         const range = this.validRanges[distance];
-        const distanceName = distance === 'marathon' ? 'Marathon' : 'Half Marathon';
+        let distanceName;
+        if (distance === '5K') distanceName = '5K';
+        else if (distance === '10K') distanceName = '10K';
+        else if (distance === 'marathon') distanceName = 'Marathon';
+        else distanceName = 'Half Marathon';
         return `Training plans are designed for ${distanceName} times between ${range.min} and ${range.max}. ` +
                `For goals outside this range, please reach out to the developer for additional support.`;
     }
@@ -224,18 +243,29 @@ class PaceCalculator {
     /**
      * Get pace data for a specific goal time
      * Returns exact match or interpolated data
+     * Handles 5K by converting to equivalent 10K time
      */
     getPaceData(distance, goalTime) {
-        const normalizedDistance = this.normalizeDistance(distance);
-        const goalTimeSeconds = this.timeToSeconds(goalTime);
+        let normalizedDistance = this.normalizeDistance(distance);
+        let actualGoalTime = goalTime;
+        
+        // Convert 5K to equivalent 10K time
+        if (normalizedDistance === '5K') {
+            actualGoalTime = this.convert5KTo10K(goalTime);
+            normalizedDistance = '10K';
+            console.log(`📊 Converting 5K time ${goalTime} to equivalent 10K time: ${actualGoalTime}`);
+        }
+        
+        const goalTimeSeconds = this.timeToSeconds(actualGoalTime);
 
-        // Check if within valid range
-        if (!this.isWithinRange(normalizedDistance, goalTimeSeconds)) {
-            throw new Error(this.getRangeMessage(normalizedDistance));
+        // Check if within valid range (use original distance for range check)
+        const originalDistance = this.distanceMap[distance] || normalizedDistance;
+        if (!this.isWithinRange(originalDistance, this.timeToSeconds(goalTime))) {
+            throw new Error(this.getRangeMessage(originalDistance));
         }
 
-        // Try exact match first
-        const exactMatch = this.findExactMatch(normalizedDistance, goalTime);
+        // Try exact match first (using converted 10K time)
+        const exactMatch = this.findExactMatch(normalizedDistance, actualGoalTime);
         if (exactMatch) {
             return {
                 ...exactMatch,
@@ -244,7 +274,7 @@ class PaceCalculator {
         }
 
         // Interpolate between closest points
-        return this.interpolatePaceData(normalizedDistance, goalTime, goalTimeSeconds);
+        return this.interpolatePaceData(normalizedDistance, actualGoalTime, goalTimeSeconds);
     }
 
     /**
@@ -333,16 +363,16 @@ class PaceCalculator {
     estimateRaceTimeFromVDOT(vdot, distance) {
         // Approximate race times by VDOT (from Daniels' tables)
         const vdotToRaceTimes = {
-            25: { '10K': '65:00', halfMarathon: '2:35:00', marathon: '5:30:00' },
-            30: { '10K': '58:00', halfMarathon: '2:15:00', marathon: '4:45:00' },
-            32: { '10K': '55:00', halfMarathon: '2:08:00', marathon: '4:30:00' },
-            34: { '10K': '52:00', halfMarathon: '2:02:00', marathon: '4:15:00' },
-            36: { '10K': '49:30', halfMarathon: '1:56:00', marathon: '4:02:00' },
-            38: { '10K': '47:00', halfMarathon: '1:50:00', marathon: '3:50:00' },
-            40: { '10K': '45:00', halfMarathon: '1:45:00', marathon: '3:40:00' },
-            42: { '10K': '43:00', halfMarathon: '1:40:00', marathon: '3:30:00' },
-            45: { '10K': '40:30', halfMarathon: '1:33:00', marathon: '3:15:00' },
-            50: { '10K': '37:00', halfMarathon: '1:23:00', marathon: '2:55:00' }
+            25: { '5K': '31:00', '10K': '65:00', halfMarathon: '2:35:00', marathon: '5:30:00' },
+            30: { '5K': '28:00', '10K': '58:00', halfMarathon: '2:15:00', marathon: '4:45:00' },
+            32: { '5K': '26:30', '10K': '55:00', halfMarathon: '2:08:00', marathon: '4:30:00' },
+            34: { '5K': '25:00', '10K': '52:00', halfMarathon: '2:02:00', marathon: '4:15:00' },
+            36: { '5K': '23:45', '10K': '49:30', halfMarathon: '1:56:00', marathon: '4:02:00' },
+            38: { '5K': '22:30', '10K': '47:00', halfMarathon: '1:50:00', marathon: '3:50:00' },
+            40: { '5K': '21:30', '10K': '45:00', halfMarathon: '1:45:00', marathon: '3:40:00' },
+            42: { '5K': '20:30', '10K': '43:00', halfMarathon: '1:40:00', marathon: '3:30:00' },
+            45: { '5K': '19:30', '10K': '40:30', halfMarathon: '1:33:00', marathon: '3:15:00' },
+            50: { '5K': '17:45', '10K': '37:00', halfMarathon: '1:23:00', marathon: '2:55:00' }
         };
 
         // Find closest VDOT
@@ -355,7 +385,9 @@ class PaceCalculator {
         }
 
         const normalizedDistance = this.normalizeDistance(distance);
-        return vdotToRaceTimes[closestVDOT][normalizedDistance] || '2:00:00';
+        // For 5K, return directly; for others, use normalized key
+        const lookupKey = normalizedDistance === '5K' ? '5K' : normalizedDistance;
+        return vdotToRaceTimes[closestVDOT][lookupKey] || '2:00:00';
     }
 
     /**
