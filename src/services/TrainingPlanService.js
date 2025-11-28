@@ -1813,25 +1813,37 @@ class TrainingPlanService {
         logger.log('  Injury weeks:', injuryStartWeek, '-', injuryEndWeek);
         logger.log('  Return to running week:', returnToRunningWeek);
 
-        // Process each week
-        const modifiedWeeks = weeklyPlans.slice(currentWeek - 1).map((week, index) => {
+        // CRITICAL: Filter out null/invalid weeks before processing
+        const validWeeks = weeklyPlans.slice(currentWeek - 1).filter((week, index) => {
             const weekNumber = currentWeek + index;
+            if (!week) {
+                logger.error(`  ❌ Week ${weekNumber} is null - skipping`);
+                return false;
+            }
+            if (!week.workouts || week.workouts.length === 0) {
+                logger.error(`  ❌ Week ${weekNumber} has no workouts - skipping`);
+                logger.error(`    Week keys:`, Object.keys(week));
+                return false;
+            }
+            return true;
+        });
+        
+        if (validWeeks.length === 0) {
+            logger.error('  ❌ No valid weeks found to modify');
+            logger.error(`    Total weeks in plan: ${weeklyPlans.length}`);
+            logger.error(`    Weeks from current week: ${weeklyPlans.slice(currentWeek - 1).length}`);
+            throw new Error('Cannot create injury recovery plan - no valid weeks found. The plan structure may be corrupted. Please regenerate your training plan.');
+        }
+        
+        logger.log(`  ✅ Found ${validWeeks.length} valid weeks to modify`);
+
+        // Process each valid week
+        const modifiedWeeks = validWeeks.map((week, index) => {
+            // Calculate actual week number (accounting for filtered weeks)
+            const originalIndex = weeklyPlans.slice(currentWeek - 1).indexOf(week);
+            const weekNumber = currentWeek + originalIndex;
             const isInjuryWeek = weekNumber >= injuryStartWeek && weekNumber <= injuryEndWeek;
             const isReturnWeek = weekNumber === returnToRunningWeek;
-
-            // CRITICAL: Check if week is null or has no workouts
-            if (!week) {
-                logger.error(`  ❌ Week ${weekNumber} is null - cannot modify`);
-                throw new Error(`Week ${weekNumber} is null or invalid - cannot create injury recovery plan`);
-            }
-            
-            if (!week.workouts || week.workouts.length === 0) {
-                logger.warn(`  ⚠️ Week ${weekNumber} has no workouts - this is unusual`);
-                logger.warn(`    Week structure:`, Object.keys(week || {}));
-                // If it's an injury week, we still need to create cross-training workouts
-                // For now, throw an error to prevent silent failures
-                throw new Error(`Week ${weekNumber} has no workouts - cannot create injury recovery plan. The plan structure may be corrupted.`);
-            }
 
             if (isInjuryWeek) {
                 // Replace running workouts with cross-training
