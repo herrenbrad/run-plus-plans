@@ -18,6 +18,7 @@ import { PaceCalculator } from '../lib/pace-calculator';
 import logger from '../utils/logger';
 import phaseCalculator from './ai/PhaseCalculator';
 import planFixer from './ai/PlanFixer';
+import promptBuilder from './ai/PromptBuilder';
 
 class TrainingPlanAIService {
     constructor() {
@@ -419,63 +420,9 @@ SEQUENCING RULES:
         return context;
     }
 
-    /**
-     * Build workout library context for AI
-     * Shows available workouts that AI can select from
-     */
+    // Workout library context building delegated to PromptBuilder module
     buildWorkoutLibraryContext() {
-        // Optimized: Concise format to reduce prompt size and speed up generation
-        let context = `**WORKOUT LIBRARY - Use [WORKOUT_ID: ...] format**\n\n`;
-
-        // Hill Workouts - Just IDs and names
-        context += `**HILL:** `;
-        const hillCategories = this.hillLibrary.getCategories();
-        const hillWorkouts = [];
-        hillCategories.forEach(category => {
-            const workouts = this.hillLibrary.getWorkoutsByCategory(category);
-            workouts.forEach((workout, index) => {
-                hillWorkouts.push(`[hill_${category}_${index}] ${workout.name}`);
-            });
-        });
-        context += hillWorkouts.join(', ') + `\n`;
-
-        // Interval Workouts - Just IDs and names
-        context += `**INTERVALS:** `;
-        const intervalCategories = this.intervalLibrary.getCategories();
-        const intervalWorkouts = [];
-        intervalCategories.forEach(category => {
-            const workouts = this.intervalLibrary.getWorkoutsByCategory(category);
-            workouts.forEach((workout, index) => {
-                intervalWorkouts.push(`[interval_${category}_${index}] ${workout.name}`);
-            });
-        });
-        context += intervalWorkouts.join(', ') + `\n`;
-
-        // Tempo Workouts - Just IDs and names
-        context += `**TEMPO:** `;
-        const tempoCategories = this.tempoLibrary.getCategories();
-        const tempoWorkouts = [];
-        tempoCategories.forEach(category => {
-            const workouts = this.tempoLibrary.getWorkoutsByCategory(category);
-            workouts.forEach((workout, index) => {
-                tempoWorkouts.push(`[tempo_${category}_${index}] ${workout.name}`);
-            });
-        });
-        context += tempoWorkouts.join(', ') + `\n`;
-
-        // Long Run Workouts - Just IDs and names
-        context += `**LONG RUNS:** `;
-        const longRunCategories = this.longRunLibrary.getCategories();
-        const longRunWorkouts = [];
-        longRunCategories.forEach(category => {
-            const workouts = this.longRunLibrary.getWorkoutsByCategory(category);
-            workouts.forEach((workout, index) => {
-                longRunWorkouts.push(`[longrun_${category}_${index}] ${workout.name}`);
-            });
-        });
-        context += longRunWorkouts.join(', ') + `\n`;
-
-        return context;
+        return promptBuilder.buildWorkoutLibraryContext();
     }
 
     /**
@@ -519,7 +466,7 @@ SEQUENCING RULES:
 
             // STEP 2: Get week-by-week plan structure (concise format)
             // CRITICAL: Include coaching analysis so Step 2 can reference race strategy and pacing
-            const workoutContext = this.buildWorkoutLibraryContext();
+            const workoutContext = promptBuilder.buildWorkoutLibraryContext();
             const planPrompt = this.buildPlanStructurePrompt(normalizedProfile, coachingText);
             const fullPlanPrompt = `${workoutContext}\n\n---\n\n**COACHING ANALYSIS FROM STEP 1 (for reference):**\n${coachingText}\n\n---\n\n${planPrompt}`;
 
