@@ -1,20 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import SomethingElseModal from './SomethingElseModal';
 import { formatEquipmentName, formatHeartRate, formatIntensity } from '../utils/typography';
-import AICoachService from '../services/AICoachService';
-import logger from '../utils/logger';
 import './WorkoutDetail.css';
 import useWorkoutDetailData from '../hooks/useWorkoutDetailData';
+import useWorkoutCoaching from '../hooks/useWorkoutCoaching';
 
 function WorkoutDetail({ userProfile, trainingPlan }) {
   const navigate = useNavigate();
   const { day } = useParams();
   const location = useLocation();
-  const [coachingAnalysis, setCoachingAnalysis] = useState(null);
-  const [loadingCoaching, setLoadingCoaching] = useState(false);
-  const [coachingError, setCoachingError] = useState(null);
-
   const {
     userProfileForDisplay,
     currentWeekNumber,
@@ -31,6 +26,21 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
     userProfile,
     trainingPlan,
     locationState: location.state
+  });
+
+  const {
+    coachingAnalysis,
+    loadingCoaching,
+    coachingError,
+    getCoaching
+  } = useWorkoutCoaching({
+    completionData,
+    currentWorkout,
+    currentWeekNumber,
+    weekDataFromState,
+    trainingPlan,
+    day,
+    userProfile: userProfileForDisplay
   });
 
   // Helper function to format structured workout data
@@ -121,142 +131,6 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       easy: '🌤️'
     };
     return emojis[type] || '💪';
-  };
-
-  const handleGetCoaching = async () => {
-    if (!completionData) {
-      // Note: useToast hook would need to be added to WorkoutDetail component
-      // For now, using console.warn as fallback
-      console.warn('No workout data available for analysis');
-      return;
-    }
-
-    // Check if API key is set (for local dev)
-    const apiKey = prompt('Enter your Anthropic API key (local dev only):');
-    if (!apiKey) return;
-
-    setLoadingCoaching(true);
-    setCoachingError(null);
-
-    try {
-      // Initialize AI Coach service with API key
-      AICoachService.initialize(apiKey);
-
-      // Determine actual workout type from completion data
-      // CRITICAL: If this is a life adaptation, use the SCHEDULED workout type, not the activity type
-      let actualWorkoutType = 'Run'; // default
-      let isLifeAdaptation = completionData.isLifeAdaptation || false;
-
-      // If this is a life adaptation, check the scheduled workout type
-      if (isLifeAdaptation && currentWorkout) {
-        const scheduledType = currentWorkout.type;
-        const isBikeWorkout = scheduledType === 'bike' || currentWorkout.equipmentSpecific;
-        
-        if (isBikeWorkout) {
-          // Scheduled was bike, but activity was run - treat as bike for coaching
-          actualWorkoutType = 'Ride';
-          logger.log('🔄 Life adaptation detected: Using scheduled bike workout type for coaching');
-        } else {
-          // Scheduled was run, but activity was bike - treat as run for coaching
-          actualWorkoutType = 'Run';
-          logger.log('🔄 Life adaptation detected: Using scheduled run workout type for coaching');
-        }
-      } else {
-        // Not a life adaptation - determine from activity data
-        // Check if we have lap data with pace (indicates running)
-        if (completionData.laps && completionData.laps.length > 0 && completionData.laps[0].pace) {
-          actualWorkoutType = 'Run';
-        }
-        // Check if we have overall pace in completion data
-        else if (completionData.pace && completionData.pace.includes('/mi')) {
-          actualWorkoutType = 'Run';
-        }
-        // If no pace data, it's likely a bike ride
-        else if (completionData.laps && completionData.laps.length > 0 && !completionData.laps[0].pace) {
-          actualWorkoutType = 'Ride';
-        }
-      }
-
-      // Build workout data for analysis
-      const workoutDataForAI = {
-        type: actualWorkoutType,
-        distance: completionData.distance,
-        duration: completionData.duration,
-        pace: completionData.pace,
-        elevationGain: completionData.elevationGain,
-        avgHeartRate: completionData.avgHeartRate,
-        maxHeartRate: completionData.maxHeartRate,
-        laps: completionData.laps,
-        // Pass stand-up bike type if this is a Ride (either actual ride or life adaptation to bike workout)
-        standUpBikeType: actualWorkoutType === 'Ride' ? userProfileFromState?.standUpBikeType : null,
-        // Pass life adaptation flag so AI knows to adjust coaching
-        isLifeAdaptation: isLifeAdaptation
-      };
-
-      // DEBUG: Log what we're sending to the AI
-      console.log('🔍 AI Coach Debug:', {
-        actualWorkoutType,
-        stravaUrl: completionData.stravaActivityUrl,
-        standUpBikeType: workoutDataForAI.standUpBikeType,
-        fullData: workoutDataForAI
-      });
-
-      // Build upcoming workouts context
-      let upcomingWorkouts = null;
-      if (trainingPlan && weekDataFromState) {
-        const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-        const currentDayIndex = daysOfWeek.indexOf(day.toLowerCase());
-        const nextFewDays = [];
-
-        // weekDataFromState.workouts can be either an array or an object keyed by day name
-        const workouts = weekDataFromState.workouts;
-        const isArray = Array.isArray(workouts);
-
-        // Get next 3-4 workouts from current week
-        for (let i = currentDayIndex + 1; i < Math.min(currentDayIndex + 4, daysOfWeek.length); i++) {
-          const dayName = daysOfWeek[i];
-          let workout = null;
-          
-          if (isArray) {
-            // If workouts is an array, find by day name
-            workout = workouts.find(w => w.day && w.day.toLowerCase() === dayName);
-          } else {
-            // If workouts is an object, access by day name key
-            workout = workouts?.[dayName];
-          }
-          
-          if (workout && (workout.name || workout.workout?.name)) {
-            const dayLabel = dayName.charAt(0).toUpperCase() + dayName.slice(1);
-            const workoutName = workout.name || workout.workout?.name || 'Workout';
-            nextFewDays.push(`${dayLabel}: ${workoutName}`);
-          }
-        }
-
-        if (nextFewDays.length > 0) {
-          upcomingWorkouts = nextFewDays.join(', ');
-        }
-      }
-
-      // Build context options
-      const contextOptions = {
-        prescribedWorkout: currentWorkout.name ?
-          `${currentWorkout.name}: ${currentWorkout.description}` :
-          null,
-        trainingContext: trainingPlan ?
-          `Week ${currentWeekNumber} of ${trainingPlan.weeks?.length || 'N/A'} week training plan for ${trainingPlan.goalRace || 'race'}` :
-          null,
-        upcomingWorkouts: upcomingWorkouts
-      };
-
-      // Get AI analysis
-      const analysis = await AICoachService.analyzeWorkout(workoutDataForAI, contextOptions);
-      setCoachingAnalysis(analysis);
-    } catch (error) {
-      console.error('Error getting coaching analysis:', error);
-      setCoachingError(error.message || 'Failed to get coaching analysis');
-    } finally {
-      setLoadingCoaching(false);
-    }
   };
 
   return (
