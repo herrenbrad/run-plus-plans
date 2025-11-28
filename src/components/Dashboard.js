@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import FirestoreService from '../services/FirestoreService';
 import { TempoWorkoutLibrary } from '../lib/tempo-workout-library.js';
@@ -17,10 +16,10 @@ import { formatTrainingSystem, formatEquipmentName, formatPhase, titleCase } fro
 // Calorie calculator removed - weight significantly affects calories and we don't collect weight data
 // import { calorieCalculator } from '../lib/calorie-calculator.js';
 import StravaService from '../services/StravaService';
-import StravaSyncService from '../services/StravaSyncService';
 import logger from '../utils/logger';
 import { useToast } from './Toast';
 import { calculateCurrentWeek, getWeekDateRange, getWorkoutDate, formatWorkoutDate } from '../utils/weekCalculations';
+import useStravaSync from '../hooks/useStravaSync';
 import './Dashboard.css';
 
 function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData }) {
@@ -378,7 +377,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   const [workoutCompletions, setWorkoutCompletions] = useState({}); // Track workout completions for instant UI updates
   const [showBetaSetup, setShowBetaSetup] = useState(false); // Show beta code setup modal
   const [showBrickOptions, setShowBrickOptions] = useState({}); // Track which workouts are showing brick split options
-  const [stravaSyncing, setStravaSyncing] = useState(false); // Track Strava sync status
   const [completionModal, setCompletionModal] = useState({
     isOpen: false,
     workout: null,
@@ -449,83 +447,12 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     setWorkoutCompletions(completedWorkouts);
   }, [completedWorkouts]);
 
-  // Manual Strava sync function
-  const handleManualStravaSync = async () => {
-    logger.log('🔘 BUTTON CLICKED - handleManualStravaSync called');
-    if (!userProfile?.stravaConnected || !auth.currentUser || !trainingPlan) {
-      logger.log('❌ Cannot sync - missing requirements:', {
-        stravaConnected: userProfile?.stravaConnected,
-        hasUser: !!auth.currentUser,
-        hasTrainingPlan: !!trainingPlan
-      });
-      return;
-    }
-
-    setStravaSyncing(true);
-    logger.log('🔄 Manual Strava sync triggered...');
-
-    try {
-      const result = await StravaSyncService.syncActivities(
-        auth.currentUser.uid,
-        userProfile,
-        trainingPlan,
-        currentWeek
-      );
-
-      if (result.success) {
-        logger.log('✅ Strava sync successful:', result);
-
-        // Update last sync time
-        localStorage.setItem('runeq_stravaLastSync', new Date().toISOString());
-
-        // Refresh the page to show updated completions
-        if (result.workoutsCompleted > 0) {
-          logger.log(`🔄 ${result.workoutsCompleted} workouts auto-completed - refreshing...`);
-          window.location.reload();
-        } else {
-          toast.success(`Sync complete! Found ${result.activitiesFetched} activities, ${result.matchesFound} matched workouts.`);
-          setStravaSyncing(false);
-        }
-      } else {
-        console.warn('⚠️ Strava sync failed:', result.error);
-        toast.error(`Sync failed: ${result.error}`);
-        setStravaSyncing(false);
-      }
-    } catch (error) {
-      console.error('❌ Strava sync error:', error);
-      toast.error(`Sync error: ${error.message}`);
-      setStravaSyncing(false);
-    }
-  };
-
-  const handleDisconnectStrava = async () => {
-    if (!auth.currentUser) return;
-
-    if (!window.confirm('Are you sure you want to disconnect Strava? You can reconnect anytime.')) {
-      return;
-    }
-
-    try {
-      const userRef = doc(db, 'users', auth.currentUser.uid);
-      await updateDoc(userRef, {
-        stravaConnected: false,
-        stravaAccessToken: null,
-        stravaRefreshToken: null,
-        stravaTokenExpiresAt: null,
-        stravaAthleteId: null,
-        stravaAthleteName: null,
-      });
-
-      logger.log('✅ Strava disconnected');
-      toast.success('Strava disconnected successfully');
-      
-      // Reload to refresh UI
-      window.location.reload();
-    } catch (error) {
-      console.error('❌ Error disconnecting Strava:', error);
-      toast.error(`Failed to disconnect: ${error.message}`);
-    }
-  };
+  // Strava sync hook
+  const { stravaSyncing, handleManualStravaSync, handleDisconnectStrava } = useStravaSync({
+    userProfile,
+    trainingPlan,
+    currentWeek
+  });
 
   // DISABLED: Auto-sync was interfering with testing. Use "Sync Now" button instead.
   // Auto-sync Strava activities on dashboard load
