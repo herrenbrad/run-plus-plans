@@ -16,6 +16,8 @@ import { LongRunWorkoutLibrary } from '../lib/long-run-workout-library';
 import { trainingPaceData } from '../lib/vdot-pace-data';
 import { PaceCalculator } from '../lib/pace-calculator';
 import logger from '../utils/logger';
+import phaseCalculator from './ai/PhaseCalculator';
+import planFixer from './ai/PlanFixer';
 
 class TrainingPlanAIService {
     constructor() {
@@ -153,59 +155,13 @@ SEQUENCING RULES:
     /**
      * Calculate structured phase blocks for a given plan length
      */
+    // Phase calculation delegated to PhaseCalculator module
     getPhasePlan(totalWeeks) {
-        if (!totalWeeks || totalWeeks <= 0) {
-            return [{
-                phase: 'Base',
-                startWeek: 1,
-                endWeek: totalWeeks || 1
-            }];
-        }
-
-        // Calculate phase boundaries as percentages of total weeks
-        // Ensure at least 2 weeks for taper (race week + taper week)
-        const taperWeeks = Math.max(2, Math.ceil(totalWeeks * 0.1));
-        const trainingWeeks = totalWeeks - taperWeeks;
-        
-        // Distribute training weeks across Base, Build, Peak
-        const baseWeeks = Math.max(1, Math.round(trainingWeeks * 0.4));
-        const buildWeeks = Math.max(1, Math.round(trainingWeeks * 0.35));
-        const peakWeeks = Math.max(1, trainingWeeks - baseWeeks - buildWeeks); // Remaining weeks go to peak
-        
-        // Calculate cumulative week boundaries
-        const baseEnd = baseWeeks;
-        const buildEnd = baseEnd + buildWeeks;
-        const peakEnd = buildEnd + peakWeeks;
-        const taperEnd = totalWeeks;
-
-        const phases = [
-            { phase: 'Base', startWeek: 1, endWeek: baseEnd },
-            { phase: 'Build', startWeek: baseEnd + 1, endWeek: buildEnd },
-            { phase: 'Peak', startWeek: buildEnd + 1, endWeek: peakEnd },
-            { phase: 'Taper', startWeek: peakEnd + 1, endWeek: taperEnd }
-        ];
-
-        // Filter out invalid phases and log for debugging
-        const validPhases = phases.filter(block => block.startWeek <= block.endWeek);
-        console.log(`📊 Phase Plan for ${totalWeeks} weeks:`, validPhases.map(p => 
-            `${p.phase}: weeks ${p.startWeek}-${p.endWeek}`
-        ).join(', '));
-
-        return validPhases;
+        return phaseCalculator.getPhasePlan(totalWeeks);
     }
 
-    /**
-     * Get phase label for a specific week number
-     */
     getPhaseForWeek(weekNumber, totalWeeks) {
-        const plan = this.getPhasePlan(totalWeeks);
-        const block = plan.find(phase => weekNumber >= phase.startWeek && weekNumber <= phase.endWeek);
-        const phase = block ? block.phase : 'Base';
-        if (!block) {
-            console.warn(`⚠️ No phase found for week ${weekNumber} of ${totalWeeks} weeks. Defaulting to Base.`);
-            console.log('Available phases:', plan);
-        }
-        return phase;
+        return phaseCalculator.getPhaseForWeek(weekNumber, totalWeeks);
     }
 
     /**
@@ -602,7 +558,7 @@ SEQUENCING RULES:
             const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, normalizedProfile);
             
             // CRITICAL: Auto-fix hard days violations (pragmatic fix to prevent regressions)
-            this.fixHardDaysViolations(dashboardPlan, normalizedProfile);
+            planFixer.fixHardDaysViolations(dashboardPlan, normalizedProfile);
             
             // CRITICAL: Run validations to catch regressions
             try {
@@ -2883,109 +2839,13 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
         };
     }
 
-    /**
-     * Auto-fix hard days violations - swaps easy runs on hard days with hard workouts
-     * This is a pragmatic fix to prevent regressions when AI doesn't follow instructions
-     */
+    // Plan fixing delegated to PlanFixer module
     fixHardDaysViolations(plan, profile) {
-        const qualityDays = profile.qualityDays || profile.hardSessionDays || [];
-        if (qualityDays.length === 0) return;
-
-        const hardWorkoutTypes = ['tempo', 'intervals', 'hills'];
-        
-        plan.weeks.forEach(week => {
-            week.workouts.forEach(workout => {
-                const dayName = workout.day;
-                const isHardDay = qualityDays.includes(dayName);
-                
-                if (isHardDay) {
-                    const descLower = (workout.description || '').toLowerCase();
-                    const nameLower = (workout.name || '').toLowerCase();
-                    const isEasy = (descLower.includes('easy') || nameLower.includes('easy')) && 
-                                   !descLower.includes('tempo') && 
-                                   !descLower.includes('interval') && 
-                                   !descLower.includes('hill');
-                    const isRest = workout.type === 'rest' || descLower.includes('rest');
-                    const isHard = hardWorkoutTypes.includes(workout.type) || 
-                                  descLower.includes('tempo') || 
-                                  descLower.includes('interval') || 
-                                  descLower.includes('hill');
-                    
-                    if ((isEasy || isRest) && !isHard) {
-                        // Find a hard workout from another day in the same week to swap with
-                        const swapCandidate = week.workouts.find(w => 
-                            w.day !== dayName && 
-                            hardWorkoutTypes.includes(w.type) &&
-                            !qualityDays.includes(w.day)
-                        );
-                        
-                        if (swapCandidate) {
-                            // Swap the workouts
-                            const temp = { ...workout };
-                            workout.type = swapCandidate.type;
-                            workout.name = swapCandidate.name;
-                            workout.description = swapCandidate.description;
-                            workout.workout = swapCandidate.workout;
-                            workout.focus = swapCandidate.focus;
-                            workout.distance = swapCandidate.distance;
-                            
-                            swapCandidate.type = temp.type;
-                            swapCandidate.name = temp.name;
-                            swapCandidate.description = temp.description;
-                            swapCandidate.workout = temp.workout;
-                            swapCandidate.focus = temp.focus;
-                            swapCandidate.distance = temp.distance;
-                            
-                            console.log(`✅ Auto-fixed: Swapped ${dayName} workout (was: ${temp.name}) with ${swapCandidate.day} (now: ${workout.name})`);
-                        } else {
-                            // No swap candidate - generate a default hard workout
-                            const defaultHardWorkout = this.generateDefaultHardWorkout(dayName, workout.distance || 5);
-                            workout.type = defaultHardWorkout.type;
-                            workout.name = defaultHardWorkout.name;
-                            workout.description = defaultHardWorkout.description;
-                            workout.workout = defaultHardWorkout.workout;
-                            workout.focus = defaultHardWorkout.focus;
-                            console.log(`✅ Auto-fixed: Replaced ${dayName} easy run with default ${defaultHardWorkout.type} workout`);
-                        }
-                    }
-                }
-            });
-        });
+        return planFixer.fixHardDaysViolations(plan, profile);
     }
 
-    /**
-     * Generate a default hard workout when AI assigns easy run to hard day
-     */
-    generateDefaultHardWorkout(dayName, distance = 5) {
-        // Alternate between tempo and intervals for variety
-        const weekNumber = Math.floor(Math.random() * 2); // Simple alternation
-        const isTempo = weekNumber % 2 === 0;
-        
-        if (isTempo) {
-            return {
-                type: 'tempo',
-                name: `Tempo Run ${distance} miles`,
-                description: `Tempo Run ${distance} miles (2 mi warmup, ${Math.max(2, Math.floor(distance * 0.4))} mi @ tempo pace, 1 mi cooldown)`,
-                workout: {
-                    name: `Tempo Run ${distance} miles`,
-                    description: `Tempo Run ${distance} miles (2 mi warmup, ${Math.max(2, Math.floor(distance * 0.4))} mi @ tempo pace, 1 mi cooldown)`
-                },
-                focus: 'Lactate Threshold',
-                distance: distance
-            };
-        } else {
-            return {
-                type: 'intervals',
-                name: `Interval Run ${distance} miles`,
-                description: `Interval Run ${distance} miles (2 mi warmup, 4x800m @ VO2 pace, 2 mi cooldown)`,
-                workout: {
-                    name: `Interval Run ${distance} miles`,
-                    description: `Interval Run ${distance} miles (2 mi warmup, 4x800m @ VO2 pace, 2 mi cooldown)`
-                },
-                focus: 'Speed & VO2 Max',
-                distance: distance
-            };
-        }
+    generateDefaultHardWorkout(dayName, distance) {
+        return planFixer.generateDefaultHardWorkout(dayName, distance);
     }
 }
 
