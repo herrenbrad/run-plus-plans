@@ -21,6 +21,7 @@ import planFixer from './ai/PlanFixer';
 import promptBuilder from './ai/PromptBuilder';
 import planParser from './ai/PlanParser';
 import workoutEnricher from './ai/WorkoutEnricher';
+import planTransformer from './ai/PlanTransformer';
 
 class TrainingPlanAIService {
     constructor() {
@@ -504,7 +505,7 @@ SEQUENCING RULES:
             const enrichedPlan = workoutEnricher.enrichPlanWithWorkouts(structuredPlan);
 
             // Transform to Dashboard format
-            const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, normalizedProfile);
+            const dashboardPlan = planTransformer.transformToDashboardFormat(enrichedPlan, normalizedProfile);
             
             // CRITICAL: Auto-fix hard days violations (pragmatic fix to prevent regressions)
             planFixer.fixHardDaysViolations(dashboardPlan, normalizedProfile);
@@ -1280,7 +1281,7 @@ SEQUENCING RULES:
             const enrichedPlan = workoutEnricher.enrichPlanWithWorkouts(structuredPlan);
 
             // Transform to Dashboard format
-            const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, updatedProfile);
+            const dashboardPlan = planTransformer.transformToDashboardFormat(enrichedPlan, updatedProfile);
 
             // Get only the weeks from current week forward
             // Filter to ensure we only get weeks >= currentWeek (in case AI generated extra)
@@ -2444,6 +2445,11 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
      * Transform enriched plan to Dashboard format
      */
     transformToDashboardFormat(enrichedPlan, userProfile) {
+        // Delegated to PlanTransformer module
+        return planTransformer.transformToDashboardFormat(enrichedPlan, userProfile);
+    }
+
+    _OLD_transformToDashboardFormat(enrichedPlan, userProfile) {
         console.log('\n🔧 TRANSFORMING TO DASHBOARD FORMAT');
         
         // CRITICAL: Calculate totalWeeks from dates as fallback if weeks array is empty
