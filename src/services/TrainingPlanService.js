@@ -1774,9 +1774,21 @@ class TrainingPlanService {
 
         // Get existing weekly plans
         const weeklyPlans = existingPlan?.weeklyPlans || existingPlan?.weeks;
-        if (!weeklyPlans) {
-            throw new Error('Training plan structure is invalid - missing weeklyPlans/weeks array');
+        if (!weeklyPlans || weeklyPlans.length === 0) {
+            logger.error('  ❌ Training plan structure is invalid - missing or empty weeklyPlans/weeks array');
+            logger.error('    Plan keys:', Object.keys(existingPlan || {}));
+            logger.error('    Has weeklyPlans:', !!existingPlan?.weeklyPlans);
+            logger.error('    Has weeks:', !!existingPlan?.weeks);
+            logger.error('    weeklyPlans length:', existingPlan?.weeklyPlans?.length || 0);
+            logger.error('    weeks length:', existingPlan?.weeks?.length || 0);
+            throw new Error('Training plan structure is invalid - missing or empty weeklyPlans/weeks array. Cannot create injury recovery plan without existing plan structure.');
         }
+        
+        logger.log('  📋 Plan structure validated:', {
+            totalWeeks: weeklyPlans.length,
+            currentWeek: currentWeek,
+            weeksToModify: weeklyPlans.length - (currentWeek - 1)
+        });
 
         // Preserve completed weeks (everything before current week)
         const completedWeeks = weeklyPlans.slice(0, currentWeek - 1);
