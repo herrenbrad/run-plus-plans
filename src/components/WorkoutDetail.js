@@ -271,7 +271,8 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         workoutData,
         userProfile: normalizedProfile,
         trainingPlan,
-        vdotPaces
+        vdotPaces,
+        experienceLevel: normalizedProfile?.experienceLevel
       })
     : workoutDetails[day] || workoutDetails.tuesday;
   const currentWorkout = modifiedWorkout || baseWorkout;

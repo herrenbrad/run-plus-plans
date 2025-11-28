@@ -107,7 +107,8 @@ export function transformWorkoutForDisplay({
   workoutData,
   userProfile,
   trainingPlan,
-  vdotPaces
+  vdotPaces,
+  experienceLevel
 }) {
   if (!workoutData) return null;
 
@@ -356,6 +357,19 @@ export function transformWorkoutForDisplay({
     }
   }
 
+  let progression = workoutLib?.progression;
+  if (progression && typeof progression === 'object' && !Array.isArray(progression)) {
+    const levelKey = experienceLevel
+      ? Object.keys(progression).find(key => key.toLowerCase() === experienceLevel.toLowerCase())
+      : null;
+    if (levelKey) {
+      progression = progression[levelKey];
+    } else {
+      const values = Object.values(progression);
+      progression = values.length > 0 ? values[0] : null;
+    }
+  }
+
   return {
     name: workoutLib?.name || 'Workout',
     type: workoutData.type || 'easy',
@@ -376,7 +390,7 @@ export function transformWorkoutForDisplay({
     },
     hillRequirement: workoutLib?.hillRequirement,
     terrainInstructions: workoutLib?.terrainInstructions,
-    progression: workoutLib?.progression,
+    progression,
     benefits: workoutLib?.benefits || generateBenefitsFallback(workoutType, workoutLib?.name),
     variations: workoutLib?.variations,
     examples: workoutLib?.examples,
