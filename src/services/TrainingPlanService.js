@@ -1909,8 +1909,26 @@ class TrainingPlanService {
         const validModifiedWeeks = modifiedWeeks.filter(w => w && w.workouts && w.workouts.length > 0);
         logger.log(`  ✅ Successfully processed ${validModifiedWeeks.length} weeks`);
 
-        // Merge: completed weeks + modified weeks
-        const mergedWeeklyPlans = [...completedWeeks, ...modifiedWeeks];
+        // For post-recovery weeks that are null, try to restore from original plan if available
+        // This preserves progressive distances instead of using fallback generation
+        const restoredWeeks = modifiedWeeks.map((week, index) => {
+            const weekNumber = currentWeek + index;
+            const isPostRecovery = weekNumber > returnToRunningWeek;
+            
+            // If it's a post-recovery week and it's null, try to restore from original plan
+            if (isPostRecovery && (!week || !week.workouts || week.workouts.length === 0)) {
+                const originalWeekIndex = currentWeek - 1 + index;
+                const originalWeek = weeklyPlans[originalWeekIndex];
+                if (originalWeek && originalWeek.workouts && originalWeek.workouts.length > 0) {
+                    logger.log(`  🔄 Restoring week ${weekNumber} from original plan to preserve progressive distances`);
+                    return originalWeek;
+                }
+            }
+            return week;
+        });
+        
+        // Merge: completed weeks + modified/restored weeks
+        const mergedWeeklyPlans = [...completedWeeks, ...restoredWeeks];
 
         logger.log('  ✅ Injury recovery plan generated successfully');
         logger.log('    Total weeks:', mergedWeeklyPlans.length);
