@@ -1821,20 +1821,30 @@ class TrainingPlanService {
             const week = weeksToProcess[index];
             const weekNumber = currentWeek + index;
             
-            // CRITICAL: Check if week is null or has no workouts
-            if (!week) {
-                logger.error(`  ❌ Week ${weekNumber} is null - skipping`);
-                // Keep the null week in the array to maintain week numbering
-                modifiedWeeks.push(null);
-                continue;
-            }
-            
-            if (!week.workouts || week.workouts.length === 0) {
-                logger.error(`  ❌ Week ${weekNumber} has no workouts - skipping`);
-                logger.error(`    Week keys:`, Object.keys(week));
-                // Keep the invalid week in the array to maintain week numbering
-                modifiedWeeks.push(week);
-                continue;
+            // CRITICAL: If week is null or has no workouts, generate them on the fly
+            // This prevents requiring users to regenerate their entire plan just to use injury recovery
+            if (!week || !week.workouts || week.workouts.length === 0) {
+                logger.warn(`  ⚠️ Week ${weekNumber} is null or has no workouts - generating workouts on the fly`);
+                
+                // Import generateWeekWorkouts dynamically to avoid circular dependencies
+                const { generateWeekWorkouts } = await import('../utils/workoutGeneration.js');
+                const generatedWorkouts = generateWeekWorkouts(weekNumber, updatedProfile);
+                
+                // Create a week structure from generated workouts
+                const generatedWeek = {
+                    week: weekNumber,
+                    weekDates: { displayText: `Week ${weekNumber}` },
+                    phase: 'base',
+                    totalMileage: generatedWorkouts.reduce((sum, w) => {
+                        const dist = w.workout?.distance || parseFloat(w.workout?.name?.match(/(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)/i)?.[1]) || 0;
+                        return sum + dist;
+                    }, 0),
+                    workouts: generatedWorkouts
+                };
+                
+                // Use the generated week instead of null/invalid week
+                week = generatedWeek;
+                logger.log(`  ✅ Generated ${generatedWorkouts.length} workouts for week ${weekNumber}`);
             }
             const isInjuryWeek = weekNumber >= injuryStartWeek && weekNumber <= injuryEndWeek;
             const isReturnWeek = weekNumber === returnToRunningWeek;
@@ -1854,36 +1864,20 @@ class TrainingPlanService {
             }
         }
         
-        // CRITICAL: Check if the specific injury weeks we need are valid
-        // We need: injuryStartWeek through injuryEndWeek (injury weeks) + returnToRunningWeek (return week)
-        const requiredWeekNumbers = [];
-        for (let w = injuryStartWeek; w <= injuryEndWeek; w++) {
-            requiredWeekNumbers.push(w);
-        }
-        requiredWeekNumbers.push(returnToRunningWeek);
-        
-        const invalidRequiredWeeks = requiredWeekNumbers.filter(weekNum => {
-            const weekIndex = weekNum - currentWeek; // Index in modifiedWeeks array
-            const week = modifiedWeeks[weekIndex];
-            return !week || !week.workouts || week.workouts.length === 0;
+        // Verify that all modified weeks are valid (they should be, since we generate for null weeks)
+        const invalidWeeks = modifiedWeeks.filter((w, idx) => {
+            const weekNum = currentWeek + idx;
+            const isRequired = (weekNum >= injuryStartWeek && weekNum <= returnToRunningWeek);
+            return isRequired && (!w || !w.workouts || w.workouts.length === 0);
         });
         
-        if (invalidRequiredWeeks.length > 0) {
-            logger.error('  ❌ Required injury weeks are missing or invalid');
-            logger.error(`    Required weeks: ${requiredWeekNumbers.join(', ')}`);
-            logger.error(`    Invalid weeks: ${invalidRequiredWeeks.join(', ')}`);
-            logger.error(`    Total weeks in plan: ${weeklyPlans.length}`);
-            logger.error(`    Valid weeks in plan: ${weeklyPlans.filter(w => w && w.workouts && w.workouts.length > 0).length}`);
-            throw new Error(`Cannot create injury recovery plan - weeks ${invalidRequiredWeeks.join(', ')} are missing or have no workouts. Your plan structure appears to be corrupted. Please use "Manage Plan" to regenerate your training plan first.`);
+        if (invalidWeeks.length > 0) {
+            logger.error('  ❌ Some required injury weeks are still invalid after generation');
+            throw new Error('Failed to generate workouts for required injury weeks. Please try again or contact support.');
         }
         
-        // Check if we have any valid modified weeks overall
         const validModifiedWeeks = modifiedWeeks.filter(w => w && w.workouts && w.workouts.length > 0);
-        logger.log(`  ✅ Successfully modified ${validModifiedWeeks.length} weeks (${validInjuryWeeks.length} injury weeks)`);
-        
-        if (validInjuryWeeks.length < weeksOffRunning) {
-            logger.warn(`  ⚠️ Warning: Only ${validInjuryWeeks.length} of ${weeksOffRunning} injury weeks were valid`);
-        }
+        logger.log(`  ✅ Successfully processed ${validModifiedWeeks.length} weeks`);
 
         // Merge: completed weeks + modified weeks
         const mergedWeeklyPlans = [...completedWeeks, ...modifiedWeeks];
