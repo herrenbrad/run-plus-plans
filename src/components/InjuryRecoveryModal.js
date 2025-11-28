@@ -186,6 +186,19 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
         // Continue without coaching - plan is still valid
       }
 
+      // Validate plan structure before saving
+      if (!updatedPlan.weeks || updatedPlan.weeks.length === 0) {
+        logger.error('  ❌ CRITICAL: Updated plan has no weeks array! Cannot save.');
+        throw new Error('Injury recovery plan generation failed - plan structure is invalid');
+      }
+      
+      logger.log('  📋 Plan validation before save:', {
+        weeksCount: updatedPlan.weeks.length,
+        injuryRecoveryActive: updatedPlan.injuryRecoveryActive,
+        hasInjuryRecoveryInfo: !!updatedPlan.injuryRecoveryInfo,
+        firstWeekWorkouts: updatedPlan.weeks[0]?.workouts?.length || 0
+      });
+
       // Save updated plan to Firestore
       await FirestoreService.saveTrainingPlan(auth.currentUser.uid, updatedPlan);
 
