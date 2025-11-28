@@ -1,281 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import SomethingElseModal from './SomethingElseModal';
 import { formatEquipmentName, formatHeartRate, formatIntensity } from '../utils/typography';
-import { auth } from '../firebase/config';
-import FirestoreService from '../services/FirestoreService';
-// Calorie calculator removed - weight significantly affects calories and we don't collect weight data
-// import { calorieCalculator } from '../lib/calorie-calculator.js';
 import AICoachService from '../services/AICoachService';
 import logger from '../utils/logger';
 import './WorkoutDetail.css';
-
-// Import workout libraries for fallback lookup
-import { PaceCalculator } from '../lib/pace-calculator';
-import { transformWorkoutForDisplay } from '../utils/transformWorkoutForDisplay';
-
-// Initialize libraries
-const paceCalculator = new PaceCalculator();
+import useWorkoutDetailData from '../hooks/useWorkoutDetailData';
 
 function WorkoutDetail({ userProfile, trainingPlan }) {
   const navigate = useNavigate();
   const { day } = useParams();
   const location = useLocation();
-  const [somethingElseModal, setSomethingElseModal] = useState({
-    isOpen: false,
-    workout: null
-  });
-  const [modifiedWorkout, setModifiedWorkout] = useState(null);
-  const [completionData, setCompletionData] = useState(null);
   const [coachingAnalysis, setCoachingAnalysis] = useState(null);
   const [loadingCoaching, setLoadingCoaching] = useState(false);
   const [coachingError, setCoachingError] = useState(null);
 
-  // Get workout data from navigation state (passed from Dashboard) or fall back to training plan
-  const workoutFromState = location.state?.workout;
-  const userProfileFromState = location.state?.userProfile || userProfile;
-  const currentWeekNumber = location.state?.currentWeek || 1;
-  const weekDataFromState = location.state?.weekData;
-
-  // Get VDOT paces - try multiple sources:
-  // 1. Paces passed from Dashboard (userProfileFromState.paces)
-  // 2. Paces on training plan directly (trainingPlan?.paces)
-  // 3. Calculate from user's goal time if we have it
-  // Helper: Calculate actual race pace from goal time and distance
-  const calculateRacePace = (goalTime, raceDistance) => {
-    if (!goalTime || !raceDistance) return null;
-
-    // Parse goal time (formats: "2:00:00", "1:45:00", "Half-2:00:00")
-    let timeStr = goalTime;
-    if (timeStr.includes('-')) {
-      timeStr = timeStr.split('-')[1];
-    }
-
-    const parts = timeStr.split(':').map(Number);
-    let totalMinutes;
-    if (parts.length === 3) {
-      totalMinutes = parts[0] * 60 + parts[1] + parts[2] / 60;
-    } else if (parts.length === 2) {
-      totalMinutes = parts[0] + parts[1] / 60;
-    } else {
-      return null;
-    }
-
-    // Get distance in miles
-    const distanceMap = {
-      '5K': 3.1,
-      '10K': 6.2,
-      'Half': 13.1,
-      'Half Marathon': 13.1,
-      'Marathon': 26.2
-    };
-    const miles = distanceMap[raceDistance] || parseFloat(raceDistance);
-    if (!miles) return null;
-
-    // Calculate pace per mile
-    const paceMinutes = totalMinutes / miles;
-    const mins = Math.floor(paceMinutes);
-    const secs = Math.round((paceMinutes - mins) * 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const getVdotPaces = () => {
-    // Get goal time and race distance for calculating actual race pace
-    const goalTime = trainingPlan?.planOverview?.goalTime || userProfileFromState?.raceTime || userProfile?.raceTime;
-    const raceDistance = trainingPlan?.planOverview?.raceDistance || userProfileFromState?.raceDistance || userProfile?.raceDistance;
-    const racePace = calculateRacePace(goalTime, raceDistance);
-
-    // Helper to add race pace to paces object
-    // CRITICAL: Always calculate racePace for sandwich/simulation workouts
-    const addRacePace = (paces) => {
-      if (!paces) return paces;
-      // Always add racePace if we can calculate it (even if paces object exists)
-      if (racePace) {
-        return {
-          ...paces,
-          racePace: { pace: racePace }, // Actual goal race pace (e.g., 9:09 for 2:00 half)
-          raceDistance: raceDistance
-        };
-      }
-      return paces;
-    };
-
-    // First, try paces from state
-    if (userProfileFromState?.paces?.easy) {
-      return addRacePace(userProfileFromState.paces);
-    }
-
-    // Second, try paces from training plan
-    if (trainingPlan?.paces?.easy) {
-      return addRacePace(trainingPlan.paces);
-    }
-
-    // Third, calculate from goal time if available
-    if (goalTime && raceDistance) {
-      try {
-        const result = paceCalculator.calculateFromGoal(raceDistance, goalTime);
-        if (result?.paces?.easy) {
-          return addRacePace(result.paces);
-        }
-      } catch (e) {
-        // Could not calculate paces
-      }
-    }
-
-    return null;
-  };
-
-  const vdotPaces = getVdotPaces();
-  
-  const getDayWorkout = (dayName) => {
-    // Use week data from state if available
-    if (weekDataFromState && weekDataFromState.workouts) {
-      return weekDataFromState.workouts.find(w => 
-        w.day && w.day.toLowerCase() === dayName.toLowerCase()
-      );
-    }
-    
-    if (!trainingPlan || !trainingPlan.weeks) {
-      return null;
-    }
-    
-    // Get from current week or fall back to week 1
-    const currentWeekIndex = Math.min(currentWeekNumber - 1, trainingPlan.weeks.length - 1);
-    const currentWeek = trainingPlan.weeks[currentWeekIndex];
-    if (!currentWeek || !currentWeek.workouts) {
-      return null;
-    }
-    
-    return currentWeek.workouts.find(w => 
-      w.day && w.day.toLowerCase() === dayName.toLowerCase()
-    );
-  };
-  
-  const workoutData = workoutFromState || getDayWorkout(day);
-
-  // Fetch completion data from Firebase
-  useEffect(() => {
-    const fetchCompletionData = async () => {
-      if (!auth.currentUser || !workoutData) return;
-
-      try {
-        const { doc, getDoc } = await import('firebase/firestore');
-        const { db } = await import('../firebase/config');
-
-        const userRef = doc(db, 'users', auth.currentUser.uid);
-        const userDoc = await getDoc(userRef);
-
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          const completedWorkouts = data.completedWorkouts || {};
-
-          // Build workout key based on workout index (for two-a-days)
-          const workoutIndex = workoutData.workoutIndex || 0;
-          const workoutKey = `${currentWeekNumber}-${workoutData.day}-${workoutIndex}`;
-
-          if (completedWorkouts[workoutKey]) {
-            setCompletionData(completedWorkouts[workoutKey]);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching completion data:', error);
-      }
-    };
-
-    fetchCompletionData();
-  }, [workoutData, currentWeekNumber]);
-
-  // Fallback workout details in case the training plan doesn't have the data
-  const workoutDetails = {
-    tuesday: {
-      name: userProfile?.standUpBikeType ? 'Progressive Build Session' : 'Sandwich Tempo',
-      type: 'tempo',
-      focus: 'Lactate Threshold',
-      duration: '45 minutes',
-      description: userProfile?.standUpBikeType ?
-        'Gradually increasing intensity throughout session on your stand-up bike' :
-        'Tempo effort sandwiched between easy running',
-      structure: userProfile?.standUpBikeType ?
-        '20 min easy + 20-40 min progressive build to tempo + 10 min easy' :
-        '10-15 min easy warmup + 15-20 min tempo + 5-10 min easy cooldown',
-      equipmentSpecific: !!userProfile?.standUpBikeType,
-      intensity: 'Medium-hard effort, sustainable for 20-60 minutes',
-      heartRate: '86-90% Max HR',
-      paceGuidance: userProfile?.standUpBikeType ?
-        `${formatEquipmentName(userProfile?.standUpBikeType)} specific: Focus on smooth ${userProfile?.standUpBikeType === 'cyclete' ? 'teardrop' : 'elliptical'} motion` :
-        'Half marathon to 10-mile race pace',
-      safetyNotes: [
-        'Start conservatively - tempo should feel "controlled discomfort"',
-        'If breathing becomes labored, slow down slightly',
-        'Better to run slightly too easy than too hard'
-      ],
-      alternatives: {
-        tooHot: 'Move indoors or to early morning',
-        tooTired: 'Easy run with 4-6 x 1 minute pickups',
-        timeConstraint: '20 min tempo run instead of full session',
-        noEquipment: userProfile?.standUpBikeType ? 'Traditional running tempo workout' : 'Treadmill with 1% incline'
-      }
-    },
-    thursday: {
-      name: 'Easy Run',
-      type: 'easy',
-      focus: 'Recovery',
-      duration: '35-45 minutes',
-      description: 'Conversational pace, aerobic base building',
-      structure: 'Easy effort throughout, should feel refreshed after',
-      equipmentSpecific: false,
-      intensity: 'Easy conversational pace',
-      heartRate: '65-79% Max HR',
-      paceGuidance: 'Should be able to speak in full sentences',
-      safetyNotes: [
-        'This should feel easy - not a workout day',
-        'Focus on form and relaxation',
-        'Cut short if feeling overly fatigued'
-      ],
-      alternatives: {
-        tooHot: 'Move to air conditioning or pool running',
-        tooTired: 'Walk or very easy bike ride',
-        injury: 'Cross-training or complete rest',
-        timeConstraint: '20-30 minutes is fine'
-      }
-    },
-    sunday: {
-      name: 'Conversational Long Run',
-      type: 'longRun',
-      focus: 'Endurance',
-      duration: '60-75 minutes',
-      description: 'Easy long run emphasizing conversational pace',
-      structure: 'Run with partner/group, maintain conversation throughout',
-      equipmentSpecific: false,
-      intensity: 'Easy conversational pace',
-      heartRate: '65-78% Max HR',
-      paceGuidance: 'If you can\'t hold a conversation, you\'re going too fast',
-      safetyNotes: [
-        'Carry water for runs over 60 minutes',
-        'Know your route and have bailout options',
-        'Focus on time on feet, not speed'
-      ],
-      alternatives: {
-        tooHot: 'Start very early or split into two shorter runs',
-        timeConstraint: 'Run for available time, maintain easy effort',
-        noPartner: 'Solo run with audiobook or podcast',
-        injury: 'Long bike ride or pool running session'
-      }
-    }
-  };
-
-  // Get the base workout and apply any modifications
-  const normalizedProfile = userProfileFromState || userProfile;
-  const baseWorkout = workoutData
-    ? transformWorkoutForDisplay({
-        workoutData,
-        userProfile: normalizedProfile,
-        trainingPlan,
-        vdotPaces,
-        experienceLevel: normalizedProfile?.experienceLevel
-      })
-    : workoutDetails[day] || workoutDetails.tuesday;
-  const currentWorkout = modifiedWorkout || baseWorkout;
+  const {
+    userProfileForDisplay,
+    currentWeekNumber,
+    weekDataFromState,
+    workoutData,
+    completionData,
+    currentWorkout,
+    somethingElseModal,
+    openSomethingElseModal,
+    closeSomethingElseModal,
+    handleWorkoutReplacement
+  } = useWorkoutDetailData({
+    day,
+    userProfile,
+    trainingPlan,
+    locationState: location.state
+  });
 
   // Helper function to format structured workout data
   const formatStructure = (structure) => {
@@ -365,83 +121,6 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       easy: '🌤️'
     };
     return emojis[type] || '💪';
-  };
-
-  const handleSomethingElse = () => {
-    // Convert the workout to the format expected by the modal
-    const modalWorkout = {
-      day: day.charAt(0).toUpperCase() + day.slice(1), // Capitalize day
-      type: currentWorkout.type,
-      workout: {
-        name: currentWorkout.name,
-        description: currentWorkout.description
-      },
-      focus: currentWorkout.focus,
-      equipmentSpecific: currentWorkout.equipmentSpecific
-    };
-    
-    setSomethingElseModal({
-      isOpen: true,
-      workout: modalWorkout
-    });
-  };
-
-  const handleCloseSomethingElse = () => {
-    setSomethingElseModal({
-      isOpen: false,
-      workout: null
-    });
-  };
-
-  const handleWorkoutReplacement = async (newWorkout) => {
-    // Convert the new workout back to the WorkoutDetail format
-    // IMPORTANT: Keep workout data nested under 'workout' property for transformWorkoutForDisplay to extract properly
-    const updatedWorkout = {
-      ...baseWorkout,
-      workout: {
-        ...newWorkout.workout // Keep nested structure with ALL fields (structure, benefits, effort, etc.)
-      },
-      name: newWorkout.workout.name,
-      description: newWorkout.workout.description,
-      type: newWorkout.type,
-      focus: newWorkout.focus,
-      equipmentSpecific: newWorkout.equipmentSpecific,
-      replacementReason: newWorkout.replacementReason
-    };
-
-    setModifiedWorkout(updatedWorkout);
-
-    // Prepare workout data for storage
-    const workoutKey = `${currentWeekNumber}-${day}`;
-    const workoutToSave = {
-      day: day.charAt(0).toUpperCase() + day.slice(1),
-      workout: {
-        ...newWorkout.workout // Copy ALL workout fields
-      },
-      focus: newWorkout.focus,
-      type: newWorkout.type,
-      equipmentSpecific: newWorkout.equipmentSpecific,
-      replacementReason: newWorkout.replacementReason
-    };
-
-    // Save to localStorage immediately for UI responsiveness
-    const savedWorkouts = JSON.parse(localStorage.getItem('runeq_modifiedWorkouts') || '{}');
-    savedWorkouts[workoutKey] = workoutToSave;
-    localStorage.setItem('runeq_modifiedWorkouts', JSON.stringify(savedWorkouts));
-    console.log('💾 WorkoutDetail saved to localStorage:', workoutKey, newWorkout.workout.name);
-
-    // Save to Firestore for cross-device sync
-    if (auth.currentUser) {
-      await FirestoreService.saveModifiedWorkout(
-        auth.currentUser.uid,
-        currentWeekNumber,
-        day,
-        workoutToSave
-      );
-      console.log('✅ SAVED to Firestore:', newWorkout.workout.name, 'for', day);
-    }
-
-    handleCloseSomethingElse();
   };
 
   const handleGetCoaching = async () => {
@@ -2135,7 +1814,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           transition: 'all 0.3s ease'
         }}>
           <button
-            onClick={handleSomethingElse}
+            onClick={() => openSomethingElseModal(currentWorkout)}
             className="workout-button"
             style={{
               width: '100%',
@@ -2192,7 +1871,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
 
       <SomethingElseModal
         isOpen={somethingElseModal.isOpen}
-        onClose={handleCloseSomethingElse}
+        onClose={closeSomethingElseModal}
         currentWorkout={somethingElseModal.workout}
         userProfile={userProfile}
         trainingPlan={trainingPlan}
