@@ -1819,13 +1819,27 @@ class TrainingPlanService {
             const isInjuryWeek = weekNumber >= injuryStartWeek && weekNumber <= injuryEndWeek;
             const isReturnWeek = weekNumber === returnToRunningWeek;
 
+            // CRITICAL: Check if week is null or has no workouts
+            if (!week) {
+                logger.error(`  ❌ Week ${weekNumber} is null - cannot modify`);
+                throw new Error(`Week ${weekNumber} is null or invalid - cannot create injury recovery plan`);
+            }
+            
+            if (!week.workouts || week.workouts.length === 0) {
+                logger.warn(`  ⚠️ Week ${weekNumber} has no workouts - this is unusual`);
+                logger.warn(`    Week structure:`, Object.keys(week || {}));
+                // If it's an injury week, we still need to create cross-training workouts
+                // For now, throw an error to prevent silent failures
+                throw new Error(`Week ${weekNumber} has no workouts - cannot create injury recovery plan. The plan structure may be corrupted.`);
+            }
+
             if (isInjuryWeek) {
                 // Replace running workouts with cross-training
-                logger.log(`  Week ${weekNumber}: Cross-training only`);
+                logger.log(`  Week ${weekNumber}: Cross-training only (${week.workouts.length} workouts to replace)`);
                 return this.createCrossTrainingWeek(week, availableLibraries, reduceTrainingDays);
             } else if (isReturnWeek) {
                 // Gradual return to running week
-                logger.log(`  Week ${weekNumber}: Return to running transition`);
+                logger.log(`  Week ${weekNumber}: Return to running transition (${week.workouts.length} workouts)`);
                 return this.createReturnToRunningWeek(week, availableLibraries, reduceTrainingDays);
             } else {
                 // Post-recovery weeks: return to full training volume (no reduction)
