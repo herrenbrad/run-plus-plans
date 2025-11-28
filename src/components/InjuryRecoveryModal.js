@@ -17,6 +17,18 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
     standUpBike: false
   });
   const [reduceTrainingDays, setReduceTrainingDays] = useState(1);
+  const [injuries, setInjuries] = useState({
+    itBand: false,
+    plantarFasciitis: false,
+    shinSplints: false,
+    kneeIssues: false,
+    lowerBackPain: false,
+    achillesTendonitis: false,
+    stressFracture: false,
+    hipIssues: false,
+    ankleIssues: false,
+    other: false
+  });
   const [injuryDescription, setInjuryDescription] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -26,7 +38,25 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
       // Reset to defaults when opening
       setWeeksOffRunning(2);
       setReduceTrainingDays(1);
-      setInjuryDescription(userProfile?.injuryRecovery?.injuryDescription || '');
+      
+      // Load existing injury data if available
+      if (userProfile?.injuries) {
+        setInjuries(userProfile.injuries);
+      } else {
+        setInjuries({
+          itBand: false,
+          plantarFasciitis: false,
+          shinSplints: false,
+          kneeIssues: false,
+          lowerBackPain: false,
+          achillesTendonitis: false,
+          stressFracture: false,
+          hipIssues: false,
+          ankleIssues: false,
+          other: false
+        });
+      }
+      setInjuryDescription(userProfile?.injuryDescription || userProfile?.injuryRecovery?.injuryDescription || '');
 
       // Pre-select stand-up bike if user has one
       if (userProfile?.standUpBikeType) {
@@ -76,13 +106,15 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
       // Create updated profile with injury recovery settings
       const updatedProfile = {
         ...userProfile,
+        injuries: injuries, // Save injury checkboxes
+        injuryDescription: injuries.other ? (injuryDescription.trim() || null) : null, // Only save if "other" is selected
         injuryRecovery: {
           weeksOffRunning,
           selectedEquipment,
           reduceTrainingDays,
           injuryStartWeek: currentWeek,
           returnToRunningWeek: currentWeek + weeksOffRunning,
-          injuryDescription: injuryDescription.trim() || null
+          injuryDescription: injuries.other ? (injuryDescription.trim() || null) : null
         }
       };
 
@@ -101,13 +133,29 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
       // Generate AI coaching analysis for injury recovery
       logger.log('  🤖 Generating AI coaching analysis...');
       try {
+        // Build injury list for AI context
+        const selectedInjuries = [];
+        if (injuries.itBand) selectedInjuries.push('IT Band Syndrome');
+        if (injuries.plantarFasciitis) selectedInjuries.push('Plantar Fasciitis');
+        if (injuries.shinSplints) selectedInjuries.push('Shin Splints');
+        if (injuries.kneeIssues) selectedInjuries.push('Knee Issues');
+        if (injuries.lowerBackPain) selectedInjuries.push('Lower Back Pain');
+        if (injuries.achillesTendonitis) selectedInjuries.push('Achilles Tendonitis');
+        if (injuries.stressFracture) selectedInjuries.push('Stress Fracture');
+        if (injuries.hipIssues) selectedInjuries.push('Hip Issues');
+        if (injuries.ankleIssues) selectedInjuries.push('Ankle Issues');
+        if (injuries.other && injuryDescription.trim()) {
+          selectedInjuries.push(`Other: ${injuryDescription.trim()}`);
+        }
+        
         const injuryContext = {
           weeksOffRunning,
           selectedEquipment,
           reduceTrainingDays,
           currentWeek,
           returnToRunningWeek: currentWeek + weeksOffRunning,
-          injuryDescription: injuryDescription.trim() || null
+          injuries: selectedInjuries,
+          injuryDescription: injuries.other ? (injuryDescription.trim() || null) : null
         };
         
         const coachingAnalysis = await TrainingPlanAIService.generateInjuryRecoveryCoaching(
@@ -234,7 +282,7 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
           </p>
         </div>
 
-        {/* Injury Description */}
+        {/* Injury Information */}
         <div style={{ marginBottom: '24px' }}>
           <label style={{
             display: 'block',
@@ -243,33 +291,111 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
             fontWeight: '500',
             marginBottom: '12px'
           }}>
-            What injury are you recovering from?
+            What injury are you recovering from? (Select all that apply)
           </label>
-          <textarea
-            value={injuryDescription}
-            onChange={(e) => setInjuryDescription(e.target.value)}
-            placeholder="e.g., IT band syndrome, plantar fasciitis, shin splints, knee pain, stress fracture, etc."
-            rows={3}
-            style={{
-              width: '100%',
-              padding: '12px',
-              background: 'rgba(0, 0, 0, 0.3)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              color: '#FFFFFF',
-              fontSize: '0.9rem',
-              fontFamily: 'inherit',
-              resize: 'vertical',
-              boxSizing: 'border-box'
-            }}
-          />
           <p style={{
-            margin: '8px 0 0 0',
-            fontSize: '0.8rem',
-            color: '#666'
+            marginBottom: '16px',
+            fontSize: '0.85rem',
+            color: '#999'
           }}>
             This helps the AI coach recommend the safest cross-training equipment and avoid aggravating your injury.
           </p>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            marginBottom: '16px'
+          }}>
+            {[
+              { id: 'itBand', name: 'IT Band Syndrome', description: 'Hip/knee pain on outside of leg' },
+              { id: 'plantarFasciitis', name: 'Plantar Fasciitis', description: 'Bottom of foot pain' },
+              { id: 'shinSplints', name: 'Shin Splints', description: 'Pain along shin bone' },
+              { id: 'kneeIssues', name: 'Knee Issues', description: 'Patellofemoral, meniscus, etc.' },
+              { id: 'lowerBackPain', name: 'Lower Back Pain', description: 'Lower back discomfort' },
+              { id: 'achillesTendonitis', name: 'Achilles Tendonitis', description: 'Back of heel/ankle pain' },
+              { id: 'stressFracture', name: 'Stress Fracture', description: 'Bone stress injury' },
+              { id: 'hipIssues', name: 'Hip Issues', description: 'Hip pain or impingement' },
+              { id: 'ankleIssues', name: 'Ankle Issues', description: 'Ankle pain or instability' },
+              { id: 'other', name: 'Other', description: 'Please specify below' }
+            ].map(injury => (
+              <button
+                key={injury.id}
+                type="button"
+                onClick={() => {
+                  const newInjuries = {
+                    ...injuries,
+                    [injury.id]: !injuries[injury.id]
+                  };
+                  setInjuries(newInjuries);
+                  // Clear description if "other" is deselected
+                  if (injury.id === 'other' && !newInjuries.other) {
+                    setInjuryDescription('');
+                  }
+                }}
+                style={{
+                  padding: '12px 16px',
+                  fontSize: '0.9rem',
+                  border: injuries[injury.id] ? '2px solid #ef4444' : '1px solid #333',
+                  background: injuries[injury.id] ? 'rgba(239, 68, 68, 0.1)' : '#1a1a1a',
+                  color: injuries[injury.id] ? '#ef4444' : '#999',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}
+              >
+                <span style={{ fontSize: '1.2rem' }}>{injuries[injury.id] ? '✓' : '○'}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: '500' }}>
+                    {injury.name}
+                  </div>
+                  <div style={{
+                    fontSize: '0.8rem',
+                    color: injuries[injury.id] ? '#fca5a5' : '#666',
+                    marginTop: '2px'
+                  }}>
+                    {injury.description}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Other injury description field */}
+          {injuries.other && (
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{
+                display: 'block',
+                color: '#fff',
+                fontSize: '0.9rem',
+                fontWeight: '500',
+                marginBottom: '8px'
+              }}>
+                Please describe your injury:
+              </label>
+              <textarea
+                value={injuryDescription}
+                onChange={(e) => setInjuryDescription(e.target.value)}
+                placeholder="e.g., Runner's knee, patellar tendinitis, etc."
+                rows={2}
+                maxLength={100}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: '#FFFFFF',
+                  fontSize: '0.9rem',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Weeks Off Running */}

@@ -1739,7 +1739,8 @@ INJURY RECOVERY SITUATION:
 - Race Goal: ${raceDistance} in ${raceTime}
 - Race Date: ${raceDate}
 - Weeks Remaining After Recovery: ${weeksRemaining - weeksOffRunning} weeks
-${injuryContext.injuryDescription ? `- Injury Description: ${injuryContext.injuryDescription}` : ''}
+${injuryContext.injuries && injuryContext.injuries.length > 0 ? `- Injury Type(s): ${injuryContext.injuries.join(', ')}` : ''}
+${injuryContext.injuryDescription ? `- Additional Details: ${injuryContext.injuryDescription}` : ''}
 
 AVAILABLE CROSS-TRAINING EQUIPMENT:
 ${equipmentList.map(eq => `- ${eq}`).join('\n')}
