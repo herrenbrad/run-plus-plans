@@ -1793,6 +1793,17 @@ class TrainingPlanService {
         // Preserve completed weeks (everything before current week)
         const completedWeeks = weeklyPlans.slice(0, currentWeek - 1);
         logger.log('  Preserved', completedWeeks.length, 'completed weeks');
+        logger.log('  📋 Original plan structure from Firestore:', {
+            totalWeeks: weeklyPlans.length,
+            weeksWithWorkouts: weeklyPlans.filter(w => w && w.workouts && w.workouts.length > 0).length,
+            week1HasWorkouts: !!weeklyPlans[0]?.workouts?.length,
+            week2HasWorkouts: !!weeklyPlans[1]?.workouts?.length,
+            week3HasWorkouts: !!weeklyPlans[2]?.workouts?.length,
+            week1WorkoutCount: weeklyPlans[0]?.workouts?.length || 0,
+            week2WorkoutCount: weeklyPlans[1]?.workouts?.length || 0,
+            week3WorkoutCount: weeklyPlans[2]?.workouts?.length || 0,
+            week1IsNull: weeklyPlans[0] === null || weeklyPlans[0] === undefined
+        });
 
         // Get available cross-training libraries based on selected equipment
         const availableLibraries = [];
