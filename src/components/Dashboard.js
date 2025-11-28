@@ -665,6 +665,24 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
             logger.log('Found brick workout:', workout.day, workout.workout?.name);
           }
         });
+        
+        // CRITICAL: Check for injury recovery and set weekType if missing
+        // This ensures injury recovery UI and coaching are displayed correctly
+        if (trainingPlan.injuryRecoveryActive && trainingPlan.injuryRecoveryInfo) {
+          const { startWeek, endWeek, returnWeek } = trainingPlan.injuryRecoveryInfo;
+          
+          // If weekType is not set, determine it based on current week
+          if (!weekData.weekType) {
+            if (currentWeek >= startWeek && currentWeek <= endWeek) {
+              weekData.weekType = 'injury-recovery';
+              logger.log(`🏥 Week ${currentWeek} marked as injury-recovery (${startWeek}-${endWeek})`);
+            } else if (currentWeek === returnWeek) {
+              weekData.weekType = 'return-to-running';
+              logger.log(`🎯 Week ${currentWeek} marked as return-to-running`);
+            }
+          }
+        }
+        
         return weekData;
       }
     }
