@@ -1847,10 +1847,13 @@ class TrainingPlanService {
                 weekKeys: week ? Object.keys(week) : []
             });
             
-            // CRITICAL: If week is null or has no workouts, generate them on the fly
-            // This prevents requiring users to regenerate their entire plan just to use injury recovery
-            if (!week || !week.workouts || week.workouts.length === 0) {
-                logger.warn(`  ⚠️ Week ${weekNumber} is null or has no workouts - generating workouts on the fly`);
+            const isInjuryWeek = weekNumber >= injuryStartWeek && weekNumber <= injuryEndWeek;
+            const isReturnWeek = weekNumber === returnToRunningWeek;
+            
+            // CRITICAL: Only generate workouts on the fly for injury weeks and return week
+            // For post-recovery weeks, preserve the original structure (even if null) to avoid overwriting progressive distances
+            if ((isInjuryWeek || isReturnWeek) && (!week || !week.workouts || week.workouts.length === 0)) {
+                logger.warn(`  ⚠️ Week ${weekNumber} (injury/return week) is null or has no workouts - generating workouts on the fly`);
                 
                 // Import generateWeekWorkouts dynamically to avoid circular dependencies
                 const { generateWeekWorkouts } = await import('../utils/workoutGeneration.js');
@@ -1868,9 +1871,13 @@ class TrainingPlanService {
                     workouts: generatedWorkouts
                 };
                 logger.log(`  ✅ Generated ${generatedWorkouts.length} workouts for week ${weekNumber}`);
+            } else if (!week || !week.workouts || week.workouts.length === 0) {
+                // For post-recovery weeks, preserve null structure - don't generate workouts
+                // This prevents overwriting the plan with static distances
+                logger.warn(`  ⚠️ Week ${weekNumber} (post-recovery) is null - preserving null structure to avoid overwriting plan`);
+                modifiedWeeks.push(week); // Push null or invalid week as-is
+                continue;
             }
-            const isInjuryWeek = weekNumber >= injuryStartWeek && weekNumber <= injuryEndWeek;
-            const isReturnWeek = weekNumber === returnToRunningWeek;
 
             if (isInjuryWeek) {
                 // Replace running workouts with cross-training
