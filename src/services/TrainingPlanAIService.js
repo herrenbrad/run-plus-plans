@@ -19,6 +19,7 @@ import logger from '../utils/logger';
 import phaseCalculator from './ai/PhaseCalculator';
 import planFixer from './ai/PlanFixer';
 import promptBuilder from './ai/PromptBuilder';
+import planParser from './ai/PlanParser';
 
 class TrainingPlanAIService {
     constructor() {
@@ -496,7 +497,7 @@ SEQUENCING RULES:
             const combinedText = `${coachingText}\n\n---\n\n${planText}`;
 
             // Parse AI response (extracts workout IDs)
-            const structuredPlan = this.parseAIPlanToStructure(combinedText, normalizedProfile);
+            const structuredPlan = planParser.parseAIPlanToStructure(combinedText, normalizedProfile);
 
             // Hydrate workout IDs with full workout details from library
             const enrichedPlan = this.enrichPlanWithWorkouts(structuredPlan);
@@ -1170,7 +1171,7 @@ SEQUENCING RULES:
         const firstName = fullName ? fullName.split(' ')[0] : null;
 
         // Build workout library context
-        const workoutContext = this.buildWorkoutLibraryContext();
+        const workoutContext = promptBuilder.buildWorkoutLibraryContext();
 
         // Build regeneration prompt
         let prompt = `**PLAN REGENERATION REQUEST**\n\n`;
@@ -1272,7 +1273,7 @@ SEQUENCING RULES:
 
             // Parse AI response (extracts workout IDs)
             // Pass currentWeek as starting week number for correct week numbering
-            const structuredPlan = this.parseAIPlanToStructure(planText, updatedProfile, currentWeek);
+            const structuredPlan = planParser.parseAIPlanToStructure(planText, updatedProfile, currentWeek);
 
             // Hydrate workout IDs with full workout details from library
             const enrichedPlan = this.enrichPlanWithWorkouts(structuredPlan);
@@ -1910,6 +1911,11 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
      * @param {number} startingWeek - Optional: Starting week number (for regeneration)
      */
     parseAIPlanToStructure(planText, userProfile, startingWeek = null) {
+        // Delegated to PlanParser module
+        return planParser.parseAIPlanToStructure(planText, userProfile, startingWeek);
+    }
+
+    _OLD_parseAIPlanToStructure(planText, userProfile, startingWeek = null) {
         const lines = planText.split('\n');
         const weeks = [];
         let currentWeek = null;
