@@ -406,3 +406,7 @@ Display in Dashboard with course visualization
 5. Test with real TCX file (Medellín Marathon example from roadmap)
 
 
+
+
+
+

@@ -93,7 +93,7 @@ class TrainingPlanService {
             weeksAvailable: weeksAvailable,
             experienceLevel: formData.experienceLevel,
             standUpBikeType: formData.standUpBikeType,
-            runningStatus: formData.runningStatus || 'active', // 'active', 'bikeOnly', or 'transitioning'
+            runningStatus: formData.runningStatus || 'active', // 'active', 'bikeOnly', 'crossTrainingOnly', or 'transitioning'
             hasGarmin: formData.hasGarmin !== false, // Default to true if not specified (for existing users)
             // CURRENT FITNESS - critical for pace progression calculation
             currentWeeklyMileage: parseInt(formData.currentWeeklyMileage) || null,

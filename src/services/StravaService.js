@@ -44,8 +44,22 @@ class StravaService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Strava token exchange failed: ${error.message || response.statusText}`);
+      let errorMessage = 'Unknown error';
+      try {
+        const error = await response.json();
+        errorMessage = error.message || error.error || response.statusText;
+        logger.error('❌ Strava token exchange error details:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: error,
+          clientId: STRAVA_CONFIG.clientId ? 'set' : 'missing',
+          clientSecret: STRAVA_CONFIG.clientSecret ? 'set' : 'missing',
+          redirectUri: STRAVA_CONFIG.redirectUri,
+        });
+      } catch (e) {
+        errorMessage = response.statusText || 'Failed to parse error response';
+      }
+      throw new Error(`Strava token exchange failed: ${errorMessage}`);
     }
 
     return response.json();

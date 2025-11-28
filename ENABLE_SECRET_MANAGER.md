@@ -51,3 +51,7 @@ firebase deploy --only functions:callAnthropicAPI
 - Verify project: `firebase use run-plus-plans`
 - Check billing account is linked: https://console.cloud.google.com/billing?project=run-plus-plans
 
+
+
+
+

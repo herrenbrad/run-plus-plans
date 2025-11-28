@@ -125,7 +125,7 @@ export class TrainingPlanGenerator {
             weeksAvailable = null,
             experienceLevel, // beginner, intermediate, advanced - required
             standUpBikeType = null, // "cyclete", "elliptigo", or null for running-only
-            runningStatus = 'active', // 'active', 'bikeOnly', or 'transitioning'
+            runningStatus = 'active', // 'active', 'bikeOnly', 'crossTrainingOnly', or 'transitioning'
             currentWeeklyMileage = null, // Current weekly mileage for Week 1 starting point
             hasGarmin = true, // Whether user has Garmin device for RunEQ data field
             // USER SCHEDULE INPUTS - from onboarding
@@ -665,7 +665,7 @@ export class TrainingPlanGenerator {
             // This is a training day - determine workout type
             if (day === longRunDay) {
                 // LONG RUN DAY (or long ride for bike-only users)
-                if (runningStatus === 'bikeOnly') {
+                if (runningStatus === 'bikeOnly' || runningStatus === 'crossTrainingOnly') {
                     logger.log(`     ✅ Result: LONG BIKE RIDE (bike-only mode)`);
                     workouts.push({
                         day,
@@ -705,7 +705,7 @@ export class TrainingPlanGenerator {
             } else if (hardSessionDays.includes(day) && !(weekNumber === totalWeeks - 1 && phase.phase === 'taper')) {
                 // HARD RUN DAY (user specified, but NOT a bike day)
                 // SKIP hard workouts during taper week (but NOT race week)
-                if (runningStatus === 'bikeOnly') {
+                if (runningStatus === 'bikeOnly' || runningStatus === 'crossTrainingOnly') {
                     // Bike-only mode: use bike intervals/tempo instead of running
                     logger.log(`     ✅ Result: HARD BIKE SESSION (bike-only mode, hardSessionIndex: ${hardSessionIndex})`);
                     const bikeWorkoutTypes = ['tempo', 'intervals', 'aerobic_power'];
@@ -749,7 +749,7 @@ export class TrainingPlanGenerator {
                 });
             } else {
                 // EASY DAY (everything else that's an available day)
-                if (runningStatus === 'bikeOnly') {
+                if (runningStatus === 'bikeOnly' || runningStatus === 'crossTrainingOnly') {
                     // Bike-only mode: use easy bike rides
                     logger.log(`     ✅ Result: EASY BIKE RIDE (bike-only mode)`);
                     const workoutDistance = calculateWorkoutDistance('recovery');

@@ -530,8 +530,15 @@ SEQUENCING RULES:
      */
     async generateTrainingPlan(userProfile) {
         try {
+            // CRITICAL: Normalize profile field names for consistency
+            // Map hardSessionDays to qualityDays if it exists
+            const normalizedProfile = {
+                ...userProfile,
+                qualityDays: userProfile.qualityDays || userProfile.hardSessionDays || []
+            };
+            
             // STEP 1: Get coaching analysis and key paces (shorter, faster call)
-            const coachingPrompt = this.buildCoachingAnalysisPrompt(userProfile);
+            const coachingPrompt = this.buildCoachingAnalysisPrompt(normalizedProfile);
             const coachingResult = await this.callWithTimeout(
                 this.callAnthropicAPI({
                     model: 'claude-sonnet-4-5-20250929',
@@ -557,7 +564,7 @@ SEQUENCING RULES:
             // STEP 2: Get week-by-week plan structure (concise format)
             // CRITICAL: Include coaching analysis so Step 2 can reference race strategy and pacing
             const workoutContext = this.buildWorkoutLibraryContext();
-            const planPrompt = this.buildPlanStructurePrompt(userProfile, coachingText);
+            const planPrompt = this.buildPlanStructurePrompt(normalizedProfile, coachingText);
             const fullPlanPrompt = `${workoutContext}\n\n---\n\n**COACHING ANALYSIS FROM STEP 1 (for reference):**\n${coachingText}\n\n---\n\n${planPrompt}`;
 
             const planResult = await this.callWithTimeout(
@@ -586,18 +593,21 @@ SEQUENCING RULES:
             const combinedText = `${coachingText}\n\n---\n\n${planText}`;
 
             // Parse AI response (extracts workout IDs)
-            const structuredPlan = this.parseAIPlanToStructure(combinedText, userProfile);
+            const structuredPlan = this.parseAIPlanToStructure(combinedText, normalizedProfile);
 
             // Hydrate workout IDs with full workout details from library
             const enrichedPlan = this.enrichPlanWithWorkouts(structuredPlan);
 
             // Transform to Dashboard format
-            const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, userProfile);
+            const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, normalizedProfile);
+            
+            // CRITICAL: Auto-fix hard days violations (pragmatic fix to prevent regressions)
+            this.fixHardDaysViolations(dashboardPlan, normalizedProfile);
             
             // CRITICAL: Run validations to catch regressions
             try {
                 const { validateTrainingPlan } = await import('./TrainingPlanAIService.validators.js');
-                const validationResult = validateTrainingPlan(dashboardPlan, userProfile);
+                const validationResult = validateTrainingPlan(dashboardPlan, normalizedProfile);
                 if (!validationResult.valid) {
                     console.error('⚠️ Training plan validation failed - but continuing anyway:', validationResult.errors);
                     // Don't throw - log the errors but allow the plan to be used
@@ -955,6 +965,27 @@ SEQUENCING RULES:
         prompt += `**DO NOT generate more than ${totalWeeks} weeks. The plan must be exactly ${totalWeeks} weeks long, ending on the race date.**\n`;
         prompt += `**CRITICAL: Week 1 starts on ${startDateFormatted} (${startDayName}), NOT today or any other date. Use the actual date range shown above.**\n\n`;
 
+        // CRITICAL: User schedule requirements - MUST be followed
+        prompt += `**🚨 USER SCHEDULE REQUIREMENTS (MANDATORY - DO NOT VIOLATE):**\n`;
+        if (profile.qualityDays && profile.qualityDays.length > 0) {
+            prompt += `- **HARD WORKOUT DAYS: ${profile.qualityDays.join(' and ')} MUST ALWAYS have hard workouts (tempo, intervals, or hills) in EVERY week**\n`;
+            prompt += `  - ${profile.qualityDays[0]} MUST be a hard workout (tempo, intervals, or hills) - NEVER easy run, NEVER rest, NEVER bike-only\n`;
+            if (profile.qualityDays[1]) {
+                prompt += `  - ${profile.qualityDays[1]} MUST be a hard workout (tempo, intervals, or hills) - NEVER easy run, NEVER rest, NEVER bike-only\n`;
+            }
+            prompt += `  - DO NOT schedule hard workouts on other days\n`;
+            prompt += `  - DO NOT make these days easy runs or rest days - they MUST be quality sessions\n`;
+            prompt += `  - If you see "Easy" on ${profile.qualityDays.join(' or ')}, you have made an error - fix it immediately\n`;
+        }
+        if (restDays.length > 0) {
+            prompt += `- **REST DAYS: ${restDays.join(', ')} = "Rest" ONLY (no workouts, no cross-training) in EVERY week**\n`;
+            prompt += `  - DO NOT schedule any workouts on ${restDays.join(' or ')}\n`;
+        }
+        if (bikeDays.length > 0 && bikeType) {
+            prompt += `- **CROSS-TRAINING DAYS: ${bikeDays.join(' and ')} should be ${bikeType} rides, NOT runs**\n`;
+        }
+        prompt += `\n`;
+
         prompt += `**PHASE PLAN (use these exact labels in every week header):**\n`;
         phasePlan.forEach(block => {
             const rangeLabel = block.startWeek === block.endWeek
@@ -989,26 +1020,10 @@ SEQUENCING RULES:
         prompt += `5. After Week ${totalWeeks}, add "## Notes" with 2-3 concise bullets (checkpoint reminders, fueling, etc.). Do NOT introduce new workouts there.\n`;
         prompt += `6. Never include [WORKOUT_ID: ...] in visible text, never say "see above", and never paste the plan twice.\n\n`;
         
-        // CRITICAL: Add hard workout days requirement
-        if (profile.qualityDays && profile.qualityDays.length > 0) {
-            prompt += `- **🚨 CRITICAL - HARD WORKOUT DAYS: ${profile.qualityDays.join(' and ')} MUST have hard workouts (tempo, intervals, or hills)**\n`;
-            prompt += `  - ${profile.qualityDays[0]} MUST be a hard workout (tempo, intervals, or hills) - NOT easy run, NOT rest\n`;
-            if (profile.qualityDays[1]) {
-                prompt += `  - ${profile.qualityDays[1]} MUST be a hard workout (tempo, intervals, or hills) - NOT easy run, NOT rest\n`;
-            }
-            prompt += `  - DO NOT schedule hard workouts on other days\n`;
-            prompt += `  - DO NOT make these days easy runs or rest days\n`;
-        }
-        
-        if (restDays.length > 0) {
-            prompt += `- **🚨 CRITICAL - REST DAYS: ${restDays.join(', ')} = "Rest" ONLY (no workouts, no cross-training)**\n`;
-            prompt += `  - DO NOT schedule any workouts on ${restDays.join(' or ')}\n`;
-            prompt += `  - DO NOT schedule hard workouts on rest days\n`;
-        }
         if (bikeDays.length > 0 && bikeType) {
-            prompt += `- **IMPORTANT: ${bikeDays.join(' and ')} should be ${bikeType} rides, NOT runs**\n`;
-            prompt += `  Format: "Tue: Ride 4 RunEQ miles on your ${bikeType}" (NOT "Easy 4 mile run")\n`;
-            prompt += `  **CRITICAL: Keep as "RunEQ miles" - do NOT convert to actual bike miles. The system handles conversion.**\n`;
+            prompt += `**CROSS-TRAINING FORMAT:**\n`;
+            prompt += `- Format: "Tue: Ride 4 RunEQ miles on your ${bikeType}" (NOT "Easy 4 mile run")\n`;
+            prompt += `- **CRITICAL: Keep as "RunEQ miles" - do NOT convert to actual bike miles. The system handles conversion.**\n\n`;
         }
         
         // CRITICAL: Handle injured runners who cannot run
@@ -1278,6 +1293,30 @@ SEQUENCING RULES:
         prompt += `- Current Long Run: ${updatedProfile.currentLongRun} ${distanceUnit}\n`;
         prompt += `- Experience Level: ${updatedProfile.experienceLevel}\n`;
         prompt += `\n`;
+
+        // CRITICAL: Include original coaching analysis so regenerated workouts match what coach said
+        if (existingPlan.aiCoachingAnalysis || existingPlan.fullPlanText) {
+            const originalCoaching = existingPlan.aiCoachingAnalysis || existingPlan.fullPlanText;
+            if (typeof originalCoaching === 'string' && originalCoaching.length > 0) {
+                // Extract just the week-by-week plan section (not the full analysis)
+                let weekPlanText = originalCoaching;
+                const weekPlanMatch = originalCoaching.match(/WEEK.*?PLAN[\s\S]*?(?=PHASE|$)/i) || 
+                                     originalCoaching.match(/Week \d+.*?Week \d+/s);
+                
+                if (weekPlanMatch && typeof weekPlanMatch[0] === 'string') {
+                    weekPlanText = weekPlanMatch[0];
+                }
+                
+                // Limit to 2000 chars to avoid token limits
+                const truncatedText = weekPlanText.length > 2000 
+                    ? weekPlanText.substring(0, 2000) + '...'
+                    : weekPlanText;
+                
+                prompt += `**ORIGINAL COACHING ANALYSIS (for reference - match these workout types/distances):**\n`;
+                prompt += `${truncatedText}\n`;
+                prompt += `\n**IMPORTANT:** The workouts you generate should match the style, distances, and progression shown in the original coaching analysis above. Only adjust for the new schedule settings.\n\n`;
+            }
+        }
 
         prompt += `**CRITICAL REQUIREMENTS:**\n`;
         prompt += `1. Generate ONLY weeks ${currentWeek}-${totalWeeks} (${weeksRemaining} weeks)\n`;
@@ -1990,14 +2029,37 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
 
             // Detect week headers - can have markdown headers (###), bold (**), etc.
             // Format: "### Week 1 (dates) - XX miles" or "**Week 1** - XX miles" or "Week 1 - XX miles"
+            // Also support "### Week 1 (dates) • Phase • XX miles" (bullet point format)
             // Also support "kilometers" for metric users
-            // Also support cross-training plans with hours: "Week 1 - Base Building Phase | ~2.5 hours total"
-            // Match various dash types: hyphen (-), en-dash (–), em-dash (—)
-            // Make mileage optional for cross-training plans
-            const weekMatchWithMileage = line.match(/^[\s#*]*Week\s+(\d+).*?[-–—]\s*(\d+)\s*(miles|kilometers|km|mi)/i);
-            const weekMatchWithoutMileage = line.match(/^[\s#*]*Week\s+(\d+)(?:\s*\([^)]+\))?\s*[-–—]/i);
+            // Strategy: Match week number first, then find the LAST number followed by miles/km (to avoid matching dates)
+            if (line.match(/^[\s#*]*Week\s+\d+/i)) {
+                const weekNumMatch = line.match(/^[\s#*]*Week\s+(\d+)/i);
+                if (weekNumMatch) {
+                    const weekNum = parseInt(weekNumMatch[1]);
+                    
+                    // Find the LAST occurrence of "number + miles/km" (to avoid matching dates like "Nov 28")
+                    // Look for patterns like "16 miles", "24 kilometers", etc. at the end of the line
+                    const mileageMatches = [...line.matchAll(/(\d+)\s*(miles|kilometers|km|mi)\b/gi)];
+                    const lastMileageMatch = mileageMatches[mileageMatches.length - 1];
+                    
+                    if (lastMileageMatch) {
+                        const mileage = parseInt(lastMileageMatch[1]);
+                        const weekMatchWithMileage = { 1: weekNum, 2: mileage, 3: lastMileageMatch[2] };
+                        var weekMatch = weekMatchWithMileage;
+                    } else {
+                        // No mileage found, but we have a week number
+                        const weekMatchWithoutMileage = { 1: weekNum };
+                        var weekMatch = weekMatchWithoutMileage;
+                    }
+                }
+            }
             
-            let weekMatch = weekMatchWithMileage || weekMatchWithoutMileage;
+            // Fallback to original regex patterns if week number wasn't found above
+            if (!weekMatch) {
+                const weekMatchWithMileage = line.match(/^[\s#*]*Week\s+(\d+)(?:\s*\([^)]+\))?\s*[-–—]\s*(\d+)\s*(miles|kilometers|km|mi)/i);
+                const weekMatchWithoutMileage = line.match(/^[\s#*]*Week\s+(\d+)(?:\s*\([^)]+\))?\s*[-–—•]/i);
+                weekMatch = weekMatchWithMileage || weekMatchWithoutMileage;
+            }
             if (weekMatch) {
                 const weekNum = parseInt(weekMatch[1]);
                 console.log(`✅ REGEX MATCHED Week ${weekNum}!`);
@@ -2020,7 +2082,7 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
 
                 seenWeekNumbers.add(weekNum);
                 // For cross-training plans, mileage might not be specified - use 0 as placeholder
-                const mileage = weekMatchWithMileage ? parseInt(weekMatch[2]) : 0;
+                const mileage = weekMatch[2] ? parseInt(weekMatch[2]) : 0;
                 currentWeek = {
                     weekNumber: weekNum,
                     totalMileage: mileage,
@@ -2460,7 +2522,22 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
      */
     transformToDashboardFormat(enrichedPlan, userProfile) {
         console.log('\n🔧 TRANSFORMING TO DASHBOARD FORMAT');
-        const totalWeeks = enrichedPlan.weeks.length;
+        
+        // CRITICAL: Calculate totalWeeks from dates as fallback if weeks array is empty
+        let totalWeeks = enrichedPlan.weeks?.length || 0;
+        if (totalWeeks === 0) {
+            // Fallback: Calculate from race date and start date
+            const startDate = this.parseDate(userProfile.startDate);
+            const raceDate = this.parseDate(userProfile.raceDate);
+            if (startDate && raceDate && !isNaN(startDate.getTime()) && !isNaN(raceDate.getTime())) {
+                const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+                totalWeeks = Math.max(1, Math.ceil((raceDate.getTime() - startDate.getTime()) / msPerWeek));
+                console.warn(`⚠️ Weeks array is empty - calculated totalWeeks from dates: ${totalWeeks}`);
+            } else {
+                console.error('❌ Cannot calculate totalWeeks - missing or invalid dates');
+                throw new Error('Cannot create plan: weeks array is empty and dates are invalid');
+            }
+        }
         const phasePlan = this.getPhasePlan(totalWeeks);
         const phaseFocusMap = {
             Base: 'Aerobic foundation & durability',
@@ -2804,6 +2881,111 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
                 phasePlan
             }
         };
+    }
+
+    /**
+     * Auto-fix hard days violations - swaps easy runs on hard days with hard workouts
+     * This is a pragmatic fix to prevent regressions when AI doesn't follow instructions
+     */
+    fixHardDaysViolations(plan, profile) {
+        const qualityDays = profile.qualityDays || profile.hardSessionDays || [];
+        if (qualityDays.length === 0) return;
+
+        const hardWorkoutTypes = ['tempo', 'intervals', 'hills'];
+        
+        plan.weeks.forEach(week => {
+            week.workouts.forEach(workout => {
+                const dayName = workout.day;
+                const isHardDay = qualityDays.includes(dayName);
+                
+                if (isHardDay) {
+                    const descLower = (workout.description || '').toLowerCase();
+                    const nameLower = (workout.name || '').toLowerCase();
+                    const isEasy = (descLower.includes('easy') || nameLower.includes('easy')) && 
+                                   !descLower.includes('tempo') && 
+                                   !descLower.includes('interval') && 
+                                   !descLower.includes('hill');
+                    const isRest = workout.type === 'rest' || descLower.includes('rest');
+                    const isHard = hardWorkoutTypes.includes(workout.type) || 
+                                  descLower.includes('tempo') || 
+                                  descLower.includes('interval') || 
+                                  descLower.includes('hill');
+                    
+                    if ((isEasy || isRest) && !isHard) {
+                        // Find a hard workout from another day in the same week to swap with
+                        const swapCandidate = week.workouts.find(w => 
+                            w.day !== dayName && 
+                            hardWorkoutTypes.includes(w.type) &&
+                            !qualityDays.includes(w.day)
+                        );
+                        
+                        if (swapCandidate) {
+                            // Swap the workouts
+                            const temp = { ...workout };
+                            workout.type = swapCandidate.type;
+                            workout.name = swapCandidate.name;
+                            workout.description = swapCandidate.description;
+                            workout.workout = swapCandidate.workout;
+                            workout.focus = swapCandidate.focus;
+                            workout.distance = swapCandidate.distance;
+                            
+                            swapCandidate.type = temp.type;
+                            swapCandidate.name = temp.name;
+                            swapCandidate.description = temp.description;
+                            swapCandidate.workout = temp.workout;
+                            swapCandidate.focus = temp.focus;
+                            swapCandidate.distance = temp.distance;
+                            
+                            console.log(`✅ Auto-fixed: Swapped ${dayName} workout (was: ${temp.name}) with ${swapCandidate.day} (now: ${workout.name})`);
+                        } else {
+                            // No swap candidate - generate a default hard workout
+                            const defaultHardWorkout = this.generateDefaultHardWorkout(dayName, workout.distance || 5);
+                            workout.type = defaultHardWorkout.type;
+                            workout.name = defaultHardWorkout.name;
+                            workout.description = defaultHardWorkout.description;
+                            workout.workout = defaultHardWorkout.workout;
+                            workout.focus = defaultHardWorkout.focus;
+                            console.log(`✅ Auto-fixed: Replaced ${dayName} easy run with default ${defaultHardWorkout.type} workout`);
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    /**
+     * Generate a default hard workout when AI assigns easy run to hard day
+     */
+    generateDefaultHardWorkout(dayName, distance = 5) {
+        // Alternate between tempo and intervals for variety
+        const weekNumber = Math.floor(Math.random() * 2); // Simple alternation
+        const isTempo = weekNumber % 2 === 0;
+        
+        if (isTempo) {
+            return {
+                type: 'tempo',
+                name: `Tempo Run ${distance} miles`,
+                description: `Tempo Run ${distance} miles (2 mi warmup, ${Math.max(2, Math.floor(distance * 0.4))} mi @ tempo pace, 1 mi cooldown)`,
+                workout: {
+                    name: `Tempo Run ${distance} miles`,
+                    description: `Tempo Run ${distance} miles (2 mi warmup, ${Math.max(2, Math.floor(distance * 0.4))} mi @ tempo pace, 1 mi cooldown)`
+                },
+                focus: 'Lactate Threshold',
+                distance: distance
+            };
+        } else {
+            return {
+                type: 'intervals',
+                name: `Interval Run ${distance} miles`,
+                description: `Interval Run ${distance} miles (2 mi warmup, 4x800m @ VO2 pace, 2 mi cooldown)`,
+                workout: {
+                    name: `Interval Run ${distance} miles`,
+                    description: `Interval Run ${distance} miles (2 mi warmup, 4x800m @ VO2 pace, 2 mi cooldown)`
+                },
+                focus: 'Speed & VO2 Max',
+                distance: distance
+            };
+        }
     }
 }
 

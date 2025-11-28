@@ -138,3 +138,7 @@ Updated plan saved to Firestore
 Both serve important roles - AI for initial creation, rules for reliable updates.
 
 
+
+
+
+

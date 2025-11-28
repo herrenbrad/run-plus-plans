@@ -107,16 +107,28 @@ class AICoachService {
     // Determine workout description for prompt
     let workoutTypeDescription = '';
     let recoveryNotes = '';
+    const isLifeAdaptation = workoutData.isLifeAdaptation || false;
 
     if (isStandUpBike) {
       const bikeName = workoutData.standUpBikeType === 'cyclete' ? 'Cyclete' :
                        workoutData.standUpBikeType === 'elliptigo' ? 'ElliptiGO' :
                        'stand-up bike';
-      workoutTypeDescription = `${bikeName} (stand-up bike) - Weight-bearing, NO-IMPACT outdoor cardio`;
-      recoveryNotes = `This was completed on a stand-up bike (comes into Strava as "Ride"). Stand-up bikes are weight-bearing but have ZERO impact forces on joints. Quads still work eccentrically controlling descents but without the pounding. Recovery needs: less joint/bone stress than running, but similar muscular fatigue. Can often handle higher volume than running due to no impact.`;
+      
+      if (isLifeAdaptation) {
+        workoutTypeDescription = `${bikeName} workout (life adaptation - user did a run instead of scheduled bike) - Weight-bearing, NO-IMPACT outdoor cardio`;
+        recoveryNotes = `This was scheduled as a ${bikeName} workout, but the user completed a run instead (life adaptation). For coaching purposes, treat this as the scheduled ${bikeName} workout. Stand-up bikes are weight-bearing but have ZERO impact forces on joints. Since the user did a run, they got impact stress that wouldn't have occurred on the bike. Recovery needs: manage both the muscular fatigue from the run AND the impact-related stress on joints/bones/tendons that wouldn't have happened on the bike.`;
+      } else {
+        workoutTypeDescription = `${bikeName} (stand-up bike) - Weight-bearing, NO-IMPACT outdoor cardio`;
+        recoveryNotes = `This was completed on a stand-up bike (comes into Strava as "Ride"). Stand-up bikes are weight-bearing but have ZERO impact forces on joints. Quads still work eccentrically controlling descents but without the pounding. Recovery needs: less joint/bone stress than running, but similar muscular fatigue. Can often handle higher volume than running due to no impact.`;
+      }
     } else if (isRun) {
-      workoutTypeDescription = `Running - Weight-bearing, HIGH-IMPACT activity`;
-      recoveryNotes = `This was a running workout with full ground impact forces. Every foot strike creates 2-3x bodyweight forces absorbed by joints, bones, and connective tissue. Descents create even higher eccentric loading on quads AND impact stress. Recovery needs: manage both muscular fatigue AND impact-related stress on joints/bones/tendons.`;
+      if (isLifeAdaptation) {
+        workoutTypeDescription = `Running workout (life adaptation - user did a run instead of scheduled bike) - Weight-bearing, HIGH-IMPACT activity`;
+        recoveryNotes = `This was scheduled as a bike workout, but the user completed a run instead (life adaptation). For coaching purposes, treat this as the scheduled bike workout. However, since the user did a run, they got impact stress that wouldn't have occurred on the bike. Recovery needs: manage both the muscular fatigue AND the impact-related stress on joints/bones/tendons that wouldn't have happened on the bike.`;
+      } else {
+        workoutTypeDescription = `Running - Weight-bearing, HIGH-IMPACT activity`;
+        recoveryNotes = `This was a running workout with full ground impact forces. Every foot strike creates 2-3x bodyweight forces absorbed by joints, bones, and connective tissue. Descents create even higher eccentric loading on quads AND impact stress. Recovery needs: manage both muscular fatigue AND impact-related stress on joints/bones/tendons.`;
+      }
     } else {
       workoutTypeDescription = `Cycling or other cardio activity`;
       recoveryNotes = `This appears to be a traditional cycling workout. Lower body muscular work but minimal impact forces.`;
@@ -152,11 +164,11 @@ ${prescribedWorkout ? `PRESCRIBED WORKOUT:\n${prescribedWorkout}\n` : ''}
 
 ${trainingContext ? `TRAINING CONTEXT:\n${trainingContext}\n` : ''}
 
-${upcomingWorkouts ? `UPCOMING WORKOUTS THIS WEEK:\n${upcomingWorkouts}\n` : ''}
+${upcomingWorkouts ? `UPCOMING WORKOUTS THIS WEEK:\n${upcomingWorkouts}\n\nCRITICAL: You HAVE access to the upcoming schedule above. You MUST reference these specific upcoming workouts in your advice. DO NOT say "without seeing your upcoming schedule" or "I don't have access to your schedule" - you DO have it listed above. Use specific day names and workout names from the list above (e.g., "Friday's tempo run", "Sunday's long run").` : ''}
 
 ${injuryContext ? `INJURY/FATIGUE NOTES:\n${injuryContext}\n` : ''}
 
-Analyze this workout and provide coaching feedback. Focus on how terrain affected performance, whether pacing was appropriate given elevation changes, and what recovery/preparation is needed for the upcoming scheduled workouts. Reference specific upcoming workouts when giving advice (e.g., "Tuesday's tempo run", "Thursday's intervals").`;
+Analyze this workout and provide coaching feedback. Focus on how terrain affected performance, whether pacing was appropriate given elevation changes, and what recovery/preparation is needed for the upcoming scheduled workouts. ${upcomingWorkouts ? 'You MUST reference the specific upcoming workouts listed above using their exact day names and workout names.' : 'If upcoming workouts are not listed above, you can provide general recovery advice.'}`;
 
     return prompt;
   }

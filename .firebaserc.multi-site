@@ -1,0 +1,21 @@
+{
+  "projects": {
+    "default": "run-plus-plans"
+  },
+  "targets": {
+    "run-plus-plans": {
+      "hosting": {
+        "marketing": [
+          "runplusplans"
+        ],
+        "app": [
+          "app-runplusplans"
+        ]
+      }
+    }
+  }
+}
+
+
+
+

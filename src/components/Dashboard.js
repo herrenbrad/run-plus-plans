@@ -14,11 +14,13 @@ import SomethingElseModal from './SomethingElseModal';
 import ManagePlanModal from './ManagePlanModal';
 import InjuryRecoveryModal from './InjuryRecoveryModal';
 import { formatTrainingSystem, formatEquipmentName, formatPhase, titleCase } from '../utils/typography';
-import { calorieCalculator } from '../lib/calorie-calculator.js';
+// Calorie calculator removed - weight significantly affects calories and we don't collect weight data
+// import { calorieCalculator } from '../lib/calorie-calculator.js';
 import StravaService from '../services/StravaService';
 import StravaSyncService from '../services/StravaSyncService';
 import logger from '../utils/logger';
 import { useToast } from './Toast';
+import { calculateCurrentWeek, getWeekDateRange, getWorkoutDate, formatWorkoutDate } from '../utils/weekCalculations';
 import './Dashboard.css';
 
 function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData }) {
@@ -29,92 +31,20 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   const [isInjuryCoachingExpanded, setIsInjuryCoachingExpanded] = useState(true); // Start expanded
   const [isPlanAdjustmentCoachingExpanded, setIsPlanAdjustmentCoachingExpanded] = useState(true); // Start expanded
   
-  // Calculate the actual current week based on training plan start date
-  const calculateCurrentWeek = () => {
-    if (!trainingPlan?.planOverview?.startDate) {
-      return 1; // Default to week 1 if no start date
-    }
-
-    const today = new Date();
-    // FIXED: Append T00:00:00 to parse as local timezone, not UTC
-    const startDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
-
-    // FIXED: Calculate the Monday of the week containing the start date
-    const msPerDay = 24 * 60 * 60 * 1000;
-    const dayOfWeek = startDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
-    const mondayOfStartWeek = new Date(startDate.getTime() - (daysFromMonday * msPerDay));
-
-    // If we're before the Monday of the start week, return 1 (show first week)
-    if (today < mondayOfStartWeek) {
-      return 1;
-    }
-
-    // Calculate weeks since the Monday of start week
-    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-    const weeksSinceStart = Math.floor((today - mondayOfStartWeek) / msPerWeek);
-    return Math.min(weeksSinceStart + 1, trainingPlan?.planOverview?.totalWeeks || 12);
+  // Week calculation functions now imported from utils/weekCalculations.js
+  // Using wrapper functions to maintain same API within component
+  const calculateCurrentWeekLocal = () => calculateCurrentWeek(trainingPlan);
+  const getWeekDateRangeLocal = (weekNumber) => getWeekDateRange(weekNumber, trainingPlan);
+  const getWorkoutDateLocal = (weekNumber, dayName) => {
+    const date = getWorkoutDate(weekNumber, dayName, trainingPlan);
+    return date ? formatWorkoutDate(date) : null;
   };
 
-  // Calculate week date range for display
-  const getWeekDateRange = (weekNumber) => {
-    if (!trainingPlan?.planOverview?.startDate) {
-      return null;
-    }
-
-    // FIXED: Append T00:00:00 to parse as local timezone, not UTC
-    const startDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
-    const msPerDay = 24 * 60 * 60 * 1000;
-
-    // FIXED: Calculate the Monday of the week containing the start date
-    const dayOfWeek = startDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
-    const mondayOfStartWeek = new Date(startDate.getTime() - (daysFromMonday * msPerDay));
-
-    // Calculate the start of this training week (always Monday)
-    const weekStartDate = new Date(mondayOfStartWeek.getTime() + ((weekNumber - 1) * 7 * msPerDay));
-    const weekEndDate = new Date(weekStartDate.getTime() + (6 * msPerDay));
-
-    const options = { month: 'short', day: 'numeric' };
-    const startStr = weekStartDate.toLocaleDateString('en-US', options);
-    const endStr = weekEndDate.toLocaleDateString('en-US', options);
-
-    return `${startStr} - ${endStr}`;
-  };
-
-  // Calculate the actual date for a specific workout
-  const getWorkoutDate = (weekNumber, dayName) => {
-    if (!trainingPlan?.planOverview?.startDate) {
-      return null;
-    }
-
-    const planStartDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
-    const msPerDay = 24 * 60 * 60 * 1000;
-
-    // FIXED: Calculate the Monday of the week containing the start date (same as getWeekDateRange)
-    const dayOfWeek = planStartDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
-    const mondayOfStartWeek = new Date(planStartDate.getTime() - (daysFromMonday * msPerDay));
-
-    // Calculate the Monday of the requested week
-    const weekStartDate = new Date(mondayOfStartWeek.getTime() + ((weekNumber - 1) * 7 * msPerDay));
-
-    // Map day names to day of week numbers (Monday = 0 in our week, Sunday = 6)
-    // This maps to offset from Monday
-    const dayOffsets = {
-      'Monday': 0, 'Mon': 0,
-      'Tuesday': 1, 'Tue': 1,
-      'Wednesday': 2, 'Wed': 2,
-      'Thursday': 3, 'Thu': 3,
-      'Friday': 4, 'Fri': 4,
-      'Saturday': 5, 'Sat': 5,
-      'Sunday': 6, 'Sun': 6
-    };
-
-    const daysToAdd = dayOffsets[dayName] ?? 0;
-    const workoutDate = new Date(weekStartDate.getTime() + (daysToAdd * msPerDay));
-
-    return workoutDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  // Helper to clean WORKOUT_ID tags from workout names/descriptions
+  const cleanWorkoutText = (text) => {
+    if (!text || typeof text !== 'string') return text;
+    // Remove [WORKOUT_ID: ...] tags (any format)
+    return text.replace(/\[WORKOUT_ID:\s*[^\]]+\]\s*/gi, '').trim();
   };
 
   // Normalize workout type for backward compatibility with existing plans
@@ -409,7 +339,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   // Load current week from localStorage or calculate it
   const [currentWeek, setCurrentWeek] = useState(() => {
     // ALWAYS calculate current week based on start date for new plans
-    const calculatedWeek = calculateCurrentWeek();
+    const calculatedWeek = calculateCurrentWeekLocal();
 
     const savedWeek = localStorage.getItem('runeq_currentWeek');
     const savedStartDate = localStorage.getItem('runeq_startDate');
@@ -568,6 +498,35 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     }
   };
 
+  const handleDisconnectStrava = async () => {
+    if (!auth.currentUser) return;
+
+    if (!window.confirm('Are you sure you want to disconnect Strava? You can reconnect anytime.')) {
+      return;
+    }
+
+    try {
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      await updateDoc(userRef, {
+        stravaConnected: false,
+        stravaAccessToken: null,
+        stravaRefreshToken: null,
+        stravaTokenExpiresAt: null,
+        stravaAthleteId: null,
+        stravaAthleteName: null,
+      });
+
+      logger.log('✅ Strava disconnected');
+      toast.success('Strava disconnected successfully');
+      
+      // Reload to refresh UI
+      window.location.reload();
+    } catch (error) {
+      console.error('❌ Error disconnecting Strava:', error);
+      toast.error(`Failed to disconnect: ${error.message}`);
+    }
+  };
+
   // DISABLED: Auto-sync was interfering with testing. Use "Sync Now" button instead.
   // Auto-sync Strava activities on dashboard load
   // useEffect(() => {
@@ -633,20 +592,28 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   
   // Extract distance/duration info for quick glance
   const getWorkoutDistance = (workout) => {
-    // Don't show distance badge for rest days
-    if (workout.type === 'rest' || workout.type === 'Rest' ||
-        workout.workout?.name?.toLowerCase().includes('rest') ||
-        workout.name?.toLowerCase().includes('rest')) {
+    // Don't show distance badge for rest days (check multiple places)
+    const workoutName = (workout.workout?.name || workout.name || '').toLowerCase();
+    const workoutType = (workout.type || '').toLowerCase();
+    if (workoutType === 'rest' || 
+        workoutName.includes('rest day') || 
+        workoutName === 'rest' ||
+        workout.focus === 'Recovery' && workoutType === 'rest') {
       return null;
     }
 
-    // Priority 1: Check workout.distance field
-    if (workout.distance) {
-      return `📏 ${workout.distance}`;
+    // Priority 1: Check workout.distance field (CRITICAL: This takes precedence over duration)
+    if (workout.distance && workout.distance > 0) {
+      // For bike workouts, show RunEQ if it's in the name
+      if (workout.type === 'bike' && (workout.name?.includes('RunEQ') || workout.workout?.name?.includes('RunEQ'))) {
+        return `📏 ${workout.distance} RunEQ`;
+      }
+      return `📏 ${workout.distance} ${workout.distance === 1 ? 'mile' : 'miles'}`;
     }
 
     // Priority 2: Extract from workout name (e.g., "5-Mile Easy Run", "8 RunEQ Miles")
-    const nameMatch = workout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*-?\s*(mile|miles|mi|RunEQ|km)/i);
+    const nameMatch = workout.workout?.name?.match(/(\d+(?:\.\d+)?)\s*-?\s*(mile|miles|mi|RunEQ|km)/i) ||
+                     workout.name?.match(/(\d+(?:\.\d+)?)\s*-?\s*(mile|miles|mi|RunEQ|km)/i);
     if (nameMatch) {
       return `📏 ${nameMatch[1]} ${nameMatch[2]}`;
     }
@@ -656,8 +623,9 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       return `🔁 ${workout.workoutDetails.repetitions}`;
     }
 
-    // Priority 4: Check workoutDetails.duration for tempo/time-based
-    if (workout.workoutDetails?.duration) {
+    // Priority 4: Check workoutDetails.duration ONLY if no distance was found
+    // CRITICAL: Duration is fallback, not primary - distance should always be shown for long runs
+    if (workout.workoutDetails?.duration && !workout.distance) {
       return `⏱️ ${workout.workoutDetails.duration}`;
     }
 
@@ -766,13 +734,16 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     };
     
     // Create pure cyclete workouts for preferred bike days
+    // CRITICAL: Use RunEQ miles (3-5 miles), NOT actual bike miles
     const generateCycleteWorkout = (day, intensity = 'Moderate') => {
-      const distances = { 'Easy': 8, 'Moderate': 12, 'Hard': 16, 'Very Hard': 20 };
-      const distance = distances[intensity] || 12;
+      // RunEQ miles are typically 3-5 miles (equivalent to running effort)
+      // NOT actual bike miles which would be 12-20+
+      const runeqMiles = { 'Easy': 3, 'Moderate': 4, 'Hard': 5, 'Very Hard': 5 };
+      const miles = runeqMiles[intensity] || 4;
 
       return {
-        name: `${distance}-Mile ${formatEquipmentName(profile.standUpBikeType)} Ride`,
-        description: `${distance} miles on ${formatEquipmentName(profile.standUpBikeType)} @ steady aerobic effort`
+        name: `${miles} RunEQ Miles on ${formatEquipmentName(profile.standUpBikeType)}`,
+        description: `Ride ${miles} RunEQ miles on your ${formatEquipmentName(profile.standUpBikeType)} @ steady aerobic effort`
       };
     };
     
@@ -806,95 +777,166 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     const saturdayTypeInfo = getWorkoutTypeAndFocus(pattern.saturday);
     const sundayTypeInfo = getWorkoutTypeAndFocus(pattern.sunday);
 
-    logger.log('🚴 Checking bike days for each day:');
-    logger.log('  Monday bike day?', profile?.preferredBikeDays?.includes('Monday'));
-    logger.log('  Tuesday bike day?', profile?.preferredBikeDays?.includes('Tuesday'));  
-    logger.log('  Wednesday bike day?', profile?.preferredBikeDays?.includes('Wednesday'));
-    logger.log('  Thursday bike day?', profile?.preferredBikeDays?.includes('Thursday'));
-    logger.log('  Friday bike day?', profile?.preferredBikeDays?.includes('Friday'));
-    logger.log('  Saturday bike day?', profile?.preferredBikeDays?.includes('Saturday'));
-    logger.log('  Sunday bike day?', profile?.preferredBikeDays?.includes('Sunday'));
+    // Get user's actual schedule preferences
+    // Normalize day names to match format (capitalize first letter)
+    const normalizeDay = (day) => day ? day.charAt(0).toUpperCase() + day.slice(1).toLowerCase() : '';
+    const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    
+    let restDays = (profile?.restDays || []).map(normalizeDay);
+    const hardDays = (profile?.hardSessionDays || profile?.qualityDays || []).map(normalizeDay);
+    const longRunDay = normalizeDay(profile?.longRunDay || 'Sunday');
+    const bikeDays = (profile?.preferredBikeDays || []).map(normalizeDay);
+    const availableDays = (profile?.availableDays || []).map(normalizeDay);
+    
+    // If restDays is empty but availableDays exists, calculate rest days
+    if (restDays.length === 0 && availableDays.length > 0) {
+      restDays = allDays.filter(day => 
+        !availableDays.includes(day) && 
+        !bikeDays.includes(day) &&
+        day !== longRunDay &&
+        !hardDays.includes(day)
+      );
+      logger.log('📅 Calculated rest days from availableDays:', restDays);
+    }
 
-    return [
-      { 
-        day: 'Monday', 
-        type: profile?.preferredBikeDays?.includes('Monday') ? 'bike' : 'rest',
-        workout: profile?.preferredBikeDays?.includes('Monday') ? 
-          generateCycleteWorkout('Monday', 'Easy') : 
-          { name: 'Rest Day', description: 'Complete rest or light cross-training' }, 
-        focus: profile?.preferredBikeDays?.includes('Monday') ? 'Active Recovery' : 'Recovery',
-        completed: false,
-        equipmentSpecific: profile?.preferredBikeDays?.includes('Monday') && !!profile?.standUpBikeType
-      },
-      { 
-        day: 'Tuesday', 
-        type: profile?.preferredBikeDays?.includes('Tuesday') ? 'bike' : tuesdayTypeInfo.type,
-        workout: profile?.preferredBikeDays?.includes('Tuesday') ? 
-          generateCycleteWorkout('Tuesday', 'Moderate') : 
-          { 
-            name: tuesdayWorkout.name,
-            description: tuesdayWorkout.description
-          }, 
-        focus: profile?.preferredBikeDays?.includes('Tuesday') ? 'Aerobic Base' : tuesdayTypeInfo.focus,
-        completed: false,
-        equipmentSpecific: profile?.preferredBikeDays?.includes('Tuesday') && !!profile?.standUpBikeType,
-        workoutDetails: tuesdayWorkout
-      },
-      { 
-        day: 'Wednesday', 
-        type: profile?.preferredBikeDays?.includes('Wednesday') ? 'bike' : 'rest',
-        workout: profile?.preferredBikeDays?.includes('Wednesday') ? 
-          generateCycleteWorkout('Wednesday', 'Easy') : 
-          { name: 'Rest Day', description: 'Complete rest or light cross-training' }, 
-        focus: profile?.preferredBikeDays?.includes('Wednesday') ? 'Active Recovery' : 'Recovery',
-        completed: false,
-        equipmentSpecific: profile?.preferredBikeDays?.includes('Wednesday') && !!profile?.standUpBikeType
-      },
-      { 
-        day: 'Thursday', 
-        type: profile?.preferredBikeDays?.includes('Thursday') ? 'bike' : 'easy',
-        workout: profile?.preferredBikeDays?.includes('Thursday') ? 
-          generateCycleteWorkout('Thursday', 'Easy') : 
-          { name: 'Easy Run', description: 'Conversational pace, aerobic base building' }, 
-        focus: 'Recovery',
-        completed: false,
-        equipmentSpecific: profile?.preferredBikeDays?.includes('Thursday') && !!profile?.standUpBikeType
-      },
-      { 
-        day: 'Friday', 
-        type: profile?.preferredBikeDays?.includes('Friday') ? 'bike' : 'rest',
-        workout: profile?.preferredBikeDays?.includes('Friday') ? 
-          generateCycleteWorkout('Friday', 'Easy') : 
-          { name: 'Rest Day', description: 'Complete rest or light cross-training' }, 
-        focus: profile?.preferredBikeDays?.includes('Friday') ? 'Active Recovery' : 'Recovery',
-        completed: false,
-        equipmentSpecific: profile?.preferredBikeDays?.includes('Friday') && !!profile?.standUpBikeType
-      },
-      { 
-        day: 'Saturday', 
-        type: profile?.preferredBikeDays?.includes('Saturday') ? 'bike' : saturdayTypeInfo.type,
-        workout: profile?.preferredBikeDays?.includes('Saturday') ? 
-          generateCycleteWorkout('Saturday', 'Hard') : 
-          { 
-            name: saturdayWorkout.name,
-            description: saturdayWorkout.description
-          }, 
-        focus: profile?.preferredBikeDays?.includes('Saturday') ? 'Aerobic Power' : saturdayTypeInfo.focus,
-        completed: false,
-        equipmentSpecific: profile?.preferredBikeDays?.includes('Saturday') && !!profile?.standUpBikeType,
-        workoutDetails: saturdayWorkout
-      },
-      { 
-        day: 'Sunday', 
-        type: sundayTypeInfo.type,
-        workout: { 
+    logger.log('📅 User schedule preferences:', { 
+      restDays, 
+      hardDays, 
+      longRunDay, 
+      bikeDays,
+      availableDays,
+      rawRestDays: profile?.restDays,
+      rawHardDays: profile?.hardSessionDays || profile?.qualityDays,
+      rawAvailableDays: profile?.availableDays
+    });
+
+    // Helper to extract distance from workout library object
+    const extractWorkoutDistance = (workout) => {
+      // Check workout.distance first
+      if (workout?.distance) return workout.distance;
+      // Check workoutDetails.distance
+      if (workout?.workoutDetails?.distance) return workout.workoutDetails.distance;
+      // Try to extract from description
+      const desc = workout?.description || '';
+      const match = desc.match(/(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)/i);
+      if (match) return parseFloat(match[1]);
+      return null;
+    };
+
+    // Helper to determine workout for a day
+    const getWorkoutForDay = (dayName) => {
+      logger.log(`  Checking ${dayName}: restDays=${restDays.includes(dayName)}, hardDays=${hardDays.includes(dayName)}, bikeDays=${bikeDays.includes(dayName)}, longRunDay=${dayName === longRunDay}`);
+      
+      // Check if it's a rest day first (case-insensitive)
+      if (restDays.includes(dayName)) {
+        logger.log(`    ✅ ${dayName} is a REST DAY`);
+        return {
+          day: dayName,
+          type: 'rest',
+          workout: { name: 'Rest Day', description: 'Complete rest or light cross-training' },
+          focus: 'Recovery',
+          completed: false
+        };
+      }
+
+      // Check if it's a bike day
+      if (bikeDays.includes(dayName)) {
+        const intensity = hardDays.includes(dayName) ? 'Hard' : 'Moderate';
+        return {
+          day: dayName,
+          type: 'bike',
+          workout: generateCycleteWorkout(dayName, intensity),
+          focus: hardDays.includes(dayName) ? 'Aerobic Power' : 'Aerobic Base',
+          completed: false,
+          equipmentSpecific: true
+        };
+      }
+
+      // Check if it's the long run day
+      if (dayName === longRunDay) {
+        // Extract distance from workout library - check multiple sources
+        let distance = extractWorkoutDistance(sundayWorkout);
+        
+        // If no distance found, try to extract from description
+        if (!distance && sundayWorkout.description) {
+          const descMatch = sundayWorkout.description.match(/(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)/i);
+          if (descMatch) {
+            distance = parseFloat(descMatch[1]);
+            logger.log(`  📏 Extracted long run distance from description: ${distance} miles`);
+          }
+        }
+        
+        // If still no distance, use a default based on weekly mileage
+        if (!distance) {
+          const weeklyMileage = profile?.currentWeeklyMileage || 20;
+          distance = Math.round(weeklyMileage * 0.25); // ~25% of weekly mileage
+          logger.log(`  ⚠️ No distance found for long run, using default: ${distance} miles (25% of ${weeklyMileage} weekly miles)`);
+        }
+        
+        const workoutObj = {
           name: sundayWorkout.name,
           description: sundayWorkout.description
-        }, 
-        focus: sundayTypeInfo.focus,
-        completed: false,
-        workoutDetails: sundayWorkout
+        };
+        if (distance) {
+          workoutObj.distance = distance;
+          // Update description to include distance if it only has time
+          if (sundayWorkout.description && !sundayWorkout.description.match(/\d+\s*(?:mile|miles|mi)/i)) {
+            workoutObj.description = `${distance} miles - ${sundayWorkout.description}`;
+          }
+        }
+        return {
+          day: dayName,
+          type: sundayTypeInfo.type,
+          workout: workoutObj,
+          focus: sundayTypeInfo.focus,
+          completed: false,
+          workoutDetails: sundayWorkout,
+          distance: distance
+        };
       }
+
+      // Check if it's a hard day (quality workout)
+      if (hardDays.includes(dayName)) {
+        // Use Tuesday workout pattern for first hard day, Saturday for second
+        const workout = hardDays.indexOf(dayName) === 0 ? tuesdayWorkout : saturdayWorkout;
+        const typeInfo = hardDays.indexOf(dayName) === 0 ? tuesdayTypeInfo : saturdayTypeInfo;
+        const distance = extractWorkoutDistance(workout);
+        const workoutObj = {
+          name: workout.name,
+          description: workout.description
+        };
+        if (distance) workoutObj.distance = distance;
+        return {
+          day: dayName,
+          type: typeInfo.type,
+          workout: workoutObj,
+          focus: typeInfo.focus,
+          completed: false,
+          workoutDetails: workout,
+          distance: distance
+        };
+      }
+
+      // Default to easy run
+      return {
+        day: dayName,
+        type: 'easy',
+        workout: { name: 'Easy Run', description: 'Conversational pace, aerobic base building', distance: 4 },
+        focus: 'Recovery',
+        completed: false,
+        distance: 4
+      };
+    };
+
+    // Generate workouts for each day
+    return [
+      getWorkoutForDay('Monday'),
+      getWorkoutForDay('Tuesday'),
+      getWorkoutForDay('Wednesday'),
+      getWorkoutForDay('Thursday'),
+      getWorkoutForDay('Friday'),
+      getWorkoutForDay('Saturday'),
+      getWorkoutForDay('Sunday')
     ];
   };
   
@@ -939,8 +981,20 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       }
     }
 
+    // CRITICAL: If weeks array is empty but we have AI coaching analysis, the plan structure is missing
+    // This is a data structure issue - the plan needs to be regenerated
+    if (trainingPlan && (trainingPlan.aiCoachingAnalysis || trainingPlan.fullPlanText) && (!trainingPlan.weeks || trainingPlan.weeks.length === 0)) {
+      logger.error('⚠️ CRITICAL: Training plan has AI coaching but no weeks array!');
+      logger.error('   This means the plan structure was not saved correctly.');
+      logger.error('   The coach\'s analysis shows the correct workouts, but they\'re not in the weeks array.');
+      logger.error('   Solution: User needs to regenerate the plan or we need to parse the coaching text.');
+      
+      // Don't show toast during render - it causes React warnings
+      // The fallback workouts will be used instead
+    }
+
     // Fallback to generated workouts if training plan is empty/missing
-    logger.log('Falling back to generated workouts for week', currentWeek);
+    logger.log('⚠️ Falling back to generated workouts for week', currentWeek, '- these may not match your AI-generated plan!');
     return {
       week: currentWeek,
       weekDates: { displayText: `Week ${currentWeek}` },
@@ -1672,46 +1726,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                     </div>
                   );
                 })()}
-                {(() => {
-                  // Calculate weekly calorie total for bike workouts
-                  let totalCalories = { min: 0, max: 0 };
-                  const bikeWorkouts = currentWeekData.workouts?.filter(w =>
-                    (w.type === 'bike' || w.equipmentSpecific) && w.distance && w.distance > 0
-                  ) || [];
-
-                  bikeWorkouts.forEach(workout => {
-                    const calories = calorieCalculator.calculateWorkoutCalories(workout);
-                    if (calories) {
-                      totalCalories.min += calories.min;
-                      totalCalories.max += calories.max;
-                    }
-                  });
-
-                  // Only show if there are bike workouts this week
-                  if (bikeWorkouts.length === 0) return null;
-
-                  return (
-                    <div className="dashboard-stats-badge" style={{
-                      background: 'rgba(255, 149, 0, 0.15)',
-                      color: '#FF9500',
-                      padding: '8px 14px',
-                      borderRadius: '10px',
-                      fontWeight: '600',
-                      fontSize: '1.1rem',
-                      border: '1px solid rgba(255, 149, 0, 0.3)'
-                    }}>
-                      🔥 {Math.round(totalCalories.min)}-{Math.round(totalCalories.max)} Cal This Week
-                      <div style={{
-                        fontSize: '0.8rem',
-                        fontWeight: '500',
-                        marginTop: '4px',
-                        color: '#FFB84D'
-                      }}>
-                        {bikeWorkouts.length} bike workout{bikeWorkouts.length !== 1 ? 's' : ''}
-                      </div>
-                    </div>
-                  );
-                })()}
+                {/* Calorie display removed - weight significantly affects calories and we don't collect weight data */}
                 {(() => {
                   const rollingDistance = calculateRollingDistance();
                   const hasCompletedWorkouts = rollingDistance.allTime > 0;
@@ -1894,6 +1909,17 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 </button>
               )}
 
+              <button
+                className="dashboard-nav-button dashboard-nav-button-reset"
+                onClick={() => {
+                  if (window.confirm('Clear all data and start over? This will reset your profile and training plan.')) {
+                    clearAllData();
+                  }
+                }}
+                title="Clear all data and restart onboarding"
+              >
+                🗑️ Reset
+              </button>
               {/* Connect Strava Button */}
               {userProfile?.stravaConnected ? (
                 <>
@@ -1920,30 +1946,31 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                   >
                     {stravaSyncing ? '⏳ Syncing...' : '🔄 Sync Now'}
                   </button>
+                  <button
+                    className="dashboard-nav-button dashboard-nav-button-strava"
+                    onClick={handleDisconnectStrava}
+                    title="Disconnect Strava account"
+                    style={{ opacity: 0.7 }}
+                  >
+                    ✕ Disconnect
+                  </button>
                 </>
               ) : (
                 <button
-                  className="dashboard-nav-button dashboard-nav-button-strava"
+                  className="dashboard-nav-button dashboard-nav-button-strava strava-brand-button"
                   onClick={() => {
                     const authUrl = StravaService.getAuthorizationUrl();
                     window.location.href = authUrl;
                   }}
+                  title="Connect with Strava"
                 >
-                  🔗 Connect Strava
+                  <img
+                    src="/images/strava/btn_strava_connect_with_orange_x2.png"
+                    alt="Connect with Strava"
+                    className="strava-connect-img"
+                  />
                 </button>
               )}
-
-              <button
-                className="dashboard-nav-button dashboard-nav-button-reset"
-                onClick={() => {
-                  if (window.confirm('Clear all data and start over? This will reset your profile and training plan.')) {
-                    clearAllData();
-                  }
-                }}
-                title="Clear all data and restart onboarding"
-              >
-                🗑️ Reset
-              </button>
               <button
                 className="dashboard-nav-button dashboard-nav-button-logout"
                 onClick={async () => {
@@ -1972,7 +1999,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
             </div>
             <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: '#00D4FF' }}>
               Week {currentWeek} of {trainingPlan?.planOverview?.totalWeeks || 16}
-              {getWeekDateRange(currentWeek) && ` • ${getWeekDateRange(currentWeek)}`}
+              {getWeekDateRangeLocal(currentWeek) && ` • ${getWeekDateRangeLocal(currentWeek)}`}
               {' • Periodized training system'}
             </p>
           </div>
@@ -2190,7 +2217,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
               // Add dates to workouts
               const workoutsWithDates = workouts.map(w => ({
                 ...w,
-                date: getWorkoutDate(currentWeek, originalWorkout.day)
+                date: getWorkoutDateLocal(currentWeek, originalWorkout.day)
               }));
               return (
               <div key={originalWorkout.day} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2310,7 +2337,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                     </div>
                     
                     <h4 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', color: getWorkoutTypeColor(workout.type) }}>
-                      {workout.type === 'rest_or_xt' ? '🧘 Rest / Cross-Train' : (workout.workout?.name || workout.name || 'Workout')}
+                      {workout.type === 'rest_or_xt' ? '🧘 Rest / Cross-Train' : cleanWorkoutText(workout.workout?.name || workout.name || 'Workout')}
                     </h4>
 
                     {/* Distance/Duration info badge */}
@@ -2362,26 +2389,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                       );
                     })()}
 
-                    {/* Expected Calorie Burn - Stand-Up Bike Workouts Only */}
-                    {(workout.type === 'bike' || workout.equipmentSpecific) && (() => {
-                      const calories = calorieCalculator.calculateWorkoutCalories(workout);
-                      return calories ? (
-                        <div style={{
-                          display: 'inline-block',
-                          background: 'rgba(255, 149, 0, 0.15)',
-                          color: '#FF9500',
-                          padding: '4px 10px',
-                          borderRadius: '6px',
-                          fontSize: '0.85rem',
-                          fontWeight: '600',
-                          marginBottom: '8px',
-                          marginLeft: '8px',
-                          border: '1px solid rgba(255, 149, 0, 0.3)'
-                        }}>
-                          🔥 {calories.range} cal
-                        </div>
-                      ) : null;
-                    })()}
+                    {/* Calorie display removed - weight significantly affects calories and we don't collect weight data */}
 
                     {(workout.workout?.description || workout.description) && (
                       <p style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#CCCCCC', lineHeight: '1.4' }}>
@@ -2476,7 +2484,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                                 }}
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                View on Strava →
+                                View on Strava
                               </a>
                             </div>
                           )}

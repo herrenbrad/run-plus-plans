@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { calorieCalculator } from '../lib/calorie-calculator.js';
+// Calorie calculator removed - weight significantly affects calories and we don't collect weight data
+// import { calorieCalculator } from '../lib/calorie-calculator.js';
 
 function TrainingPlanPreview({ userProfile, trainingPlan }) {
   const navigate = useNavigate();
@@ -96,21 +97,10 @@ function TrainingPlanPreview({ userProfile, trainingPlan }) {
     return colors[type] || '#718096';
   };
 
+  // Calorie calculation removed - weight significantly affects calories and we don't collect weight data
   const calculateWeekCalories = (week) => {
-    let totalCalories = { min: 0, max: 0 };
-    const bikeWorkouts = week.workouts?.filter(w =>
-      (w.type === 'bike' || w.equipmentSpecific) && w.distance && w.distance > 0
-    ) || [];
-
-    bikeWorkouts.forEach(workout => {
-      const calories = calorieCalculator.calculateWorkoutCalories(workout);
-      if (calories) {
-        totalCalories.min += calories.min;
-        totalCalories.max += calories.max;
-      }
-    });
-
-    return { totalCalories, bikeWorkoutCount: bikeWorkouts.length };
+    // Return empty values - calories no longer displayed
+    return { totalCalories: { min: 0, max: 0 }, bikeWorkoutCount: 0 };
   };
 
   return (
@@ -209,20 +199,7 @@ function TrainingPlanPreview({ userProfile, trainingPlan }) {
                 </h3>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   <span className="badge badge-info">{week.totalMileage} miles</span>
-                  {bikeWorkoutCount > 0 && (
-                    <span
-                      className="badge"
-                      style={{
-                        background: 'rgba(255, 149, 0, 0.15)',
-                        color: '#FF9500',
-                        border: '1px solid rgba(255, 149, 0, 0.3)',
-                        padding: '6px 12px',
-                        fontWeight: '600'
-                      }}
-                    >
-                      🔥 {Math.round(totalCalories.min)}-{Math.round(totalCalories.max)} cal
-                    </span>
-                  )}
+                  {/* Calorie display removed - weight significantly affects calories and we don't collect weight data */}
                   {week.isRestWeek && <span className="badge badge-warning">Recovery Week</span>}
                 </div>
               </div>

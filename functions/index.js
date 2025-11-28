@@ -182,8 +182,8 @@ exports.callAnthropicAPI = onCall(
     enforceAppCheck: false, // Set to true in production if you enable App Check
     secrets: [anthropicApiKey], // Reference the secret
     runtime: 'nodejs20', // Use Node.js 20 runtime
-    timeoutSeconds: 300, // Increase timeout to 5 minutes for large AI responses
-    memory: '512MiB', // Increase memory for better performance
+    timeoutSeconds: 540, // Maximum timeout (9 minutes) for large AI responses
+    memory: '1GiB', // Increase memory for better performance with large prompts
   },
   async (request) => {
     try {

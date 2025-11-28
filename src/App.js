@@ -18,6 +18,7 @@ import TrainingPlanPreview from './components/TrainingPlanPreview';
 import Dashboard from './components/Dashboard';
 import WorkoutDetail from './components/WorkoutDetail';
 import AdminApproval from './components/AdminApproval';
+import PhaseMigrationAdmin from './components/PhaseMigrationAdmin';
 import StravaCallback from './components/StravaCallback';
 import { ToastProvider, useToast } from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -218,7 +219,23 @@ function AppContent() {
         throw new Error('Profile save failed: ' + profileResult.error);
       }
 
-      logger.log('💾 Saving training plan to Firestore...', plan);
+      // CRITICAL: Validate plan has weeks array before saving
+      if (!plan.weeks || plan.weeks.length === 0) {
+        logger.error('❌ CRITICAL: Plan has no weeks array! Cannot save invalid plan.');
+        logger.error('   Plan keys:', Object.keys(plan));
+        logger.error('   Plan structure:', {
+          hasWeeks: !!plan.weeks,
+          weeksLength: plan.weeks?.length,
+          hasCoaching: !!(plan.aiCoachingAnalysis || plan.fullPlanText)
+        });
+        toast.error('Plan generation failed - weeks array is missing. Please try again or contact support.', 10000);
+        throw new Error('Plan structure is invalid - weeks array is missing');
+      }
+
+      logger.log('💾 Saving training plan to Firestore...', {
+        weeksCount: plan.weeks.length,
+        hasCoaching: !!(plan.aiCoachingAnalysis || plan.fullPlanText)
+      });
       const planResult = await FirestoreService.saveTrainingPlan(user.uid, plan);
       if (!planResult.success) {
         console.error('❌ Failed to save training plan:', planResult.error);
@@ -337,11 +354,17 @@ function AppContent() {
       <div className="App">
         <Routes>
           <Route
+            path="/auth"
+            element={<Auth />}
+          />
+          <Route
             path="/"
             element={
-              trainingPlan ?
-                <Navigate to="/welcome" replace /> :
-                <LandingPage />
+              user ? (
+                trainingPlan ? <Navigate to="/dashboard" replace /> : <Navigate to="/onboarding" replace />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
             }
           />
           <Route
@@ -398,6 +421,10 @@ function AppContent() {
           <Route
             path="/admin/approvals"
             element={<AdminApproval />}
+          />
+          <Route
+            path="/admin/migrate-phases"
+            element={<PhaseMigrationAdmin />}
           />
           <Route
             path="/auth/strava/callback"

@@ -4,8 +4,10 @@ import SomethingElseModal from './SomethingElseModal';
 import { formatEquipmentName, formatHeartRate, formatIntensity } from '../utils/typography';
 import { auth } from '../firebase/config';
 import FirestoreService from '../services/FirestoreService';
-import { calorieCalculator } from '../lib/calorie-calculator.js';
+// Calorie calculator removed - weight significantly affects calories and we don't collect weight data
+// import { calorieCalculator } from '../lib/calorie-calculator.js';
 import AICoachService from '../services/AICoachService';
+import logger from '../utils/logger';
 import './WorkoutDetail.css';
 
 // Import workout libraries for fallback lookup
@@ -541,9 +543,9 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       } else if (workoutName.toLowerCase().includes('interval') || workoutName.toLowerCase().includes('speed')) {
         structure = '15 min warmup + intervals at high intensity with recovery + 10 min cooldown';
       } else if (workoutName.toLowerCase().includes('easy') || workoutName.toLowerCase().includes('recovery')) {
-        structure = `${duration} at conversational pace throughout`;
+        structure = 'Conversational pace throughout';
       } else if (workoutName.toLowerCase().includes('long')) {
-        structure = `${duration} at steady, easy pace - focus on time on feet`;
+        structure = 'Steady, easy pace - focus on time on feet';
       } else {
         // Generic fallback with description
         structure = workoutDesc || 'Complete the workout as prescribed';
@@ -1044,20 +1046,38 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
       AICoachService.initialize(apiKey);
 
       // Determine actual workout type from completion data
-      // Strava stores the activity type, we need to check it properly
+      // CRITICAL: If this is a life adaptation, use the SCHEDULED workout type, not the activity type
       let actualWorkoutType = 'Run'; // default
+      let isLifeAdaptation = completionData.isLifeAdaptation || false;
 
-      // Check if we have lap data with pace (indicates running)
-      if (completionData.laps && completionData.laps.length > 0 && completionData.laps[0].pace) {
-        actualWorkoutType = 'Run';
-      }
-      // Check if we have overall pace in completion data
-      else if (completionData.pace && completionData.pace.includes('/mi')) {
-        actualWorkoutType = 'Run';
-      }
-      // If no pace data, it's likely a bike ride
-      else if (completionData.laps && completionData.laps.length > 0 && !completionData.laps[0].pace) {
-        actualWorkoutType = 'Ride';
+      // If this is a life adaptation, check the scheduled workout type
+      if (isLifeAdaptation && currentWorkout) {
+        const scheduledType = currentWorkout.type;
+        const isBikeWorkout = scheduledType === 'bike' || currentWorkout.equipmentSpecific;
+        
+        if (isBikeWorkout) {
+          // Scheduled was bike, but activity was run - treat as bike for coaching
+          actualWorkoutType = 'Ride';
+          logger.log('🔄 Life adaptation detected: Using scheduled bike workout type for coaching');
+        } else {
+          // Scheduled was run, but activity was bike - treat as run for coaching
+          actualWorkoutType = 'Run';
+          logger.log('🔄 Life adaptation detected: Using scheduled run workout type for coaching');
+        }
+      } else {
+        // Not a life adaptation - determine from activity data
+        // Check if we have lap data with pace (indicates running)
+        if (completionData.laps && completionData.laps.length > 0 && completionData.laps[0].pace) {
+          actualWorkoutType = 'Run';
+        }
+        // Check if we have overall pace in completion data
+        else if (completionData.pace && completionData.pace.includes('/mi')) {
+          actualWorkoutType = 'Run';
+        }
+        // If no pace data, it's likely a bike ride
+        else if (completionData.laps && completionData.laps.length > 0 && !completionData.laps[0].pace) {
+          actualWorkoutType = 'Ride';
+        }
       }
 
       // Build workout data for analysis
@@ -1070,8 +1090,10 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         avgHeartRate: completionData.avgHeartRate,
         maxHeartRate: completionData.maxHeartRate,
         laps: completionData.laps,
-        // Pass stand-up bike type ONLY if this is actually a Ride
-        standUpBikeType: actualWorkoutType === 'Ride' ? userProfileFromState?.standUpBikeType : null
+        // Pass stand-up bike type if this is a Ride (either actual ride or life adaptation to bike workout)
+        standUpBikeType: actualWorkoutType === 'Ride' ? userProfileFromState?.standUpBikeType : null,
+        // Pass life adaptation flag so AI knows to adjust coaching
+        isLifeAdaptation: isLifeAdaptation
       };
 
       // DEBUG: Log what we're sending to the AI
@@ -1089,13 +1111,27 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
         const currentDayIndex = daysOfWeek.indexOf(day.toLowerCase());
         const nextFewDays = [];
 
+        // weekDataFromState.workouts can be either an array or an object keyed by day name
+        const workouts = weekDataFromState.workouts;
+        const isArray = Array.isArray(workouts);
+
         // Get next 3-4 workouts from current week
         for (let i = currentDayIndex + 1; i < Math.min(currentDayIndex + 4, daysOfWeek.length); i++) {
           const dayName = daysOfWeek[i];
-          const workout = weekDataFromState.workouts?.[dayName];
-          if (workout && workout.name) {
+          let workout = null;
+          
+          if (isArray) {
+            // If workouts is an array, find by day name
+            workout = workouts.find(w => w.day && w.day.toLowerCase() === dayName);
+          } else {
+            // If workouts is an object, access by day name key
+            workout = workouts?.[dayName];
+          }
+          
+          if (workout && (workout.name || workout.workout?.name)) {
             const dayLabel = dayName.charAt(0).toUpperCase() + dayName.slice(1);
-            nextFewDays.push(`${dayLabel}: ${workout.name}`);
+            const workoutName = workout.name || workout.workout?.name || 'Workout';
+            nextFewDays.push(`${dayLabel}: ${workoutName}`);
           }
         }
 
@@ -1235,9 +1271,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                 fontSize: '1.1rem',
                 fontWeight: '500'
               }}>
-                {day.charAt(0).toUpperCase() + day.slice(1)} • {typeof currentWorkout.duration === 'string' ? currentWorkout.duration :
-                 typeof currentWorkout.duration === 'object' ? JSON.stringify(currentWorkout.duration) :
-                 '30-45 minutes'}
+                {day.charAt(0).toUpperCase() + day.slice(1)}
               </p>
             </div>
           </div>
@@ -1376,43 +1410,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
             </div>
           </div>
 
-          {/* Calorie Card - Only for bike workouts */}
-          {(workoutData.type === 'bike' || workoutData.equipmentSpecific) && (() => {
-            const calories = calorieCalculator.calculateWorkoutCalories(workoutData);
-            return calories ? (
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(255, 149, 0, 0.25) 0%, rgba(255, 149, 0, 0.08) 50%, rgba(255, 255, 255, 0.05) 100%)',
-                padding: '20px',
-                borderRadius: '16px',
-                border: '2px solid rgba(255, 149, 0, 0.5)',
-                boxShadow: '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 149, 0, 0.2), 0 0 20px rgba(255, 149, 0, 0.15)',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                position: 'relative',
-                overflow: 'hidden'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                e.currentTarget.style.boxShadow = '0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 149, 0, 0.6), 0 0 30px rgba(255, 149, 0, 0.3)';
-                e.currentTarget.style.borderColor = 'rgba(255, 149, 0, 0.7)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0) scale(1)';
-                e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 149, 0, 0.2), 0 0 20px rgba(255, 149, 0, 0.15)';
-                e.currentTarget.style.borderColor = 'rgba(255, 149, 0, 0.5)';
-              }}
-              >
-                <div style={{ color: '#FFB84D', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
-                  Expected Calorie Burn
-                </div>
-                <div style={{ color: 'white', fontSize: '1.5rem', fontWeight: '800', lineHeight: '1.2', textShadow: '0 2px 8px rgba(255, 149, 0, 0.4)' }}>
-                  {calories.range} cal
-                </div>
-                <div style={{ color: '#FFB84D', fontSize: '0.75rem', marginTop: '6px', fontWeight: '500' }}>
-                  Based on RunEQ equivalency
-                </div>
-              </div>
-            ) : null;
-          })()}
+          {/* Calorie display removed - weight significantly affects calories and we don't collect weight data */}
         </div>
 
         {/* COMPLETED WORKOUT STATS - Show actual performance data */}
@@ -1751,7 +1749,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                   }}
                 >
                   <span style={{ fontSize: '1.2rem' }}>🔗</span>
-                  View Full Activity on Strava
+              View on Strava
                 </a>
               </div>
             )}

@@ -181,3 +181,7 @@ These files use `PaceCalculator` which internally uses vdot-pace-data, but they 
 **The pace assignment issues you were having were NOT because of vdot-pace-data usage - they were because of pace extraction/display logic in WorkoutDetail.js, which we've now fixed.**
 
 
+
+
+
+

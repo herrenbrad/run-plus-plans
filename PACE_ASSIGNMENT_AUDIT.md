@@ -300,3 +300,7 @@ For each workout type, verify:
 - Priority: Library injection > WorkoutDetail extraction > Fallback
 
 
+
+
+
+

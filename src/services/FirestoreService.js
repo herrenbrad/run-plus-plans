@@ -4,21 +4,35 @@ import { db } from '../firebase/config';
 /**
  * Helper function to remove undefined values from objects
  * Firestore doesn't accept undefined - convert to null or remove
+ * Handles circular references to prevent infinite recursion
  */
-function cleanUndefinedValues(obj) {
+function cleanUndefinedValues(obj, visited = new WeakSet()) {
   if (obj === null || obj === undefined) {
     return null;
   }
 
+  // Handle primitive types
+  if (typeof obj !== 'object') {
+    return obj;
+  }
+
+  // Handle circular references
+  if (visited.has(obj)) {
+    return null; // Replace circular reference with null
+  }
+
+  // Mark as visited
+  visited.add(obj);
+
   if (Array.isArray(obj)) {
-    return obj.map(item => cleanUndefinedValues(item));
+    return obj.map(item => cleanUndefinedValues(item, visited));
   }
 
   if (typeof obj === 'object') {
     const cleaned = {};
     for (const [key, value] of Object.entries(obj)) {
       if (value !== undefined) {
-        cleaned[key] = cleanUndefinedValues(value);
+        cleaned[key] = cleanUndefinedValues(value, visited);
       }
       // Skip undefined values - don't include them in the object
     }

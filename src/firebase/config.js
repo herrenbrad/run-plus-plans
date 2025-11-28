@@ -6,6 +6,7 @@ import { getFunctions } from "firebase/functions";
 
 // Your web app's Firebase configuration
 // These values are safe to expose in frontend (Firebase security rules protect data)
+// Environment-based config: production uses production Firebase, staging uses staging Firebase
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyD8w8BevGoG5L5n5wSU5TrVyYe1qi008Do",
   authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "run-plus-plans.firebaseapp.com",
@@ -16,6 +17,15 @@ const firebaseConfig = {
   measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || "G-HFHB0GWKCC"
 };
 
+// Log which environment we're using (for debugging)
+if (process.env.NODE_ENV === 'development') {
+  console.log('🔧 Firebase Config:', {
+    projectId: firebaseConfig.projectId,
+    authDomain: firebaseConfig.authDomain,
+    environment: process.env.REACT_APP_ENV || 'production (default)'
+  });
+}
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
@@ -24,6 +34,8 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const analytics = getAnalytics(app);
 // Initialize Functions with explicit region (must match deployment region)
+// Note: Client-side timeout is controlled by the function's timeoutSeconds config (540s)
+// The default HTTP client timeout is 60s, but Functions v2 should respect server timeout
 export const functions = getFunctions(app, 'us-central1');
 
 export default app;

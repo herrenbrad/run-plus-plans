@@ -156,6 +156,25 @@
   opacity: 0.6;
 }
 
+.strava-brand-button {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-height: auto;
+}
+
+.strava-brand-button::before {
+  display: none;
+}
+
+.strava-connect-img {
+  display: block;
+  width: 180px;
+  max-width: 100%;
+  height: auto;
+}
+
 /* Reset Button */
 .dashboard-nav-button-reset {
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%);

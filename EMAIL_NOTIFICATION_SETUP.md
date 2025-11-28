@@ -98,3 +98,7 @@ The email includes:
 - The function only triggers on NEW user creation (checks for `createdAt`)
 - All email sending is logged in Firestore (`adminNotifications` collection)
 
+
+c
+
+

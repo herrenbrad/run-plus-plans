@@ -282,14 +282,30 @@ function OnboardingFlow({ onComplete }) {
 
     // Our Competitive Advantages (Steps 8-12)
     standUpBikeType: null,
-    runningStatus: 'active', // 'active', 'bikeOnly', or 'transitioning'
+    runningStatus: 'active', // 'active', 'crossTrainingOnly', or 'transitioning'
     crossTrainingEquipment: {
       pool: false,
       elliptical: false,
       stationaryBike: false,
       swimming: false,
-      rowing: false
+      rowing: false,
+      walking: false // Low-impact option for injured runners without equipment
     },
+    primaryCrossTrainingEquipment: null, // 'cyclete' | 'elliptigo' | 'pool' | 'rowing' | 'elliptical' | 'stationaryBike' | 'swimming' | 'walking' | null
+    // Injury information (for crossTrainingOnly or transitioning status)
+    injuries: {
+      itBand: false,
+      plantarFasciitis: false,
+      shinSplints: false,
+      kneeIssues: false,
+      lowerBackPain: false,
+      achillesTendonitis: false,
+      stressFracture: false,
+      hipIssues: false,
+      ankleIssues: false,
+      other: false
+    },
+    injuryDescription: null, // Text description if "other" selected
     location: '',
     climate: '',
     trainingStyle: 'adventure', // Always use adventure mode - our core differentiator!
@@ -439,6 +455,7 @@ function OnboardingFlow({ onComplete }) {
         raceDistance: formData.raceDistance,
         raceTime: formData.currentRaceTime, // Goal time for race
         raceDate: formData.raceDate ? new Date(formData.raceDate).toISOString() : new Date().toISOString(),
+        startDate: dateAdjustment.adjustedDate, // CRITICAL: Use adjusted start date (may be different from today if today is a rest day)
         raceElevationProfile: formData.raceElevationProfile || '',
         currentWeeklyMileage: formData.currentWeeklyMileage,
         currentLongRun: formData.currentLongRunDistance,
@@ -452,6 +469,9 @@ function OnboardingFlow({ onComplete }) {
         standUpBikeType: formData.standUpBikeType,
         preferredBikeDays: formData.preferredBikeDays,
         crossTrainingEquipment: formData.crossTrainingEquipment,
+        primaryCrossTrainingEquipment: formData.primaryCrossTrainingEquipment,
+        injuries: formData.injuries,
+        injuryDescription: formData.injuryDescription,
         experienceLevel: formData.experienceLevel,
         // Extra fields for enhanced AI coaching
         climate: formData.climate,
@@ -469,10 +489,29 @@ function OnboardingFlow({ onComplete }) {
       const planResult = await TrainingPlanAIService.generateTrainingPlan(userProfile);
 
       if (!planResult.success) {
-        throw new Error('Failed to generate plan');
+        throw new Error(`Failed to generate plan: ${planResult.error || 'Unknown error'}`);
       }
 
       logger.log('✅ AI training plan created successfully');
+      logger.log('📊 Plan structure check:', {
+        hasPlan: !!planResult.plan,
+        hasWeeks: !!planResult.plan?.weeks,
+        weeksLength: planResult.plan?.weeks?.length,
+        planKeys: planResult.plan ? Object.keys(planResult.plan) : []
+      });
+
+      // CRITICAL: Validate plan has weeks array before proceeding
+      if (!planResult.plan) {
+        throw new Error('Plan generation returned no plan data');
+      }
+
+      if (!planResult.plan.weeks || planResult.plan.weeks.length === 0) {
+        logger.error('❌ CRITICAL: Plan generated but weeks array is empty!');
+        logger.error('   Plan keys:', Object.keys(planResult.plan));
+        throw new Error('Plan structure is invalid - weeks array is missing. Please try again or contact support.');
+      }
+
+      logger.log(`✅ Plan validated: ${planResult.plan.weeks.length} weeks with workouts`);
 
       // Pass both form data and plan to parent
       await onComplete(formData, planResult.plan);
@@ -1459,184 +1498,89 @@ function OnboardingFlow({ onComplete }) {
               )}
             </div>
 
-            {/* Stand-up Bike Equipment */}
+            {/* Unified Cross-Training Equipment Selection */}
             <div style={{ marginBottom: '32px' }}>
-              <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>Do you have any stand-up bikes?</h3>
-              <div className="equipment-grid">
+              <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>
+                What cross-training equipment do you have access to?
+              </h3>
+              <p style={{ marginBottom: '16px', fontSize: '0.95rem', color: '#D1D5DB' }}>
+                Select all equipment you can use. <strong>🏥 We support injured runners too!</strong> You can create full cross-training plans if needed.
+              </p>
+              
+              {/* All Equipment - Unified Button Format */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {/* Stand-Up Bikes (Featured at Top) */}
                 {[
                   {
                     id: 'cyclete',
                     name: 'Cyclete',
-                    desc: 'Teardrop motion, excellent for distance training',
-                    badge: 'Running-like motion'
+                    description: 'Teardrop motion, excellent for distance training',
+                    badge: 'Stand-Up Bike',
+                    emoji: '🚴',
+                    type: 'standUpBike'
                   },
                   {
                     id: 'elliptigo',
                     name: 'ElliptiGO',
-                    desc: 'Elliptical motion, great for full-body workouts',
-                    badge: 'Full body engagement'
-                  },
-                  {
-                    id: null,
-                    name: 'Neither',
-                    desc: 'Pure running training with basic cross-training options',
-                    badge: 'Traditional approach'
+                    description: 'Elliptical motion, great for full-body workouts',
+                    badge: 'Stand-Up Bike',
+                    emoji: '🚴',
+                    type: 'standUpBike'
                   }
                 ].map(equipment => (
-                  <div
-                    key={equipment.id || 'none'}
-                    className={`card ${formData.standUpBikeType === equipment.id ? 'selected' : ''}`}
-                    onClick={() => updateFormData('standUpBikeType', equipment.id)}
+                  <button
+                    key={equipment.id}
+                    type="button"
+                    onClick={() => {
+                      // Toggle selection - if already selected, deselect
+                      const newValue = formData.standUpBikeType === equipment.id ? null : equipment.id;
+                      updateFormData('standUpBikeType', newValue);
+                      // Auto-set as primary if this is the only equipment
+                      if (newValue && !formData.primaryCrossTrainingEquipment) {
+                        updateFormData('primaryCrossTrainingEquipment', equipment.id);
+                      } else if (!newValue && formData.primaryCrossTrainingEquipment === equipment.id) {
+                        updateFormData('primaryCrossTrainingEquipment', null);
+                      }
+                    }}
                     style={{
+                      padding: '14px 16px',
+                      fontSize: '0.9rem',
+                      border: formData.standUpBikeType === equipment.id ? '2px solid var(--runeq-primary)' : '1px solid #333',
+                      background: formData.standUpBikeType === equipment.id ? 'rgba(0, 212, 255, 0.1)' : '#1a1a1a',
+                      color: formData.standUpBikeType === equipment.id ? 'var(--runeq-primary)' : '#999',
+                      borderRadius: '6px',
                       cursor: 'pointer',
-                      textAlign: 'center',
+                      textAlign: 'left',
                       display: 'flex',
-                      flexDirection: 'column',
-                      minHeight: '140px'
+                      alignItems: 'center',
+                      gap: '12px',
+                      position: 'relative'
                     }}
                   >
-                    <h4 style={{ margin: '0 0 12px 0', color: 'var(--runeq-primary)', fontSize: '1.2rem', minHeight: '28px' }}>{equipment.name}</h4>
-                    <p style={{ margin: '0 0 12px 0', fontSize: '0.9rem', flex: '1', minHeight: '40px' }}>{equipment.desc}</p>
-                    <div className="badge badge-info" style={{ alignSelf: 'center' }}>{equipment.badge}</div>
-                  </div>
-                ))}
-              </div>
-              {formData.standUpBikeType && (
-                <div className="card" style={{ background: 'rgba(0, 255, 136, 0.1)', border: '1px solid rgba(0, 255, 136, 0.3)' }}>
-                  <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                    <strong>🎯 Great choice!</strong> You'll get {formatEquipmentName(formData.standUpBikeType)}-specific workouts with
-                    motion-optimized training and equipment-specific conversion factors.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Running Status - only show if they have equipment */}
-            {formData.standUpBikeType && (
-              <div style={{ marginBottom: '32px' }}>
-                <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>Can you run right now?</h3>
-                <p><strong>🏥 We support injured runners too!</strong> Tell us about your current running status.</p>
-                <div style={{ display: 'grid', gap: '16px' }}>
-                  {[
-                    {
-                      id: 'active',
-                      name: 'Yes - I can run',
-                      icon: '🏃',
-                      desc: 'Mix running with stand-up bike cross-training'
-                    },
-                    {
-                      id: 'bikeOnly',
-                      name: 'No - Bike only for now',
-                      icon: '🚴',
-                      desc: 'Injured or transitioning - bike workouts only until ready to run'
-                    },
-                    {
-                      id: 'transitioning',
-                      name: 'Transitioning back',
-                      icon: '🔄',
-                      desc: 'Returning from injury - gradually add running to bike base'
-                    }
-                  ].map(status => (
-                    <div
-                      key={status.id}
-                      className={`card ${formData.runningStatus === status.id ? 'selected' : ''}`}
-                      onClick={() => updateFormData('runningStatus', status.id)}
-                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '16px', padding: '16px' }}
-                    >
-                      <div style={{ fontSize: '1.5rem' }}>{status.icon}</div>
-                      <div style={{ flex: 1 }}>
-                        <h4 style={{ margin: '0 0 4px 0' }}>{status.name}</h4>
-                        <p style={{ margin: 0, fontSize: '0.9rem', color: '#D1D5DB' }}>{status.desc}</p>
+                    <span style={{ fontSize: '1.5rem' }}>{equipment.emoji}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {formData.standUpBikeType === equipment.id ? '✓ ' : ''}{equipment.name}
+                        <span className="badge badge-info" style={{ fontSize: '0.7rem', padding: '2px 6px', marginLeft: '4px' }}>{equipment.badge}</span>
+                      </div>
+                      <div style={{
+                        fontSize: '0.8rem',
+                        color: formData.standUpBikeType === equipment.id ? '#86efac' : '#666',
+                        marginTop: '2px'
+                      }}>
+                        {equipment.description}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </button>
+                ))}
 
-                {formData.runningStatus === 'bikeOnly' && (
-                  <div className="card" style={{ background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)', marginTop: '16px' }}>
-                    <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                      <strong>💪 Perfect for injury recovery!</strong> You'll get a complete {formatEquipmentName(formData.standUpBikeType)} training plan
-                      with tempo rides, intervals, long rides, and recovery days - all the training stimulus without the impact stress.
-                      When you're ready to run again, just update your profile!
-                    </p>
-                  </div>
-                )}
-
-                {formData.runningStatus === 'transitioning' && (
-                  <div className="card" style={{ background: 'rgba(255, 179, 102, 0.1)', border: '1px solid rgba(255, 179, 102, 0.3)', marginTop: '16px' }}>
-                    <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                      <strong>🔄 Smart transition approach!</strong> We'll start with mostly {formatEquipmentName(formData.standUpBikeType)} training
-                      and gradually reintroduce running over the first 4 weeks. This gives your body time to adapt safely.
-                    </p>
-                  </div>
-                )}
-
-                {formData.runningStatus === 'active' && (
-                  <div className="card" style={{ background: 'rgba(0, 255, 136, 0.1)', border: '1px solid rgba(0, 255, 136, 0.3)', marginTop: '16px' }}>
-                    <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                      <strong>🎯 Best of both worlds!</strong> You'll get a mix of running and {formatEquipmentName(formData.standUpBikeType)} training
-                      for maximum aerobic development with reduced impact stress.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Preferred Bike Days - only show if they have equipment AND can run (active or transitioning) */}
-            {formData.standUpBikeType && formData.runningStatus !== 'bikeOnly' && formData.availableDays.length > 0 && (
-              <div style={{ marginBottom: '32px' }}>
-                <h3>Which days do you prefer for {formatEquipmentName(formData.standUpBikeType)} rides?</h3>
-                <p><strong>🚴‍♂️ Smart scheduling!</strong> Perfect for road closures, traffic patterns, or personal preference.</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', maxWidth: '500px', margin: '0 auto' }}>
-                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
-                    <div 
-                      key={day}
-                      className={`equipment-card ${formData.preferredBikeDays.includes(day) ? 'selected' : ''} ${!formData.availableDays.includes(day) ? 'disabled' : ''}`}
-                      onClick={() => {
-                        if (!formData.availableDays.includes(day)) return;
-                        const newDays = formData.preferredBikeDays.includes(day) 
-                          ? formData.preferredBikeDays.filter(d => d !== day)
-                          : [...formData.preferredBikeDays, day];
-                        updateFormData('preferredBikeDays', newDays);
-                      }}
-                      style={{ 
-                        opacity: !formData.availableDays.includes(day) ? 0.3 : 1,
-                        cursor: !formData.availableDays.includes(day) ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      <p className="equipment-name">
-                        {day}
-                        {!formData.availableDays.includes(day) && <span style={{ fontSize: '0.7rem', display: 'block' }}>(Not available)</span>}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                
-                {formData.preferredBikeDays.length > 0 && (
-                  <div className="card" style={{ background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)', marginTop: '16px' }}>
-                    <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                      <strong>🎯 Perfect!</strong> Selected {formData.preferredBikeDays.length} {formatEquipmentName(formData.standUpBikeType)} days: {formData.preferredBikeDays.join(', ')}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Cross-Training Equipment */}
-            <div style={{ marginBottom: '32px' }}>
-              <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>
-                What other cross-training equipment do you have access to?
-              </h3>
-              <p style={{ marginBottom: '16px' }}>
-                <strong>🏊 Expand your options!</strong> Select any equipment you can use for cross-training when needed.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {/* Other Equipment */}
                 {[
                   { id: 'pool', name: 'Pool / Aqua Running', emoji: '🏊', description: 'Deep water running with flotation belt' },
-                  { id: 'elliptical', name: 'Elliptical Machine', emoji: '🏃', description: 'Gym elliptical or home machine' },
+                  { id: 'rowing', name: 'Rowing Machine', emoji: '🚣', description: 'Concept2 or similar rowing erg' },
+                  { id: 'elliptical', name: 'Elliptical Machine', emoji: '🏃', description: 'Low-impact cardio machine' },
                   { id: 'stationaryBike', name: 'Stationary Bike', emoji: '🚴', description: 'Spin bike, Peloton, or indoor trainer' },
-                  { id: 'swimming', name: 'Swimming', emoji: '🏊', description: 'Lap swimming (technique required)' },
-                  { id: 'rowing', name: 'Rowing Machine', emoji: '🚣', description: 'Concept2 or similar rowing erg' }
+                  { id: 'swimming', name: 'Swimming', emoji: '🏊', description: 'Lap swimming (technique required)' }
                 ].map(option => (
                   <button
                     key={option.id}
@@ -1647,6 +1591,12 @@ function OnboardingFlow({ onComplete }) {
                         [option.id]: !formData.crossTrainingEquipment[option.id]
                       };
                       updateFormData('crossTrainingEquipment', newEquipment);
+                      // Auto-set as primary if this is the first equipment selected
+                      if (newEquipment[option.id] && !formData.primaryCrossTrainingEquipment && !formData.standUpBikeType) {
+                        updateFormData('primaryCrossTrainingEquipment', option.id);
+                      } else if (!newEquipment[option.id] && formData.primaryCrossTrainingEquipment === option.id) {
+                        updateFormData('primaryCrossTrainingEquipment', null);
+                      }
                     }}
                     style={{
                       padding: '12px 16px',
@@ -1678,19 +1628,533 @@ function OnboardingFlow({ onComplete }) {
                   </button>
                 ))}
               </div>
-              {Object.values(formData.crossTrainingEquipment).some(Boolean) && (
-                <div className="card" style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', marginTop: '16px' }}>
-                  <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                    <strong>💪 Great!</strong> You'll have these options available when you need to adapt your training.
+
+                {/* Low-Impact Options for Injured Runners (No Equipment Required) */}
+                {[
+                  { id: 'walking', name: 'Walking', emoji: '🚶', description: 'Low-impact walking workouts (no equipment needed)' }
+                ].map(option => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      const newEquipment = {
+                        ...formData.crossTrainingEquipment,
+                        [option.id]: !formData.crossTrainingEquipment[option.id]
+                      };
+                      updateFormData('crossTrainingEquipment', newEquipment);
+                      // Auto-set as primary if this is the first equipment selected
+                      if (newEquipment[option.id] && !formData.primaryCrossTrainingEquipment && !formData.standUpBikeType) {
+                        updateFormData('primaryCrossTrainingEquipment', option.id);
+                      } else if (!newEquipment[option.id] && formData.primaryCrossTrainingEquipment === option.id) {
+                        updateFormData('primaryCrossTrainingEquipment', null);
+                      }
+                    }}
+                    style={{
+                      padding: '12px 16px',
+                      fontSize: '0.9rem',
+                      border: formData.crossTrainingEquipment[option.id] ? '2px solid #22c55e' : '1px solid #333',
+                      background: formData.crossTrainingEquipment[option.id] ? 'rgba(34, 197, 94, 0.1)' : '#1a1a1a',
+                      color: formData.crossTrainingEquipment[option.id] ? '#22c55e' : '#999',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}
+                  >
+                    <span style={{ fontSize: '1.5rem' }}>{option.emoji}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '500' }}>
+                        {formData.crossTrainingEquipment[option.id] ? '✓ ' : ''}{option.name}
+                      </div>
+                      <div style={{
+                        fontSize: '0.8rem',
+                        color: formData.crossTrainingEquipment[option.id] ? '#86efac' : '#666',
+                        marginTop: '2px'
+                      }}>
+                        {option.description}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+
+              {/* None / Running Only Option */}
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #333' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Clear all selections
+                    updateFormData('standUpBikeType', null);
+                    updateFormData('crossTrainingEquipment', {
+                      pool: false,
+                      elliptical: false,
+                      stationaryBike: false,
+                      swimming: false,
+                      rowing: false,
+                      walking: false
+                    });
+                    updateFormData('primaryCrossTrainingEquipment', null);
+                  }}
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: '0.9rem',
+                    border: (!formData.standUpBikeType && !Object.values(formData.crossTrainingEquipment || {}).some(Boolean)) 
+                      ? '2px solid #666' 
+                      : '1px solid #333',
+                    background: (!formData.standUpBikeType && !Object.values(formData.crossTrainingEquipment || {}).some(Boolean))
+                      ? 'rgba(102, 102, 102, 0.1)'
+                      : '#1a1a1a',
+                    color: (!formData.standUpBikeType && !Object.values(formData.crossTrainingEquipment || {}).some(Boolean))
+                      ? '#999'
+                      : '#666',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    width: '100%'
+                  }}
+                >
+                  <span style={{ fontSize: '1.5rem' }}>🏃</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: '500' }}>
+                      {(!formData.standUpBikeType && !Object.values(formData.crossTrainingEquipment || {}).some(Boolean)) ? '✓ ' : ''}None - Running only
+                    </div>
+                    <div style={{
+                      fontSize: '0.8rem',
+                      color: (!formData.standUpBikeType && !Object.values(formData.crossTrainingEquipment || {}).some(Boolean)) ? '#999' : '#666',
+                      marginTop: '2px'
+                    }}>
+                      Pure running training with basic cross-training options
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Helper function to check if any equipment is selected */}
+              {(() => {
+                const hasStandUpBike = formData.standUpBikeType !== null;
+                const hasOtherEquipment = Object.values(formData.crossTrainingEquipment || {}).some(Boolean);
+                const hasAnyEquipment = hasStandUpBike || hasOtherEquipment;
+                const selectedCount = (hasStandUpBike ? 1 : 0) + Object.values(formData.crossTrainingEquipment || {}).filter(Boolean).length;
+
+                return (
+                  <>
+                    {hasAnyEquipment && (
+                      <div className="card" style={{ background: 'rgba(0, 255, 136, 0.1)', border: '1px solid rgba(0, 255, 136, 0.3)', marginTop: '16px' }}>
+                        <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                          <strong>🎯 Great!</strong> You've selected {selectedCount} option{selectedCount !== 1 ? 's' : ''}. 
+                          {hasStandUpBike && ` You'll get ${formatEquipmentName(formData.standUpBikeType)}-specific workouts with motion-optimized training.`}
+                          {!hasStandUpBike && formData.crossTrainingEquipment && formData.crossTrainingEquipment.walking && ' Walking workouts are perfect for injury recovery - no equipment needed!'}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {(() => {
+              const hasStandUpBike = formData.standUpBikeType !== null;
+              const hasOtherEquipment = Object.values(formData.crossTrainingEquipment || {}).some(Boolean);
+              const hasAnyEquipment = hasStandUpBike || hasOtherEquipment;
+
+              // Always show running status question - even without equipment, users might be injured
+              // and need walking/low-impact options
+
+              // Determine equipment name for messaging
+              const getEquipmentName = () => {
+                if (formData.standUpBikeType) {
+                  return formatEquipmentName(formData.standUpBikeType);
+                }
+                const selectedOther = Object.entries(formData.crossTrainingEquipment || {})
+                  .filter(([_, selected]) => selected)
+                  .map(([key, _]) => {
+                    const names = {
+                      pool: 'Pool Running',
+                      rowing: 'Rowing',
+                      elliptical: 'Elliptical',
+                      stationaryBike: 'Stationary Bike',
+                      swimming: 'Swimming',
+                      walking: 'Walking'
+                    };
+                    return names[key] || key;
+                  });
+                if (selectedOther.length === 0) {
+                  return 'Low-Impact Activities';
+                }
+                return selectedOther.length === 1 ? selectedOther[0] : 'Cross-Training';
+              };
+
+              const equipmentName = getEquipmentName();
+
+              return (
+                <div style={{ marginBottom: '32px' }}>
+                  <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>Can you run right now?</h3>
+                  <p><strong>🏥 We support injured runners too!</strong> Tell us about your current running status.</p>
+                  <div style={{ display: 'grid', gap: '16px' }}>
+                    {[
+                      {
+                        id: 'active',
+                        name: 'Yes - I can run',
+                        icon: '🏃',
+                        desc: `Mix running with ${equipmentName.toLowerCase()} cross-training`
+                      },
+                      {
+                        id: 'crossTrainingOnly',
+                        name: 'No - Cross-training only for now',
+                        icon: '🚴',
+                        desc: 'Injured or transitioning - cross-training workouts only until ready to run'
+                      },
+                      {
+                        id: 'transitioning',
+                        name: 'Transitioning back',
+                        icon: '🔄',
+                        desc: 'Returning from injury - gradually add running to cross-training base'
+                      }
+                    ].map(status => (
+                      <div
+                        key={status.id}
+                        className={`card ${formData.runningStatus === status.id ? 'selected' : ''}`}
+                        onClick={() => updateFormData('runningStatus', status.id)}
+                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '16px', padding: '16px' }}
+                      >
+                        <div style={{ fontSize: '1.5rem' }}>{status.icon}</div>
+                        <div style={{ flex: 1 }}>
+                          <h4 style={{ margin: '0 0 4px 0' }}>{status.name}</h4>
+                          <p style={{ margin: 0, fontSize: '0.9rem', color: '#D1D5DB' }}>{status.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {formData.runningStatus === 'crossTrainingOnly' && (
+                    <div className="card" style={{ background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)', marginTop: '16px' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        <strong>💪 Perfect for injury recovery!</strong> 
+                        {hasAnyEquipment ? (
+                          <>You'll get a complete {equipmentName} training plan with tempo workouts, intervals, long sessions, and recovery days - all the training stimulus without the impact stress.</>
+                        ) : (
+                          <>You'll get a plan with walking and low-impact activities to help you recover and gradually return to running.</>
+                        )}
+                        {' '}When you're ready to run again, just update your profile!
+                      </p>
+                    </div>
+                  )}
+
+                  {formData.runningStatus === 'transitioning' && (
+                    <div className="card" style={{ background: 'rgba(255, 179, 102, 0.1)', border: '1px solid rgba(255, 179, 102, 0.3)', marginTop: '16px' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        <strong>🔄 Smart transition approach!</strong> We'll start with mostly {equipmentName.toLowerCase()} training
+                        and gradually reintroduce running over the first 4 weeks. This gives your body time to adapt safely.
+                      </p>
+                    </div>
+                  )}
+
+                  {formData.runningStatus === 'active' && (
+                    <div className="card" style={{ background: 'rgba(0, 255, 136, 0.1)', border: '1px solid rgba(0, 255, 136, 0.3)', marginTop: '16px' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        <strong>🎯 Best of both worlds!</strong> You'll get a mix of running and {equipmentName.toLowerCase()} training
+                        for maximum aerobic development with reduced impact stress.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Injury Information - show if crossTrainingOnly or transitioning (even without equipment) */}
+            {(formData.runningStatus === 'crossTrainingOnly' || formData.runningStatus === 'transitioning') && (
+              <div style={{ marginBottom: '32px' }}>
+                <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>
+                  What injury are you recovering from?
+                </h3>
+                <p style={{ marginBottom: '16px', fontSize: '0.95rem', color: '#D1D5DB' }}>
+                  <strong>🏥 This helps us recommend the safest cross-training equipment</strong> and avoid activities that could aggravate your injury.
+                </p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                  {[
+                    { id: 'itBand', name: 'IT Band Syndrome', description: 'Hip/knee pain on outside of leg' },
+                    { id: 'plantarFasciitis', name: 'Plantar Fasciitis', description: 'Bottom of foot pain' },
+                    { id: 'shinSplints', name: 'Shin Splints', description: 'Pain along shin bone' },
+                    { id: 'kneeIssues', name: 'Knee Issues', description: 'Patellofemoral, meniscus, etc.' },
+                    { id: 'lowerBackPain', name: 'Lower Back Pain', description: 'Lower back discomfort' },
+                    { id: 'achillesTendonitis', name: 'Achilles Tendonitis', description: 'Back of heel/ankle pain' },
+                    { id: 'stressFracture', name: 'Stress Fracture', description: 'Bone stress injury' },
+                    { id: 'hipIssues', name: 'Hip Issues', description: 'Hip pain or impingement' },
+                    { id: 'ankleIssues', name: 'Ankle Issues', description: 'Ankle pain or instability' },
+                    { id: 'other', name: 'Other', description: 'Please specify below' }
+                  ].map(injury => (
+                    <button
+                      key={injury.id}
+                      type="button"
+                      onClick={() => {
+                        const newInjuries = {
+                          ...formData.injuries,
+                          [injury.id]: !formData.injuries[injury.id]
+                        };
+                        updateFormData('injuries', newInjuries);
+                        // Clear description if "other" is deselected
+                        if (injury.id === 'other' && !newInjuries.other) {
+                          updateFormData('injuryDescription', null);
+                        }
+                      }}
+                      style={{
+                        padding: '12px 16px',
+                        fontSize: '0.9rem',
+                        border: formData.injuries[injury.id] ? '2px solid #ef4444' : '1px solid #333',
+                        background: formData.injuries[injury.id] ? 'rgba(239, 68, 68, 0.1)' : '#1a1a1a',
+                        color: formData.injuries[injury.id] ? '#ef4444' : '#999',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px'
+                      }}
+                    >
+                      <span style={{ fontSize: '1.2rem' }}>{formData.injuries[injury.id] ? '✓' : '○'}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: '500' }}>
+                          {injury.name}
+                        </div>
+                        <div style={{
+                          fontSize: '0.8rem',
+                          color: formData.injuries[injury.id] ? '#fca5a5' : '#666',
+                          marginTop: '2px'
+                        }}>
+                          {injury.description}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Other injury description field */}
+                {formData.injuries.other && (
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{
+                      display: 'block',
+                      color: '#fff',
+                      fontSize: '0.9rem',
+                      fontWeight: '500',
+                      marginBottom: '8px'
+                    }}>
+                      Please describe your injury:
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.injuryDescription || ''}
+                      onChange={(e) => updateFormData('injuryDescription', e.target.value)}
+                      placeholder="e.g., Runner's knee, patellar tendinitis, etc."
+                      maxLength={100}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        fontSize: '0.9rem',
+                        background: '#1a1a1a',
+                        border: '1px solid #333',
+                        borderRadius: '6px',
+                        color: '#fff',
+                        outline: 'none'
+                      }}
+                    />
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#666' }}>
+                      Optional but recommended for better recommendations
+                    </p>
+                  </div>
+                )}
+
+                {/* Medical Disclaimer */}
+                <div className="card" style={{ 
+                  background: 'rgba(239, 68, 68, 0.05)', 
+                  border: '1px solid rgba(239, 68, 68, 0.2)', 
+                  marginTop: '16px',
+                  padding: '12px'
+                }}>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#fca5a5', lineHeight: '1.5' }}>
+                    <strong>⚠️ Important:</strong> This is not medical advice. Always consult with a healthcare provider 
+                    for injury diagnosis and treatment. We use this information to recommend appropriate cross-training 
+                    equipment only.
                   </p>
                 </div>
-              )}
-              {!Object.values(formData.crossTrainingEquipment).some(Boolean) && (
-                <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#666' }}>
-                  No equipment? No problem! You can always skip this section.
-                </p>
-              )}
-            </div>
+
+                {/* Summary of selected injuries */}
+                {(() => {
+                  const selectedInjuries = Object.entries(formData.injuries || {})
+                    .filter(([_, selected]) => selected && _ !== 'other')
+                    .map(([key, _]) => {
+                      const names = {
+                        itBand: 'IT Band Syndrome',
+                        plantarFasciitis: 'Plantar Fasciitis',
+                        shinSplints: 'Shin Splints',
+                        kneeIssues: 'Knee Issues',
+                        lowerBackPain: 'Lower Back Pain',
+                        achillesTendonitis: 'Achilles Tendonitis',
+                        stressFracture: 'Stress Fracture',
+                        hipIssues: 'Hip Issues',
+                        ankleIssues: 'Ankle Issues'
+                      };
+                      return names[key] || key;
+                    });
+                  
+                  if (formData.injuries.other && formData.injuryDescription) {
+                    selectedInjuries.push(`Other: ${formData.injuryDescription}`);
+                  }
+
+                  if (selectedInjuries.length > 0) {
+                    return (
+                      <div className="card" style={{ 
+                        background: 'rgba(0, 212, 255, 0.1)', 
+                        border: '1px solid rgba(0, 212, 255, 0.3)', 
+                        marginTop: '16px' 
+                      }}>
+                        <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                          <strong>✓ Selected:</strong> {selectedInjuries.join(', ')}
+                        </p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+            )}
+
+            {/* Primary Equipment Selection - show if multiple equipment types selected */}
+            {(() => {
+              const hasStandUpBike = formData.standUpBikeType !== null;
+              const selectedOther = Object.entries(formData.crossTrainingEquipment || {})
+                .filter(([_, selected]) => selected)
+                .map(([key, _]) => key);
+              const totalSelected = (hasStandUpBike ? 1 : 0) + selectedOther.length;
+
+              if (totalSelected <= 1) return null; // Only show if multiple selected
+
+              const equipmentOptions = [];
+              if (hasStandUpBike) {
+                equipmentOptions.push({
+                  id: formData.standUpBikeType,
+                  name: formatEquipmentName(formData.standUpBikeType),
+                  emoji: '🚴'
+                });
+              }
+              selectedOther.forEach(key => {
+                const names = {
+                  pool: { name: 'Pool / Aqua Running', emoji: '🏊' },
+                  rowing: { name: 'Rowing Machine', emoji: '🚣' },
+                  elliptical: { name: 'Elliptical Machine', emoji: '🏃' },
+                  stationaryBike: { name: 'Stationary Bike', emoji: '🚴' },
+                  swimming: { name: 'Swimming', emoji: '🏊' },
+                  walking: { name: 'Walking', emoji: '🚶' }
+                };
+                if (names[key]) {
+                  equipmentOptions.push({ id: key, ...names[key] });
+                }
+              });
+
+              return (
+                <div style={{ marginBottom: '32px' }}>
+                  <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>
+                    Which is your primary cross-training equipment?
+                  </h3>
+                  <p style={{ marginBottom: '16px', fontSize: '0.95rem', color: '#D1D5DB' }}>
+                    You've selected multiple equipment types. Which one should we prioritize in your plan?
+                  </p>
+                  <div style={{ display: 'grid', gap: '12px' }}>
+                    {equipmentOptions.map(option => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => updateFormData('primaryCrossTrainingEquipment', option.id)}
+                        style={{
+                          padding: '14px 16px',
+                          fontSize: '0.95rem',
+                          border: formData.primaryCrossTrainingEquipment === option.id ? '2px solid var(--runeq-primary)' : '1px solid #333',
+                          background: formData.primaryCrossTrainingEquipment === option.id ? 'rgba(0, 212, 255, 0.1)' : '#1a1a1a',
+                          color: formData.primaryCrossTrainingEquipment === option.id ? 'var(--runeq-primary)' : '#999',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px'
+                        }}
+                      >
+                        <span style={{ fontSize: '1.5rem' }}>{option.emoji}</span>
+                        <div style={{ flex: 1, fontWeight: '500' }}>
+                          {formData.primaryCrossTrainingEquipment === option.id ? '✓ ' : ''}{option.name}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Preferred Cross-Training Days - only show if they have equipment AND can run (active or transitioning) */}
+            {(() => {
+              const hasStandUpBike = formData.standUpBikeType !== null;
+              const hasOtherEquipment = Object.values(formData.crossTrainingEquipment || {}).some(Boolean);
+              const hasAnyEquipment = hasStandUpBike || hasOtherEquipment;
+              const canRun = formData.runningStatus === 'active' || formData.runningStatus === 'transitioning';
+
+              if (!hasAnyEquipment || !canRun || formData.availableDays.length === 0) return null;
+
+              // Determine equipment name for messaging
+              const getEquipmentName = () => {
+                if (formData.standUpBikeType) {
+                  return formatEquipmentName(formData.standUpBikeType);
+                }
+                if (formData.crossTrainingEquipment.walking && Object.values(formData.crossTrainingEquipment).filter(Boolean).length === 1) {
+                  return 'Walking';
+                }
+                return 'Cross-Training';
+              };
+
+              const equipmentName = getEquipmentName();
+
+              return (
+                <div style={{ marginBottom: '32px' }}>
+                  <h3>Which days do you prefer for {equipmentName.toLowerCase()}?</h3>
+                  <p><strong>🚴‍♂️ Smart scheduling!</strong> Perfect for road closures, traffic patterns, or personal preference.</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', maxWidth: '500px', margin: '0 auto' }}>
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
+                      <div 
+                        key={day}
+                        className={`equipment-card ${formData.preferredBikeDays.includes(day) ? 'selected' : ''} ${!formData.availableDays.includes(day) ? 'disabled' : ''}`}
+                        onClick={() => {
+                          if (!formData.availableDays.includes(day)) return;
+                          const newDays = formData.preferredBikeDays.includes(day) 
+                            ? formData.preferredBikeDays.filter(d => d !== day)
+                            : [...formData.preferredBikeDays, day];
+                          updateFormData('preferredBikeDays', newDays);
+                        }}
+                        style={{ 
+                          opacity: !formData.availableDays.includes(day) ? 0.3 : 1,
+                          cursor: !formData.availableDays.includes(day) ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        <p className="equipment-name">
+                          {day}
+                          {!formData.availableDays.includes(day) && <span style={{ fontSize: '0.7rem', display: 'block' }}>(Not available)</span>}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {formData.preferredBikeDays.length > 0 && (
+                    <div className="card" style={{ background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)', marginTop: '16px' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        <strong>🎯 Perfect!</strong> Selected {formData.preferredBikeDays.length} {equipmentName.toLowerCase()} day{formData.preferredBikeDays.length !== 1 ? 's' : ''}: {formData.preferredBikeDays.join(', ')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
           </div>
         );
