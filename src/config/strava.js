@@ -14,9 +14,9 @@
 const STRAVA_CONFIG = {
   // Production Strava app credentials
   clientId: process.env.REACT_APP_STRAVA_CLIENT_ID || '185232',
-  // WARNING: Client secret should be moved to backend (Firebase Functions)
-  // For now, this is a fallback but token exchange should happen server-side
-  clientSecret: process.env.REACT_APP_STRAVA_CLIENT_SECRET || 'aed72676e2668376279fc7f39f97b4545a5cff94',
+  // SECURITY: Client secret is stored in Firebase Functions secrets
+  // Token exchange happens server-side via exchangeStravaToken function
+  clientSecret: undefined, // Removed - never expose in frontend code
   // Automatically uses correct domain: app.runplusplans.com in production
   // CRITICAL: Strava app callback domain must match this (app.runplusplans.com)
   redirectUri: `${window.location.origin}/auth/strava/callback`,

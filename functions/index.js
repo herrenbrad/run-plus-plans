@@ -13,6 +13,7 @@ const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 const emailUserSecret = defineSecret("EMAIL_USER");
 const emailPassSecret = defineSecret("EMAIL_PASS");
 const adminEmailSecret = defineSecret("ADMIN_EMAIL");
+const stravaClientSecret = defineSecret("STRAVA_CLIENT_SECRET");
 
 /**
  * Send email notification when a new user signs up
@@ -255,6 +256,178 @@ exports.callAnthropicAPI = onCall(
         stack: error.stack,
         name: error.name
       });
+      return {
+        success: false,
+        error: error.message || "An unknown error occurred",
+      };
+    }
+  }
+);
+
+/**
+ * Exchange Strava authorization code for access token
+ * Keeps client secret secure on server-side
+ */
+exports.exchangeStravaToken = onCall(
+  {
+    cors: true,
+    enforceAppCheck: false,
+    secrets: [stravaClientSecret],
+    runtime: 'nodejs20',
+  },
+  async (request) => {
+    try {
+      // Verify user is authenticated
+      if (!request.auth) {
+        console.error("Unauthorized: User not authenticated");
+        return {
+          success: false,
+          error: "Unauthorized: User must be authenticated"
+        };
+      }
+
+      const { code, clientId } = request.data;
+
+      // Validate required parameters
+      if (!code || !clientId) {
+        console.error("Missing required parameters:", { code: !!code, clientId: !!clientId });
+        return {
+          success: false,
+          error: "Missing required parameters: code and clientId are required"
+        };
+      }
+
+      // Get client secret from secret
+      const clientSecret = stravaClientSecret.value();
+
+      if (!clientSecret) {
+        console.error("Strava client secret not configured");
+        return {
+          success: false,
+          error: "Strava client secret not configured. Set the secret: firebase functions:secrets:set STRAVA_CLIENT_SECRET"
+        };
+      }
+
+      console.log("Exchanging Strava authorization code for token");
+
+      // Exchange code for token via Strava API
+      const response = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code: code,
+          grant_type: 'authorization_code',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Strava token exchange failed:", error);
+        return {
+          success: false,
+          error: error.message || error.error || 'Failed to exchange token'
+        };
+      }
+
+      const tokenData = await response.json();
+      console.log("Strava token exchange successful");
+
+      return {
+        success: true,
+        data: tokenData
+      };
+    } catch (error) {
+      console.error("Strava token exchange error:", error);
+      return {
+        success: false,
+        error: error.message || "An unknown error occurred",
+      };
+    }
+  }
+);
+
+/**
+ * Refresh Strava access token
+ * Keeps client secret secure on server-side
+ */
+exports.refreshStravaToken = onCall(
+  {
+    cors: true,
+    enforceAppCheck: false,
+    secrets: [stravaClientSecret],
+    runtime: 'nodejs20',
+  },
+  async (request) => {
+    try {
+      // Verify user is authenticated
+      if (!request.auth) {
+        console.error("Unauthorized: User not authenticated");
+        return {
+          success: false,
+          error: "Unauthorized: User must be authenticated"
+        };
+      }
+
+      const { refreshToken, clientId } = request.data;
+
+      // Validate required parameters
+      if (!refreshToken || !clientId) {
+        console.error("Missing required parameters:", { refreshToken: !!refreshToken, clientId: !!clientId });
+        return {
+          success: false,
+          error: "Missing required parameters: refreshToken and clientId are required"
+        };
+      }
+
+      // Get client secret from secret
+      const clientSecret = stravaClientSecret.value();
+
+      if (!clientSecret) {
+        console.error("Strava client secret not configured");
+        return {
+          success: false,
+          error: "Strava client secret not configured. Set the secret: firebase functions:secrets:set STRAVA_CLIENT_SECRET"
+        };
+      }
+
+      console.log("Refreshing Strava access token");
+
+      // Refresh token via Strava API
+      const response = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Strava token refresh failed:", error);
+        return {
+          success: false,
+          error: error.message || error.error || 'Failed to refresh token'
+        };
+      }
+
+      const tokenData = await response.json();
+      console.log("Strava token refresh successful");
+
+      return {
+        success: true,
+        data: tokenData
+      };
+    } catch (error) {
+      console.error("Strava token refresh error:", error);
       return {
         success: false,
         error: error.message || "An unknown error occurred",
