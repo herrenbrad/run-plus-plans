@@ -1854,15 +1854,25 @@ class TrainingPlanService {
             }
         }
         
-        // Check if we have any valid modified weeks
-        const validModifiedWeeks = modifiedWeeks.filter(w => w && w.workouts && w.workouts.length > 0);
-        if (validModifiedWeeks.length === 0) {
-            logger.error('  ❌ No valid weeks were modified');
-            logger.error(`    Total weeks processed: ${modifiedWeeks.length}`);
-            throw new Error('Cannot create injury recovery plan - no valid weeks found to modify. The plan structure may be corrupted. Please regenerate your training plan.');
+        // CRITICAL: Check if injury weeks (the ones we need to modify) are valid
+        const injuryWeeks = modifiedWeeks.slice(0, weeksOffRunning + 1); // +1 for return week
+        const validInjuryWeeks = injuryWeeks.filter(w => w && w.workouts && w.workouts.length > 0);
+        
+        if (validInjuryWeeks.length === 0) {
+            logger.error('  ❌ No valid injury weeks found');
+            logger.error(`    Injury weeks needed: ${weeksOffRunning} (weeks ${injuryStartWeek}-${injuryEndWeek}) + 1 return week (week ${returnToRunningWeek})`);
+            logger.error(`    Total weeks in plan: ${weeklyPlans.length}`);
+            logger.error(`    Valid weeks found: ${weeklyPlans.filter(w => w && w.workouts && w.workouts.length > 0).length}`);
+            throw new Error(`Cannot create injury recovery plan - the weeks that need to be modified (weeks ${injuryStartWeek}-${returnToRunningWeek}) are missing or have no workouts. Your plan structure appears to be corrupted. Please use "Manage Plan" to regenerate your training plan first.`);
         }
         
-        logger.log(`  ✅ Successfully modified ${validModifiedWeeks.length} weeks`);
+        // Check if we have any valid modified weeks overall
+        const validModifiedWeeks = modifiedWeeks.filter(w => w && w.workouts && w.workouts.length > 0);
+        logger.log(`  ✅ Successfully modified ${validModifiedWeeks.length} weeks (${validInjuryWeeks.length} injury weeks)`);
+        
+        if (validInjuryWeeks.length < weeksOffRunning) {
+            logger.warn(`  ⚠️ Warning: Only ${validInjuryWeeks.length} of ${weeksOffRunning} injury weeks were valid`);
+        }
 
         // Merge: completed weeks + modified weeks
         const mergedWeeklyPlans = [...completedWeeks, ...modifiedWeeks];
