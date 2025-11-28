@@ -17,6 +17,7 @@ import logger from '../utils/logger';
 import { useToast } from './Toast';
 import { calculateCurrentWeek, getWeekDateRange, getWorkoutDate, formatWorkoutDate } from '../utils/weekCalculations';
 import useStravaSync from '../hooks/useStravaSync';
+import useWorkoutCompletion from '../hooks/useWorkoutCompletion';
 import './Dashboard.css';
 
 function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData }) {
@@ -374,12 +375,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   const [workoutCompletions, setWorkoutCompletions] = useState({}); // Track workout completions for instant UI updates
   const [showBetaSetup, setShowBetaSetup] = useState(false); // Show beta code setup modal
   const [showBrickOptions, setShowBrickOptions] = useState({}); // Track which workouts are showing brick split options
-  const [completionModal, setCompletionModal] = useState({
-    isOpen: false,
-    workout: null,
-    distance: '',
-    notes: ''
-  }); // Track completion modal for distance logging
 
   // Load modified workouts from localStorage on component mount
   useEffect(() => {
@@ -449,6 +444,19 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     userProfile,
     trainingPlan,
     currentWeek
+  });
+
+  // Workout completion hook
+  const {
+    completionModal,
+    setCompletionModal,
+    handleMarkComplete,
+    handleSaveCompletion,
+    handleCloseCompletionModal
+  } = useWorkoutCompletion({
+    currentWeek,
+    workoutCompletions,
+    setWorkoutCompletions
   });
 
   // DISABLED: Auto-sync was interfering with testing. Use "Sync Now" button instead.
@@ -783,146 +791,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     });
   };
 
-  const handleMarkComplete = async (workout) => {
-    if (!auth.currentUser) {
-      console.error('No user logged in');
-      return;
-    }
-
-    // If uncompleting, just toggle off immediately
-    if (workout.completed) {
-      const newCompletedStatus = false;
-      const workoutIndex = workout.workoutIndex || 0;
-      const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
-
-      // INSTANT UI UPDATE: Update local state immediately for smooth UX
-      setWorkoutCompletions(prev => ({
-        ...prev,
-        [workoutKey]: {
-          completed: newCompletedStatus,
-          completedAt: null,
-          actualDistance: null,
-          notes: null
-        }
-      }));
-
-      // BACKGROUND SAVE: Update Firestore without blocking UI
-      try {
-        const result = await FirestoreService.markWorkoutComplete(
-          auth.currentUser.uid,
-          currentWeek,
-          workout.day,
-          newCompletedStatus,
-          null, // distance
-          null  // notes
-        );
-
-        if (!result.success) {
-          console.error('Failed to save completion status');
-          setWorkoutCompletions(prev => {
-            const updated = { ...prev };
-            delete updated[workoutKey];
-            return updated;
-          });
-          toast.error('Failed to save. Please try again.');
-        }
-      } catch (error) {
-        console.error('Error uncompleting workout:', error);
-      }
-      return;
-    }
-
-    // For rest days, just mark complete without modal
-    if (workout.type === 'rest') {
-      const newCompletedStatus = true;
-      const workoutIndex = workout.workoutIndex || 0;
-      const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
-
-      setWorkoutCompletions(prev => ({
-        ...prev,
-        [workoutKey]: {
-          completed: newCompletedStatus,
-          completedAt: new Date().toISOString()
-        }
-      }));
-
-      try {
-        await FirestoreService.markWorkoutComplete(
-          auth.currentUser.uid,
-          currentWeek,
-          workout.day,
-          newCompletedStatus
-        );
-      } catch (error) {
-        console.error('Error completing rest day:', error);
-      }
-      return;
-    }
-
-    // For actual workouts, show completion modal with distance tracking
-    setCompletionModal({
-      isOpen: true,
-      workout: workout,
-      distance: workout.distance?.toString() || '',
-      notes: ''
-    });
-  };
-
-  // Handle saving workout completion with distance
-  const handleSaveCompletion = async () => {
-    const { workout, distance, notes } = completionModal;
-    if (!workout || !auth.currentUser) return;
-
-    const newCompletedStatus = true;
-    const workoutIndex = workout.workoutIndex || 0;
-    const workoutKey = `${currentWeek}-${workout.day}-${workoutIndex}`;
-
-    // INSTANT UI UPDATE
-    setWorkoutCompletions(prev => ({
-      ...prev,
-      [workoutKey]: {
-        completed: newCompletedStatus,
-        completedAt: new Date().toISOString(),
-        actualDistance: distance ? parseFloat(distance) : null,
-        notes: notes || null
-      }
-    }));
-
-    // Close modal
-    setCompletionModal({ isOpen: false, workout: null, distance: '', notes: '' });
-
-    // BACKGROUND SAVE
-    try {
-      const result = await FirestoreService.markWorkoutComplete(
-        auth.currentUser.uid,
-        currentWeek,
-        workout.day,
-        newCompletedStatus,
-        distance ? parseFloat(distance) : null,
-        notes || null
-      );
-
-      if (!result.success) {
-        // Rollback on failure
-        console.error('Failed to save completion status');
-        setWorkoutCompletions(prev => {
-          const updated = { ...prev };
-          delete updated[workoutKey];
-          return updated;
-        });
-        toast.error('Failed to save. Please try again.');
-      }
-    } catch (error) {
-      // Rollback on error
-      console.error('Error saving completion:', error);
-      setWorkoutCompletions(prev => {
-        const updated = { ...prev };
-        delete updated[workoutKey];
-        return updated;
-      });
-      toast.error('Failed to save. Please try again.');
-    }
-  };
 
   const handleWorkoutReplacement = (newWorkout) => {
     const mode = somethingElseModal.mode || 'replace';
@@ -3082,7 +2950,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
                 Save
               </button>
               <button
-                onClick={() => setCompletionModal({ isOpen: false, workout: null, distance: '', notes: '' })}
+                onClick={handleCloseCompletionModal}
                 style={{
                   padding: '15px 30px',
                   background: 'rgba(156, 163, 175, 0.1)',
