@@ -56,25 +56,25 @@ class PlanTransformer {
             Base: [
                 'Consistency right now builds race-day confidence 💪',
                 'Aerobic base today = faster workouts later ⚙️',
-                'Keep stacking easy miles – durability wins 🧱',
+                'Keep stacking easy miles - durability wins 🧱',
                 'Recovery matters as much as the miles 😴'
             ],
             Build: [
-                'Dial in effort – smooth, fast, controlled 🚀',
+                'Dial in effort - smooth, fast, controlled 🚀',
                 'This phase teaches you to love the grind 🔁',
                 'Every quality day is sharpening your edge ✂️',
-                'Fuel, sleep, repeat – you're in the work zone 🧪'
+                'Fuel, sleep, repeat - you\'re in the work zone 🧪'
             ],
             Peak: [
                 'Race-specific work now = calm on race day 🏁',
-                'Trust your legs – they know what to do 👣',
+                'Trust your legs - they know what to do 👣',
                 'Two words: race rehearsals 🧠',
                 'Your engine is built. Now we fine tune 🔧'
             ],
             Taper: [
-                'Less work, more readiness – let freshness build 🌱',
+                'Less work, more readiness - let freshness build 🌱',
                 'Nothing new. Stay sharp, stay calm 🎯',
-                'Visualize success – you've earned this 💫',
+                'Visualize success - you\'ve earned this 💫',
                 'Rest is training. Really. 😴'
             ]
         };
