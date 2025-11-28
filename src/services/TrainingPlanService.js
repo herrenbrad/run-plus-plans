@@ -1885,6 +1885,18 @@ class TrainingPlanService {
      * Create a cross-training only week (no running)
      */
     createCrossTrainingWeek(originalWeek, availableLibraries, reduceTrainingDays) {
+        // CRITICAL: Validate week structure
+        if (!originalWeek) {
+            logger.error('  ❌ createCrossTrainingWeek: originalWeek is null');
+            throw new Error('Cannot create cross-training week - original week is null');
+        }
+        
+        if (!originalWeek.workouts) {
+            logger.error('  ❌ createCrossTrainingWeek: originalWeek.workouts is null/undefined');
+            logger.error('    Week structure:', Object.keys(originalWeek));
+            throw new Error('Cannot create cross-training week - original week has no workouts array');
+        }
+        
         const allDays = originalWeek.workouts || [];
 
         // Filter out rest days - only count actual workouts
