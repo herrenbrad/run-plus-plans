@@ -297,7 +297,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     let allTime = 0;
 
     trainingPlan.weeks.forEach(week => {
-      if (!week.workouts) return;
+      if (!week || !week.workouts) return;
 
       week.workouts.forEach(workout => {
         // Get all workouts for this day (including two-a-days)
