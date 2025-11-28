@@ -1854,16 +1854,27 @@ class TrainingPlanService {
             }
         }
         
-        // CRITICAL: Check if injury weeks (the ones we need to modify) are valid
-        const injuryWeeks = modifiedWeeks.slice(0, weeksOffRunning + 1); // +1 for return week
-        const validInjuryWeeks = injuryWeeks.filter(w => w && w.workouts && w.workouts.length > 0);
+        // CRITICAL: Check if the specific injury weeks we need are valid
+        // We need: injuryStartWeek through injuryEndWeek (injury weeks) + returnToRunningWeek (return week)
+        const requiredWeekNumbers = [];
+        for (let w = injuryStartWeek; w <= injuryEndWeek; w++) {
+            requiredWeekNumbers.push(w);
+        }
+        requiredWeekNumbers.push(returnToRunningWeek);
         
-        if (validInjuryWeeks.length === 0) {
-            logger.error('  ❌ No valid injury weeks found');
-            logger.error(`    Injury weeks needed: ${weeksOffRunning} (weeks ${injuryStartWeek}-${injuryEndWeek}) + 1 return week (week ${returnToRunningWeek})`);
+        const invalidRequiredWeeks = requiredWeekNumbers.filter(weekNum => {
+            const weekIndex = weekNum - currentWeek; // Index in modifiedWeeks array
+            const week = modifiedWeeks[weekIndex];
+            return !week || !week.workouts || week.workouts.length === 0;
+        });
+        
+        if (invalidRequiredWeeks.length > 0) {
+            logger.error('  ❌ Required injury weeks are missing or invalid');
+            logger.error(`    Required weeks: ${requiredWeekNumbers.join(', ')}`);
+            logger.error(`    Invalid weeks: ${invalidRequiredWeeks.join(', ')}`);
             logger.error(`    Total weeks in plan: ${weeklyPlans.length}`);
-            logger.error(`    Valid weeks found: ${weeklyPlans.filter(w => w && w.workouts && w.workouts.length > 0).length}`);
-            throw new Error(`Cannot create injury recovery plan - the weeks that need to be modified (weeks ${injuryStartWeek}-${returnToRunningWeek}) are missing or have no workouts. Your plan structure appears to be corrupted. Please use "Manage Plan" to regenerate your training plan first.`);
+            logger.error(`    Valid weeks in plan: ${weeklyPlans.filter(w => w && w.workouts && w.workouts.length > 0).length}`);
+            throw new Error(`Cannot create injury recovery plan - weeks ${invalidRequiredWeeks.join(', ')} are missing or have no workouts. Your plan structure appears to be corrupted. Please use "Manage Plan" to regenerate your training plan first.`);
         }
         
         // Check if we have any valid modified weeks overall
