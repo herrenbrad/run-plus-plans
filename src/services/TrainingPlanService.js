@@ -1842,17 +1842,27 @@ class TrainingPlanService {
             if (isInjuryWeek) {
                 // Replace running workouts with cross-training
                 logger.log(`  Week ${weekNumber}: Cross-training only (${week.workouts.length} workouts to replace)`);
-                return this.createCrossTrainingWeek(week, availableLibraries, reduceTrainingDays);
+                modifiedWeeks.push(this.createCrossTrainingWeek(week, availableLibraries, reduceTrainingDays));
             } else if (isReturnWeek) {
                 // Gradual return to running week
                 logger.log(`  Week ${weekNumber}: Return to running transition (${week.workouts.length} workouts)`);
-                return this.createReturnToRunningWeek(week, availableLibraries, reduceTrainingDays);
+                modifiedWeeks.push(this.createReturnToRunningWeek(week, availableLibraries, reduceTrainingDays));
             } else {
                 // Post-recovery weeks: return to full training volume (no reduction)
                 logger.log(`  Week ${weekNumber}: Regular training (full volume restored)`);
-                return week;
+                modifiedWeeks.push(week);
             }
-        });
+        }
+        
+        // Check if we have any valid modified weeks
+        const validModifiedWeeks = modifiedWeeks.filter(w => w && w.workouts && w.workouts.length > 0);
+        if (validModifiedWeeks.length === 0) {
+            logger.error('  ❌ No valid weeks were modified');
+            logger.error(`    Total weeks processed: ${modifiedWeeks.length}`);
+            throw new Error('Cannot create injury recovery plan - no valid weeks found to modify. The plan structure may be corrupted. Please regenerate your training plan.');
+        }
+        
+        logger.log(`  ✅ Successfully modified ${validModifiedWeeks.length} weeks`);
 
         // Merge: completed weeks + modified weeks
         const mergedWeeklyPlans = [...completedWeeks, ...modifiedWeeks];
