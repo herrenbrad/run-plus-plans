@@ -1826,7 +1826,7 @@ class TrainingPlanService {
         });
         
         for (let index = 0; index < weeksToProcess.length; index++) {
-            const week = weeksToProcess[index];
+            let week = weeksToProcess[index];
             const weekNumber = currentWeek + index;
             
             logger.log(`  🔍 Processing week ${weekNumber}:`, {
@@ -1846,7 +1846,7 @@ class TrainingPlanService {
                 const generatedWorkouts = generateWeekWorkouts(weekNumber, updatedProfile);
                 
                 // Create a week structure from generated workouts
-                const generatedWeek = {
+                week = {
                     week: weekNumber,
                     weekDates: { displayText: `Week ${weekNumber}` },
                     phase: 'base',
@@ -1856,9 +1856,6 @@ class TrainingPlanService {
                     }, 0),
                     workouts: generatedWorkouts
                 };
-                
-                // Use the generated week instead of null/invalid week
-                week = generatedWeek;
                 logger.log(`  ✅ Generated ${generatedWorkouts.length} workouts for week ${weekNumber}`);
             }
             const isInjuryWeek = weekNumber >= injuryStartWeek && weekNumber <= injuryEndWeek;
