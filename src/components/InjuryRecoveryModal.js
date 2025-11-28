@@ -17,6 +17,7 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
     standUpBike: false
   });
   const [reduceTrainingDays, setReduceTrainingDays] = useState(1);
+  const [injuryDescription, setInjuryDescription] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Load current settings when modal opens
@@ -25,6 +26,7 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
       // Reset to defaults when opening
       setWeeksOffRunning(2);
       setReduceTrainingDays(1);
+      setInjuryDescription(userProfile?.injuryRecovery?.injuryDescription || '');
 
       // Pre-select stand-up bike if user has one
       if (userProfile?.standUpBikeType) {
@@ -79,7 +81,8 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
           selectedEquipment,
           reduceTrainingDays,
           injuryStartWeek: currentWeek,
-          returnToRunningWeek: currentWeek + weeksOffRunning
+          returnToRunningWeek: currentWeek + weeksOffRunning,
+          injuryDescription: injuryDescription.trim() || null
         }
       };
 
@@ -103,7 +106,8 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
           selectedEquipment,
           reduceTrainingDays,
           currentWeek,
-          returnToRunningWeek: currentWeek + weeksOffRunning
+          returnToRunningWeek: currentWeek + weeksOffRunning,
+          injuryDescription: injuryDescription.trim() || null
         };
         
         const coachingAnalysis = await TrainingPlanAIService.generateInjuryRecoveryCoaching(
@@ -227,6 +231,44 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
             color: '#999'
           }}>
             We'll create a modified plan with cross-training while you recover. Your completed weeks will be preserved.
+          </p>
+        </div>
+
+        {/* Injury Description */}
+        <div style={{ marginBottom: '24px' }}>
+          <label style={{
+            display: 'block',
+            color: '#fff',
+            fontSize: '0.9rem',
+            fontWeight: '500',
+            marginBottom: '12px'
+          }}>
+            What injury are you recovering from?
+          </label>
+          <textarea
+            value={injuryDescription}
+            onChange={(e) => setInjuryDescription(e.target.value)}
+            placeholder="e.g., IT band syndrome, plantar fasciitis, shin splints, knee pain, stress fracture, etc."
+            rows={3}
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: 'rgba(0, 0, 0, 0.3)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              color: '#FFFFFF',
+              fontSize: '0.9rem',
+              fontFamily: 'inherit',
+              resize: 'vertical',
+              boxSizing: 'border-box'
+            }}
+          />
+          <p style={{
+            margin: '8px 0 0 0',
+            fontSize: '0.8rem',
+            color: '#666'
+          }}>
+            This helps the AI coach recommend the safest cross-training equipment and avoid aggravating your injury.
           </p>
         </div>
 

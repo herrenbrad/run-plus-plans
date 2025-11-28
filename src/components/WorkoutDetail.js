@@ -735,7 +735,7 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
                 borderTop: '1px solid rgba(255, 255, 255, 0.05)'
               }}>
                 <button
-                  onClick={handleGetCoaching}
+                  onClick={getCoaching}
                   disabled={loadingCoaching}
                   style={{
                     background: loadingCoaching ? '#1a1a1a' : 'linear-gradient(135deg, #00D4FF 0%, #0099CC 100%)',
