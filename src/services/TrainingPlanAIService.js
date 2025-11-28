@@ -20,6 +20,7 @@ import phaseCalculator from './ai/PhaseCalculator';
 import planFixer from './ai/PlanFixer';
 import promptBuilder from './ai/PromptBuilder';
 import planParser from './ai/PlanParser';
+import workoutEnricher from './ai/WorkoutEnricher';
 
 class TrainingPlanAIService {
     constructor() {
@@ -500,7 +501,7 @@ SEQUENCING RULES:
             const structuredPlan = planParser.parseAIPlanToStructure(combinedText, normalizedProfile);
 
             // Hydrate workout IDs with full workout details from library
-            const enrichedPlan = this.enrichPlanWithWorkouts(structuredPlan);
+            const enrichedPlan = workoutEnricher.enrichPlanWithWorkouts(structuredPlan);
 
             // Transform to Dashboard format
             const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, normalizedProfile);
@@ -1276,7 +1277,7 @@ SEQUENCING RULES:
             const structuredPlan = planParser.parseAIPlanToStructure(planText, updatedProfile, currentWeek);
 
             // Hydrate workout IDs with full workout details from library
-            const enrichedPlan = this.enrichPlanWithWorkouts(structuredPlan);
+            const enrichedPlan = workoutEnricher.enrichPlanWithWorkouts(structuredPlan);
 
             // Transform to Dashboard format
             const dashboardPlan = this.transformToDashboardFormat(enrichedPlan, updatedProfile);
@@ -2229,6 +2230,11 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
      * Enrich plan with full workout details from library
      */
     enrichPlanWithWorkouts(structuredPlan) {
+        // Delegated to WorkoutEnricher module
+        return workoutEnricher.enrichPlanWithWorkouts(structuredPlan);
+    }
+
+    _OLD_enrichPlanWithWorkouts(structuredPlan) {
         console.log('\n🔍 ENRICHING WORKOUTS WITH LIBRARY DETAILS');
         const totalWeeks = structuredPlan.weeks.length;
         
@@ -2366,6 +2372,10 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
      * Inject user-specific paces into workout details
      */
     injectUserPaces(workout, userPaces) {
+        return workoutEnricher.injectUserPaces(workout, userPaces);
+    }
+
+    _OLD_injectUserPaces(workout, userPaces) {
         if (!userPaces) return workout;
 
         const enriched = JSON.parse(JSON.stringify(workout));
@@ -2392,6 +2402,10 @@ Keep response to 200-250 words. Be conversational, direct, and actionable. Use t
      * Handles both structured VDOT paces (paces.threshold.pace) and legacy flat paces (paces.tempo)
      */
     replaceGenericPaces(text, paces) {
+        return workoutEnricher.replaceGenericPaces(text, paces);
+    }
+
+    _OLD_replaceGenericPaces(text, paces) {
         if (!text || typeof text !== 'string') return text;
 
         let updated = text;
