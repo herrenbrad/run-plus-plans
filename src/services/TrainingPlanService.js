@@ -1829,6 +1829,8 @@ class TrainingPlanService {
         logger.log('    Total weeks:', mergedWeeklyPlans.length);
         logger.log('    Completed weeks:', completedWeeks.length);
         logger.log('    Modified weeks:', modifiedWeeks.length);
+        logger.log('    First modified week workouts:', modifiedWeeks[0]?.workouts?.length || 0);
+        logger.log('    First modified week workout types:', modifiedWeeks[0]?.workouts?.map(w => w.type) || []);
 
         // Store original plan before modifications so user can revert
         const originalPlanBackup = {

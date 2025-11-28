@@ -119,6 +119,13 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
       };
 
       // Regenerate plan with injury recovery modifications
+      logger.log('  📋 Current plan structure:', {
+        hasWeeks: !!trainingPlan?.weeks,
+        weeksLength: trainingPlan?.weeks?.length || 0,
+        currentWeek: currentWeek,
+        firstWeekWorkouts: trainingPlan?.weeks?.[0]?.workouts?.length || 0
+      });
+      
       const updatedPlan = await trainingPlanService.regeneratePlanWithInjury(
         trainingPlan,
         updatedProfile,
@@ -129,6 +136,13 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
       );
 
       logger.log('  ✅ Recovery plan generated successfully');
+      logger.log('  📋 Updated plan structure:', {
+        hasWeeks: !!updatedPlan?.weeks,
+        weeksLength: updatedPlan?.weeks?.length || 0,
+        injuryRecoveryActive: updatedPlan?.injuryRecoveryActive,
+        firstWeekWorkouts: updatedPlan?.weeks?.[0]?.workouts?.length || 0,
+        firstWeekWorkoutTypes: updatedPlan?.weeks?.[0]?.workouts?.map(w => w.type) || []
+      });
 
       // Generate AI coaching analysis for injury recovery
       logger.log('  🤖 Generating AI coaching analysis...');
