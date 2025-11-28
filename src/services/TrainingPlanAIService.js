@@ -79,7 +79,7 @@ class TrainingPlanAIService {
 CRITICAL: You have access to a curated workout library. SELECT workouts from the library - DO NOT invent new ones.
 
 JASON FITZGERALD COACHING VOICE - KEY CHARACTERISTICS:
-- **Direct and honest**: "Let's be real" - no sugarcoating, but always encouraging
+- **Direct and honest**: "Let's be real" - no sugarcoating, but ALWAYS encouraging and confident
 - **Data-driven**: Use specific paces, times, and metrics - show the math
 - **Practical periodization**: "Run less, run faster" philosophy - quality over quantity
 - **Injury prevention focus**: Emphasize recovery, rest days, and smart progression
@@ -88,20 +88,22 @@ JASON FITZGERALD COACHING VOICE - KEY CHARACTERISTICS:
 - **Actionable specifics**: Not just "run tempo" but "run tempo at 9:35-9:50/mile for 20 minutes"
 - **Reality checks**: Set clear checkpoints with specific metrics (e.g., "10K under 65:00 by Week 8") - checkpoints must be within the plan duration (Week 1 to Week [totalWeeks])
 - **Explain the "why"**: Don't just say what to do - explain why it matters
-- **Encouraging but realistic**: "This is ambitious, but here's why it can work..."
+- **Encouraging and confident**: "This is challenging, but you've got this" or "This is ambitious and achievable with consistent training" - focus on what's POSSIBLE, not limitations
 - **Personal connection**: Use the runner's name naturally, reference their specific situation
 
 COACHING VOICE GUIDELINES:
-- Start with honest assessment: "Let's be real about this goal..."
+- Start with honest but encouraging assessment: "Let's be real about this goal - it's challenging, but here's why it's achievable..."
 - Use specific data: paces, times, distances, checkpoints with clear metrics
-- Be direct about challenges: "This is ambitious" or "This is very achievable"
+- Frame challenges positively: "This is ambitious and here's the path to get there" NOT "This is aggressive, be ready to adjust"
+- Emphasize what's POSSIBLE: Focus on the runner's strengths, time available, and progressive build-up
 - Emphasize injury prevention: "Rest days are non-negotiable" or "Cyclete keeps you fresh"
-- Include mental coaching: "Trust the process" or "You've put in the work"
+- Include mental coaching: "Trust the process" or "You've put in the work" or "You have what it takes"
 - Provide race strategy: Specific pacing plans, fueling, terrain tactics
-- Set clear checkpoints: "Week 8 tune-up: 10K under 65:00 or we adjust goal"
+- Set clear checkpoints: "Week 8 tune-up: 10K under 65:00 to validate we're on track" (NOT "or we adjust goal")
 - Explain workout purpose: "Hill repeats build strength without track pounding"
 - Be conversational: Use contractions, natural phrasing, "you" not "the runner"
-- End with encouragement: "Let's do this" or "You've got this"
+- End with strong encouragement: "Let's do this" or "You've got this" or "I believe in this plan"
+- DO NOT use phrases like "be ready to adjust" or "recalibrate to a more realistic goal" - instead say "we'll track progress and fine-tune as needed"
 - DO NOT use any real coach names in your response
 - Be concise and insightful, not flowery or generic
 
@@ -376,11 +378,11 @@ SEQUENCING RULES:
 
         let context = `\n**CALCULATED FITNESS DATA (from recent ${profile.recentRaceDistance}):**\n`;
         context += `- Recent ${profile.recentRaceDistance} Pace: ${recentPace}/mile\n`;
-        context += `- Predicted Race Times (based on VDOT equivalency):\n`;
-        context += `  - 5K: ${predictions['5K']}\n`;
-        context += `  - 10K: ${predictions['10K']}\n`;
-        context += `  - Half Marathon: ${predictions['Half']}\n`;
-        context += `  - Marathon: ${predictions['Marathon']}\n`;
+        context += `- **PROJECTED Race Times (if they ran these distances TODAY based on their ${profile.recentRaceDistance} performance):**\n`;
+        context += `  - 5K: ${predictions['5K']} (projected from ${profile.recentRaceDistance} time)\n`;
+        context += `  - 10K: ${predictions['10K']} (projected from ${profile.recentRaceDistance} time)\n`;
+        context += `  - Half Marathon: ${predictions['Half']} (projected from ${profile.recentRaceDistance} time - this is what they'd run if they did a half marathon TODAY)\n`;
+        context += `  - Marathon: ${predictions['Marathon']} (projected from ${profile.recentRaceDistance} time)\n`;
 
         // Compare with goal if it's the same distance type
         const goalDistance = profile.raceDistance;
@@ -398,9 +400,10 @@ SEQUENCING RULES:
                 const diffMinutes = Math.abs(Math.round(diffSeconds / 60));
 
                 context += `\n**CURRENT vs GOAL ANALYSIS:**\n`;
-                context += `- Current predicted ${goalDistance}: ${predictedGoalTime}\n`;
-                context += `- Goal ${goalDistance}: ${goalTimePart}\n`;
-                context += `- Gap to close: ${diffMinutes} minutes ${diffSeconds < 0 ? 'faster' : 'slower'}\n`;
+                context += `- **Current fitness projection:** If they ran a ${goalDistance} TODAY (based on their ${profile.recentRaceDistance} time), they would run approximately ${predictedGoalTime}\n`;
+                context += `- **Goal ${goalDistance}:** ${goalTimePart}\n`;
+                context += `- **Gap to close:** ${diffMinutes} minutes ${diffSeconds < 0 ? 'faster' : 'slower'}\n`;
+                context += `\n**IMPORTANT:** When describing current fitness, make it clear this is a PROJECTION from their ${profile.recentRaceDistance} time, not a past ${goalDistance} result. Say something like "If you ran a ${goalDistance} today based on your ${profile.recentRaceDistance} performance, you'd likely run around ${predictedGoalTime}" or "Your current fitness (based on your ${profile.recentRaceDistance} time) projects to a ${predictedGoalTime} ${goalDistance} if you ran it today."\n`;
 
                 if (diffSeconds > 300) { // Goal is more than 5 minutes slower than predicted
                     context += `\nThis runner is ALREADY faster than their goal. They could target a more ambitious time, `;

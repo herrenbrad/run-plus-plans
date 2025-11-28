@@ -451,10 +451,12 @@ function OnboardingFlow({ onComplete }) {
       });
 
       // Build user profile for AI service
+      // CRITICAL: Keep dates as YYYY-MM-DD strings to avoid timezone issues
+      // Don't convert to ISO string - that shifts to UTC and can change the day
       const userProfile = {
         raceDistance: formData.raceDistance,
         raceTime: formData.currentRaceTime, // Goal time for race
-        raceDate: formData.raceDate ? new Date(formData.raceDate).toISOString() : new Date().toISOString(),
+        raceDate: formData.raceDate || new Date().toISOString().split('T')[0], // Keep as YYYY-MM-DD string
         startDate: dateAdjustment.adjustedDate, // CRITICAL: Use adjusted start date (may be different from today if today is a rest day)
         raceElevationProfile: formData.raceElevationProfile || '',
         currentWeeklyMileage: formData.currentWeeklyMileage,
