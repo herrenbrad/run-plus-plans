@@ -1817,9 +1817,24 @@ class TrainingPlanService {
         const modifiedWeeks = [];
         const weeksToProcess = weeklyPlans.slice(currentWeek - 1);
         
+        logger.log('  📋 Weeks to process:', {
+            startIndex: currentWeek - 1,
+            count: weeksToProcess.length,
+            firstWeekHasWorkouts: !!weeksToProcess[0]?.workouts?.length,
+            firstWeekWorkoutCount: weeksToProcess[0]?.workouts?.length || 0,
+            firstWeekIsNull: weeksToProcess[0] === null || weeksToProcess[0] === undefined
+        });
+        
         for (let index = 0; index < weeksToProcess.length; index++) {
             const week = weeksToProcess[index];
             const weekNumber = currentWeek + index;
+            
+            logger.log(`  🔍 Processing week ${weekNumber}:`, {
+                isNull: week === null || week === undefined,
+                hasWorkouts: !!week?.workouts?.length,
+                workoutCount: week?.workouts?.length || 0,
+                weekKeys: week ? Object.keys(week) : []
+            });
             
             // CRITICAL: If week is null or has no workouts, generate them on the fly
             // This prevents requiring users to regenerate their entire plan just to use injury recovery
@@ -1886,8 +1901,17 @@ class TrainingPlanService {
         logger.log('    Total weeks:', mergedWeeklyPlans.length);
         logger.log('    Completed weeks:', completedWeeks.length);
         logger.log('    Modified weeks:', modifiedWeeks.length);
-        logger.log('    First modified week workouts:', modifiedWeeks[0]?.workouts?.length || 0);
-        logger.log('    First modified week workout types:', modifiedWeeks[0]?.workouts?.map(w => w.type) || []);
+        logger.log('  📋 Merged plan structure:', {
+            totalWeeks: mergedWeeklyPlans.length,
+            weeksWithWorkouts: mergedWeeklyPlans.filter(w => w && w.workouts && w.workouts.length > 0).length,
+            week1HasWorkouts: !!mergedWeeklyPlans[0]?.workouts?.length,
+            week2HasWorkouts: !!mergedWeeklyPlans[1]?.workouts?.length,
+            week3HasWorkouts: !!mergedWeeklyPlans[2]?.workouts?.length,
+            week1WorkoutCount: mergedWeeklyPlans[0]?.workouts?.length || 0,
+            week2WorkoutCount: mergedWeeklyPlans[1]?.workouts?.length || 0,
+            week3WorkoutCount: mergedWeeklyPlans[2]?.workouts?.length || 0,
+            nullWeeks: mergedWeeklyPlans.filter(w => w === null || w === undefined).length
+        });
 
         // Store original plan before modifications so user can revert
         const originalPlanBackup = {
