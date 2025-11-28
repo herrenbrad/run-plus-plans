@@ -1909,9 +1909,9 @@ class TrainingPlanService {
         const validModifiedWeeks = modifiedWeeks.filter(w => w && w.workouts && w.workouts.length > 0);
         logger.log(`  ✅ Successfully processed ${validModifiedWeeks.length} weeks`);
 
-        // For post-recovery weeks that are null, try to restore from original plan if available
-        // This preserves progressive distances instead of using fallback generation
-        const restoredWeeks = modifiedWeeks.map((week, index) => {
+        // CRITICAL: Validate that we're not saving null weeks
+        // If post-recovery weeks are null, we need to regenerate them, not preserve null
+        const validatedWeeks = modifiedWeeks.map((week, index) => {
             const weekNumber = currentWeek + index;
             const isPostRecovery = weekNumber > returnToRunningWeek;
             
@@ -1922,13 +1922,25 @@ class TrainingPlanService {
                 if (originalWeek && originalWeek.workouts && originalWeek.workouts.length > 0) {
                     logger.log(`  🔄 Restoring week ${weekNumber} from original plan to preserve progressive distances`);
                     return originalWeek;
+                } else {
+                    // Original plan also has null - this is a corrupted plan
+                    // We cannot proceed with null weeks - they will cause fallback generation
+                    logger.error(`  ❌ Week ${weekNumber} is null in both modified and original plan - plan is corrupted`);
+                    throw new Error(`Cannot create injury recovery plan: Week ${weekNumber} is null in your training plan. Please regenerate your plan first using "Manage Plan" before creating an injury recovery protocol.`);
                 }
             }
             return week;
         });
         
-        // Merge: completed weeks + modified/restored weeks
-        const mergedWeeklyPlans = [...completedWeeks, ...restoredWeeks];
+        // Merge: completed weeks + validated weeks
+        const mergedWeeklyPlans = [...completedWeeks, ...validatedWeeks];
+        
+        // Final validation: ensure no null weeks in the final plan
+        const nullWeeksInFinal = mergedWeeklyPlans.filter(w => w === null || w === undefined || !w.workouts || w.workouts.length === 0);
+        if (nullWeeksInFinal.length > 0) {
+            logger.error(`  ❌ CRITICAL: Final plan has ${nullWeeksInFinal.length} null/invalid weeks!`);
+            throw new Error(`Cannot save injury recovery plan: ${nullWeeksInFinal.length} weeks are null or invalid. Please regenerate your plan first.`);
+        }
 
         logger.log('  ✅ Injury recovery plan generated successfully');
         logger.log('    Total weeks:', mergedWeeklyPlans.length);

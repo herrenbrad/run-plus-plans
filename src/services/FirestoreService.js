@@ -83,6 +83,32 @@ class FirestoreService {
       // Clean undefined values before saving - Firestore doesn't accept undefined
       const cleanedPlan = cleanUndefinedValues(trainingPlan);
 
+      // CRITICAL: Validate plan structure before saving
+      if (!cleanedPlan.weeks || !Array.isArray(cleanedPlan.weeks)) {
+        console.error('❌ CRITICAL: Plan has no weeks array! Cannot save.');
+        return { success: false, error: 'Plan structure is invalid - missing weeks array' };
+      }
+
+      // Count null/undefined weeks
+      const nullWeeks = cleanedPlan.weeks.filter(w => w === null || w === undefined || !w.workouts || w.workouts.length === 0);
+      const nullWeekCount = nullWeeks.length;
+      const totalWeeks = cleanedPlan.weeks.length;
+
+      if (nullWeekCount > 0) {
+        console.error(`❌ CRITICAL: Plan has ${nullWeekCount} null/invalid weeks out of ${totalWeeks}! Cannot save corrupted plan.`);
+        console.error('   Null week indices:', cleanedPlan.weeks.map((w, i) => w === null || w === undefined || !w.workouts || w.workouts.length === 0 ? i + 1 : null).filter(Boolean));
+        return { 
+          success: false, 
+          error: `Plan structure is corrupted: ${nullWeekCount} weeks are null or have no workouts. Please regenerate your plan.` 
+        };
+      }
+
+      // Check plan size (Firestore 1MB limit)
+      const planSize = JSON.stringify(cleanedPlan).length;
+      if (planSize > 900000) { // 900KB warning threshold
+        console.warn(`⚠️ Plan size is ${(planSize / 1024 / 1024).toFixed(2)} MB - approaching Firestore 1MB limit`);
+      }
+
       await setDoc(userRef, {
         trainingPlan: {
           ...cleanedPlan,
@@ -91,7 +117,7 @@ class FirestoreService {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      console.log('✅ Training plan saved to Firestore');
+      console.log(`✅ Training plan saved to Firestore (${totalWeeks} weeks, ${(planSize / 1024).toFixed(1)} KB)`);
       return { success: true };
     } catch (error) {
       console.error('❌ Error saving training plan:', error);
