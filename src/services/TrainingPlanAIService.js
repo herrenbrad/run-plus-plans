@@ -1254,6 +1254,8 @@ SEQUENCING RULES:
 
         try {
             // Call Claude API via Firebase Function (secure server-side call)
+            // Plan regeneration can take longer than initial generation (full plan vs partial)
+            // Increase timeout to 300 seconds (5 minutes) to handle large plans
             const result = await this.callWithTimeout(
                 this.callAnthropicAPI({
                     model: 'claude-sonnet-4-5-20250929',
@@ -1266,7 +1268,7 @@ SEQUENCING RULES:
                         }
                     ]
                 }),
-                180000 // 180 seconds timeout
+                300000 // 300 seconds (5 minutes) timeout for full plan regeneration
             );
 
             if (!result.data.success) {
@@ -1310,9 +1312,18 @@ SEQUENCING RULES:
 
         } catch (error) {
             console.error('AI Coach Error (Plan Regeneration):', error);
+            
+            // Provide user-friendly error messages
+            let errorMessage = error.message;
+            if (error.message.includes('deadline-exceeded') || error.message.includes('timeout')) {
+                errorMessage = 'Plan generation is taking longer than expected. This can happen with large plans. Please try again - the AI coach is working on your plan.';
+            } else if (error.message.includes('Request timeout')) {
+                errorMessage = 'The request timed out. Please try again - plan generation can take a few minutes for full plans.';
+            }
+            
             return {
                 success: false,
-                error: error.message
+                error: errorMessage
             };
         }
     }
