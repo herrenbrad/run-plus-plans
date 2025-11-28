@@ -183,6 +183,12 @@ export const generateWeekWorkouts = (week, profile) => {
         }
       }
       
+      // If still no distance, check user's current long run distance from profile
+      if (!distance && (profile?.currentLongRunDistance || profile?.currentLongRun)) {
+        distance = parseFloat(profile.currentLongRunDistance || profile.currentLongRun);
+        logger.log(`  📏 Using user's current long run distance from profile: ${distance} miles`);
+      }
+      
       // If still no distance, use a default based on weekly mileage
       if (!distance) {
         const weeklyMileage = profile?.currentWeeklyMileage || 20;
