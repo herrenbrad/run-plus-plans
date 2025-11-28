@@ -195,12 +195,13 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
       let units = userProfile.units;
       if (!units && trainingPlan?.planOverview?.units) {
         units = trainingPlan.planOverview.units;
-        logger.warn('⚠️ Units not in profile, using from training plan:', units);
+        logger.log('📏 Units not in profile, using from training plan:', units);
       }
       if (!units) {
         // Default to imperial for backward compatibility (onboarding uses 'imperial')
+        // This is expected for legacy profiles created before units field was added
         units = 'imperial';
-        logger.warn('⚠️ Units not found in profile or plan, defaulting to imperial (legacy data)');
+        logger.log('📏 Units not found in profile or plan, defaulting to imperial (legacy data - this is normal)');
       }
 
       // Create updated profile with new settings
