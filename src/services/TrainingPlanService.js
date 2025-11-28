@@ -1813,35 +1813,29 @@ class TrainingPlanService {
         logger.log('  Injury weeks:', injuryStartWeek, '-', injuryEndWeek);
         logger.log('  Return to running week:', returnToRunningWeek);
 
-        // CRITICAL: Filter out null/invalid weeks before processing
-        const validWeeks = weeklyPlans.slice(currentWeek - 1).filter((week, index) => {
+        // Process each week - skip null/invalid weeks
+        const modifiedWeeks = [];
+        const weeksToProcess = weeklyPlans.slice(currentWeek - 1);
+        
+        for (let index = 0; index < weeksToProcess.length; index++) {
+            const week = weeksToProcess[index];
             const weekNumber = currentWeek + index;
+            
+            // CRITICAL: Check if week is null or has no workouts
             if (!week) {
                 logger.error(`  ❌ Week ${weekNumber} is null - skipping`);
-                return false;
+                // Keep the null week in the array to maintain week numbering
+                modifiedWeeks.push(null);
+                continue;
             }
+            
             if (!week.workouts || week.workouts.length === 0) {
                 logger.error(`  ❌ Week ${weekNumber} has no workouts - skipping`);
                 logger.error(`    Week keys:`, Object.keys(week));
-                return false;
+                // Keep the invalid week in the array to maintain week numbering
+                modifiedWeeks.push(week);
+                continue;
             }
-            return true;
-        });
-        
-        if (validWeeks.length === 0) {
-            logger.error('  ❌ No valid weeks found to modify');
-            logger.error(`    Total weeks in plan: ${weeklyPlans.length}`);
-            logger.error(`    Weeks from current week: ${weeklyPlans.slice(currentWeek - 1).length}`);
-            throw new Error('Cannot create injury recovery plan - no valid weeks found. The plan structure may be corrupted. Please regenerate your training plan.');
-        }
-        
-        logger.log(`  ✅ Found ${validWeeks.length} valid weeks to modify`);
-
-        // Process each valid week
-        const modifiedWeeks = validWeeks.map((week, index) => {
-            // Calculate actual week number (accounting for filtered weeks)
-            const originalIndex = weeklyPlans.slice(currentWeek - 1).indexOf(week);
-            const weekNumber = currentWeek + originalIndex;
             const isInjuryWeek = weekNumber >= injuryStartWeek && weekNumber <= injuryEndWeek;
             const isReturnWeek = weekNumber === returnToRunningWeek;
 
