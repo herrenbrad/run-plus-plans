@@ -1,0 +1,57 @@
+{
+  "_comment": "Optional: Define expected results for comparison. Script will highlight differences.",
+  "_comment2": "Remove _comment fields when done.",
+  
+  "totalWeeks": 19,
+  "week1Mileage": 16,
+  "peakMileage": 38,
+  "raceWeekMileage": 12,
+  
+  "hardDays": {
+    "Wednesday": {
+      "shouldHaveHardWorkout": true,
+      "workoutTypes": ["tempo", "intervals", "hills"]
+    },
+    "Friday": {
+      "shouldHaveHardWorkout": true,
+      "workoutTypes": ["tempo", "intervals", "hills"]
+    }
+  },
+  
+  "restDays": {
+    "Tuesday": {
+      "shouldBeRest": true
+    },
+    "Thursday": {
+      "shouldBeRest": true
+    },
+    "Sunday": {
+      "shouldBeRest": true
+    }
+  },
+  
+  "bikeDays": {
+    "Monday": {
+      "shouldBeBike": true,
+      "shouldBeHard": false
+    }
+  },
+  
+  "longRunDay": "Saturday",
+  "longRunShouldBeLongest": true,
+  
+  "workoutIds": {
+    "shouldHaveWorkoutIds": true,
+    "shouldNotHaveHallucinatedNames": true
+  },
+  
+  "phases": {
+    "weeks1to5": "Base",
+    "weeks6to12": "Build",
+    "weeks13to16": "Peak",
+    "weeks17to19": "Taper"
+  }
+}
+
+
+

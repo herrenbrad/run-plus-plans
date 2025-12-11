@@ -1,0 +1,46 @@
+{
+  "_comment": "Fill in your test profile data below. Remove this _comment field when done.",
+  
+  "raceDistance": "Half Marathon",
+  "raceTime": "2:00:00",
+  "raceDate": "2026-06-15",
+  "startDate": "2025-12-10",
+  "raceElevationProfile": "flat",
+  
+  "currentWeeklyMileage": 16,
+  "currentLongRun": 6,
+  "recentRaceTime": "1:58:00",
+  "recentRaceDistance": "Half Marathon",
+  
+  "workoutsPerWeek": 4,
+  "availableDays": ["Monday", "Wednesday", "Friday", "Saturday"],
+  "restDays": ["Tuesday", "Thursday", "Sunday"],
+  "longRunDay": "Saturday",
+  "qualityDays": ["Wednesday", "Friday"],
+  
+  "standUpBikeType": "cyclete",
+  "preferredBikeDays": ["Monday"],
+  
+  "crossTrainingEquipment": {
+    "pool": false,
+    "rowing": false,
+    "elliptical": false,
+    "stationaryBike": false,
+    "swimming": false,
+    "walking": false
+  },
+  "primaryCrossTrainingEquipment": null,
+  
+  "injuries": {},
+  "injuryDescription": "",
+  "experienceLevel": "intermediate",
+  
+  "climate": "temperate",
+  "location": "",
+  "runningStatus": "active",
+  "units": "imperial",
+  
+  "name": "Test User",
+  "displayName": "Test User"
+}
+
