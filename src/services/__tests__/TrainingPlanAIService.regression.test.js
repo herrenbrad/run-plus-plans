@@ -67,11 +67,21 @@ describe('TrainingPlanAIService Regression Tests', () => {
 
     test('should parse workouts with WORKOUT_ID tags', () => {
       const testLine = 'Wed: [WORKOUT_ID: tempo_TRADITIONAL_TEMPO_0] Classic Tempo Run 6 miles';
-      const idMatch = testLine.match(/\[WORKOUT_ID:\s*(tempo|interval|longrun|hill)_(.+?)_(\d+)\]/);
-      
+      const idMatch = testLine.match(/\[WORKOUT_ID:\s*(tempo|interval|longrun|hill|fartlek)_(.+?)_(\d+)\]/);
+
       expect(idMatch).toBeTruthy();
       expect(idMatch[1]).toBe('tempo');
       expect(idMatch[2]).toBe('TRADITIONAL_TEMPO');
+      expect(idMatch[3]).toBe('0');
+    });
+
+    test('should parse fartlek workouts with WORKOUT_ID tags', () => {
+      const testLine = 'Tue: [WORKOUT_ID: fartlek_MIXED_0] Fartlek Run 4 miles (keep it playful)';
+      const idMatch = testLine.match(/\[WORKOUT_ID:\s*(tempo|interval|longrun|hill|fartlek)_(.+?)_(\d+)\]/);
+
+      expect(idMatch).toBeTruthy();
+      expect(idMatch[1]).toBe('fartlek');
+      expect(idMatch[2]).toBe('MIXED');
       expect(idMatch[3]).toBe('0');
     });
   });
@@ -214,6 +224,13 @@ describe('TrainingPlanAIService Regression Tests', () => {
     });
   });
 });
+
+
+
+
+
+
+
 
 
 

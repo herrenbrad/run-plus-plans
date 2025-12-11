@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import TrainingPlanService from '../services/TrainingPlanService';
+import { preserveAndMergeWeeks } from '../services/PlanMergeUtils';
 import TrainingPlanAIService from '../services/TrainingPlanAIService';
 import FirestoreService from '../services/FirestoreService';
 import { auth } from '../firebase/config';
@@ -12,7 +12,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
   const toast = useToast();
   
   // Initialize state from current plan settings
-  const [runsPerWeek, setRunsPerWeek] = useState(5);
+  const [workoutsPerWeek, setWorkoutsPerWeek] = useState(5); // Total training sessions per week
   const [trainingDays, setTrainingDays] = useState([]);
   const [hardDays, setHardDays] = useState([]);
   const [longRunDay, setLongRunDay] = useState('Saturday');
@@ -54,7 +54,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
             const settings = profile || {};
 
             logger.log('  Loading settings:');
-            logger.log('    runsPerWeek:', settings.runsPerWeek);
+            logger.log('    workoutsPerWeek:', settings.workoutsPerWeek || settings.runsPerWeek);
             logger.log('    availableDays:', settings.availableDays);
             logger.log('    hardSessionDays:', settings.hardSessionDays);
             logger.log('    longRunDay:', settings.longRunDay);
@@ -63,7 +63,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
             const loadedTrainingDays = settings.availableDays || [];
             const loadedLongRunDay = settings.longRunDay || 'Sunday';
             
-            setRunsPerWeek(settings.runsPerWeek || 5);
+            setWorkoutsPerWeek(settings.workoutsPerWeek || settings.runsPerWeek || 5);
             setTrainingDays(loadedTrainingDays);
             setHardDays(settings.hardSessionDays || []);
             // Ensure longRunDay is in the training days, otherwise use first training day or Sunday
@@ -146,15 +146,15 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
     }
   };
 
-  // Determine which runs per week options are supported for this race distance
+  // Determine which workouts per week options are supported for this race distance
   const raceDistance = trainingPlan?.planOverview?.raceDistance || 'Half';
-  const supportedRunsPerWeek = {
+  const supportedWorkoutsPerWeek = {
     '5K': [3, 4, 5, 6],
     '10K': [3, 4, 5, 6],
     'Half': [4, 5, 6, 7],
     'Marathon': [4, 5, 6, 7]
   };
-  const availableOptions = supportedRunsPerWeek[raceDistance] || [4, 5, 6];
+  const availableOptions = supportedWorkoutsPerWeek[raceDistance] || [4, 5, 6];
 
   const handleUpdate = async () => {
     try {
@@ -167,9 +167,9 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
         return;
       }
 
-      if (trainingDays.length !== runsPerWeek) {
-        setErrorMessage(`You selected ${trainingDays.length} days but chose ${runsPerWeek} runs per week. Please match them.`);
-        toast.error(`You selected ${trainingDays.length} days but chose ${runsPerWeek} runs per week.`);
+      if (trainingDays.length !== workoutsPerWeek) {
+        setErrorMessage(`You selected ${trainingDays.length} days but chose ${workoutsPerWeek} workouts per week. Please match them.`);
+        toast.error(`You selected ${trainingDays.length} days but chose ${workoutsPerWeek} workouts per week.`);
         return;
       }
 
@@ -187,9 +187,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
       setUpdateStatus('regenerating');
       logger.log('⚙️ Updating training plan...');
       logger.log('  Current week:', currentWeek);
-      logger.log('  New settings:', { runsPerWeek, trainingDays, hardDays: validHardDays, longRunDay, bikeDays: validBikeDays });
-
-      const trainingPlanService = new TrainingPlanService();
+      logger.log('  New settings:', { workoutsPerWeek, trainingDays, hardDays: validHardDays, longRunDay, bikeDays: validBikeDays });
 
       // Get units from profile or training plan (for backward compatibility with older profiles)
       let units = userProfile.units;
@@ -210,7 +208,8 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
       const updatedProfile = {
         ...userProfile, // Spread all existing profile fields first
         units: units, // Ensure units is set
-        runsPerWeek,
+        workoutsPerWeek,
+        runsPerWeek: workoutsPerWeek, // Backward compatibility
         availableDays: trainingDays,      // Firestore uses 'availableDays'
         hardSessionDays: validHardDays,    // Firestore uses 'hardSessionDays' - use filtered version
         longRunDay,
@@ -232,7 +231,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
       logger.log('  ✅ AI plan structure regenerated');
 
       // Use utility function to preserve completed weeks and merge
-      const mergedWeeks = trainingPlanService.preserveAndMergeWeeks(
+      const mergedWeeks = preserveAndMergeWeeks(
         trainingPlan,
         aiResult.newWeeks,
         currentWeek
@@ -245,7 +244,8 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
         planOverview: {
           ...trainingPlan.planOverview,
           // Update settings in plan overview
-          runsPerWeek: updatedProfile.runsPerWeek
+          workoutsPerWeek: updatedProfile.workoutsPerWeek || updatedProfile.runsPerWeek,
+          runsPerWeek: updatedProfile.workoutsPerWeek || updatedProfile.runsPerWeek // Backward compatibility
         }
       };
 
@@ -256,7 +256,8 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
       logger.log('  🤖 Generating AI coaching analysis...');
       try {
         const oldSettings = {
-          runsPerWeek: userProfile.runsPerWeek,
+          workoutsPerWeek: userProfile.workoutsPerWeek || userProfile.runsPerWeek,
+          runsPerWeek: userProfile.workoutsPerWeek || userProfile.runsPerWeek, // Backward compatibility
           availableDays: userProfile.availableDays || [],
           hardSessionDays: userProfile.hardSessionDays || [],
           longRunDay: userProfile.longRunDay,
@@ -264,7 +265,8 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
         };
 
         const newSettings = {
-          runsPerWeek,
+          workoutsPerWeek,
+          runsPerWeek: workoutsPerWeek, // Backward compatibility
           availableDays: trainingDays,
           hardSessionDays: validHardDays,
           longRunDay,
@@ -392,7 +394,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
             fontWeight: '500',
             marginBottom: '12px'
           }}>
-            Runs per week
+            Workouts per week
           </label>
           <div style={{
             display: 'flex',
@@ -403,7 +405,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
               return (
                 <button
                   key={num}
-                  onClick={() => isSupported && setRunsPerWeek(num)}
+                  onClick={() => isSupported && setWorkoutsPerWeek(num)}
                   disabled={!isSupported}
                   title={!isSupported ? `${num} days not supported for ${raceDistance} training` : ''}
                   style={{
@@ -411,9 +413,9 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
                     padding: '12px',
                     fontSize: '1rem',
                     fontWeight: '500',
-                    border: runsPerWeek === num ? '2px solid #3b82f6' : '1px solid #333',
-                    background: !isSupported ? '#0a0a0a' : (runsPerWeek === num ? 'rgba(59, 130, 246, 0.1)' : '#1a1a1a'),
-                    color: !isSupported ? '#444' : (runsPerWeek === num ? '#3b82f6' : '#999'),
+                    border: workoutsPerWeek === num ? '2px solid #3b82f6' : '1px solid #333',
+                    background: !isSupported ? '#0a0a0a' : (workoutsPerWeek === num ? 'rgba(59, 130, 246, 0.1)' : '#1a1a1a'),
+                    color: !isSupported ? '#444' : (workoutsPerWeek === num ? '#3b82f6' : '#999'),
                     borderRadius: '6px',
                     cursor: isSupported ? 'pointer' : 'not-allowed',
                     opacity: !isSupported ? 0.4 : 1
@@ -430,7 +432,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
               fontSize: '0.8rem',
               color: '#666'
             }}>
-              {raceDistance} training requires minimum 4 runs per week
+              {raceDistance} training requires minimum 4 workouts per week
             </p>
           )}
         </div>

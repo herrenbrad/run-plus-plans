@@ -43,6 +43,39 @@ function cleanUndefinedValues(obj, visited = new WeakSet()) {
 }
 
 /**
+ * Fix common AI typos in text (e.g., "miless" -> "miles")
+ * @param {string} text - Raw text that may contain typos
+ * @returns {string} Cleaned text with typos fixed
+ */
+function fixCommonTypos(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/miless/gi, 'miles')
+    .replace(/milees/gi, 'miles')
+    .replace(/milles/gi, 'miles')
+    .replace(/milse/gi, 'miles');
+}
+
+/**
+ * Recursively fix typos in an object (for plan data)
+ * @param {any} obj - Object to clean
+ * @returns {any} Object with typos fixed in all string fields
+ */
+function fixTyposInObject(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'string') return fixCommonTypos(obj);
+  if (Array.isArray(obj)) return obj.map(fixTyposInObject);
+  if (typeof obj === 'object') {
+    const fixed = {};
+    for (const [key, value] of Object.entries(obj)) {
+      fixed[key] = fixTyposInObject(value);
+    }
+    return fixed;
+  }
+  return obj;
+}
+
+/**
  * Firestore Service
  * Handles all database operations for user data and training plans
  */
@@ -127,6 +160,7 @@ class FirestoreService {
 
   /**
    * Get user's complete data (profile + training plan)
+   * Automatically fixes common AI typos (e.g., "miless" -> "miles") on load
    */
   async getUserData(userId) {
     try {
@@ -135,9 +169,40 @@ class FirestoreService {
 
       if (docSnap.exists()) {
         console.log('✅ User data loaded from Firestore');
+        const rawData = docSnap.data();
+
+        // MIGRATION: Convert runsPerWeek to workoutsPerWeek (backward compatibility)
+        if (rawData.profile) {
+          if (rawData.profile.runsPerWeek !== undefined && rawData.profile.workoutsPerWeek === undefined) {
+            console.log('🔧 Migrating runsPerWeek → workoutsPerWeek');
+            rawData.profile.workoutsPerWeek = rawData.profile.runsPerWeek;
+            // Don't delete runsPerWeek yet - keep for transition period
+          }
+          // Prefer workoutsPerWeek if both exist (newer data)
+          if (rawData.profile.workoutsPerWeek !== undefined && rawData.profile.runsPerWeek !== undefined) {
+            // workoutsPerWeek takes precedence, but keep runsPerWeek for now
+          }
+        }
+
+        // Auto-fix typos in training plan data on load
+        // This ensures existing plans with typos get cleaned up without re-onboarding
+        if (rawData.trainingPlan) {
+          const originalJson = JSON.stringify(rawData.trainingPlan);
+          rawData.trainingPlan = fixTyposInObject(rawData.trainingPlan);
+          const fixedJson = JSON.stringify(rawData.trainingPlan);
+
+          // If typos were fixed, save the corrected plan back to Firestore
+          if (originalJson !== fixedJson) {
+            console.log('🔧 Fixed typos in training plan, saving corrected version...');
+            this.saveTrainingPlan(userId, rawData.trainingPlan).catch(err => {
+              console.warn('⚠️ Could not save typo-fixed plan:', err.message);
+            });
+          }
+        }
+
         return {
           success: true,
-          data: docSnap.data()
+          data: rawData
         };
       } else {
         console.log('ℹ️ No user data found (new user)');
@@ -157,7 +222,6 @@ class FirestoreService {
    */
   async markWorkoutComplete(userId, weekNumber, day, completed = true, distance = null, notes = null) {
     try {
-      const userRef = doc(db, 'users', userId);
       const userData = await this.getUserData(userId);
 
       if (!userData.success || !userData.data?.trainingPlan) {
@@ -241,6 +305,36 @@ class FirestoreService {
       return { success: true, data: {} };
     } catch (error) {
       console.error('❌ Error loading modified workouts:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Remove a modified workout (revert to original)
+   * @param {string} userId - Firebase user ID
+   * @param {number} weekNumber - Week number
+   * @param {string} day - Day name
+   * @param {number} workoutIndex - Optional workout index (for two-a-days)
+   */
+  async removeModifiedWorkout(userId, weekNumber, day, workoutIndex = 0) {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const workoutKey = workoutIndex === 0 
+        ? `${weekNumber}-${day}` 
+        : `${weekNumber}-${day}-${workoutIndex}`;
+
+      // Use FieldValue.delete() to remove the field
+      const { deleteField } = await import('firebase/firestore');
+      
+      await updateDoc(userRef, {
+        [`modifiedWorkouts.${workoutKey}`]: deleteField(),
+        updatedAt: serverTimestamp()
+      });
+
+      console.log('✅ Modified workout removed');
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Error removing modified workout:', error);
       return { success: false, error: error.message };
     }
   }

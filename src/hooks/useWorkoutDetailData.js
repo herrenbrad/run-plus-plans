@@ -343,3 +343,10 @@ export default function useWorkoutDetailData({ day, userProfile, trainingPlan, l
   };
 }
 
+
+
+
+
+
+
+

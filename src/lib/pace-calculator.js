@@ -6,6 +6,54 @@
 
 import { trainingPaceData, paceToSeconds, secondsToPace } from './vdot-pace-data.js';
 
+/**
+ * Recursively adjust all pace strings in an object by a multiplier
+ * Converts MM:SS to seconds, multiplies, converts back
+ * @param {any} obj - Object containing pace strings
+ * @param {number} multiplier - Multiplier to apply (1.15 = 15% slower)
+ * @returns {any} - New object with adjusted paces
+ */
+function adjustPaceStrings(obj, multiplier) {
+    if (obj === null || obj === undefined) {
+        return obj;
+    }
+
+    if (typeof obj === 'string') {
+        // Check if it's a pace string (MM:SS format)
+        const pacePattern = /^\d{1,2}:\d{2}$/;
+        if (pacePattern.test(obj)) {
+            const seconds = paceToSeconds(obj);
+            const adjustedSeconds = seconds * multiplier;
+            return secondsToPace(adjustedSeconds);
+        }
+        // Check if it's a range like "9:17-10:30"
+        const rangePattern = /^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/;
+        const rangeMatch = obj.match(rangePattern);
+        if (rangeMatch) {
+            const minSeconds = paceToSeconds(rangeMatch[1]);
+            const maxSeconds = paceToSeconds(rangeMatch[2]);
+            const adjustedMin = secondsToPace(minSeconds * multiplier);
+            const adjustedMax = secondsToPace(maxSeconds * multiplier);
+            return `${adjustedMin}-${adjustedMax}`;
+        }
+        return obj;
+    }
+
+    if (Array.isArray(obj)) {
+        return obj.map(item => adjustPaceStrings(item, multiplier));
+    }
+
+    if (typeof obj === 'object') {
+        const adjusted = {};
+        for (const [key, value] of Object.entries(obj)) {
+            adjusted[key] = adjustPaceStrings(value, multiplier);
+        }
+        return adjusted;
+    }
+
+    return obj;
+}
+
 class PaceCalculator {
     constructor() {
         // Distance mapping for human-readable input to data keys
@@ -58,6 +106,26 @@ class PaceCalculator {
         const minutes = Math.floor((seconds % 3600) / 60);
         const secs = Math.round(seconds % 60);
         return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    /**
+     * Add a buffer (multiplier) to a time string to create a safer baseline
+     * Example: addBufferToTime("2:00:00", 1.15) = "2:18:00" (15% slower)
+     * @param {string} timeString - Time in H:MM:SS or MM:SS format
+     * @param {number} multiplier - Multiplier to apply (1.15 = 15% slower)
+     * @returns {string} - Adjusted time string in H:MM:SS format
+     */
+    addBufferToTime(timeString, multiplier) {
+        if (!timeString || !multiplier) {
+            throw new Error('addBufferToTime requires both timeString and multiplier');
+        }
+        
+        // Handle time strings that might include distance prefix (e.g., "Half-2:00:00")
+        const timePart = timeString.includes('-') ? timeString.split('-')[1] : timeString;
+        
+        const seconds = this.timeToSeconds(timePart);
+        const adjustedSeconds = Math.round(seconds * multiplier);
+        return this.secondsToTime(adjustedSeconds);
     }
 
     /**
@@ -504,6 +572,25 @@ class PaceCalculator {
         const data = trainingPaceData[normalizedDistance];
         if (!data) return [];
         return data.map(entry => entry.goalTime);
+    }
+
+    /**
+     * Adjust all paces in a pace object by a multiplier (e.g., 1.15 = 15% slower)
+     * Recursively processes all pace strings in the object structure
+     * @param {object} paceObject - Pace object from calculateFromGoal or similar
+     * @param {number} multiplier - Multiplier to apply (1.15 = 15% slower, higher seconds per mile)
+     * @returns {object} - New pace object with all paces adjusted
+     */
+    adjustPaces(paceObject, multiplier) {
+        if (!paceObject || typeof paceObject !== 'object') {
+            throw new Error('adjustPaces requires a valid pace object');
+        }
+        
+        // Deep clone the object to avoid mutating the original
+        const adjusted = JSON.parse(JSON.stringify(paceObject));
+        
+        // Recursively adjust all pace strings
+        return adjustPaceStrings(adjusted, multiplier);
     }
 }
 

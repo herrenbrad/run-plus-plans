@@ -886,6 +886,71 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           </div>
         )}
 
+        {/* Specific Training Focus - from library */}
+        {currentWorkout.specificFocus && (
+          <div style={{
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
+          }}>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              color: 'white',
+              fontSize: '1.3rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>🎯</span> Training Focus
+            </h3>
+            <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
+              {currentWorkout.specificFocus}
+            </p>
+          </div>
+        )}
+
+        {/* Progression Scheme - from library */}
+        {currentWorkout.progression && (
+          <div style={{
+            background: `linear-gradient(135deg, ${getWorkoutTypeColor(currentWorkout.type)}12 0%, rgba(255, 255, 255, 0.05) 100%)`,
+            border: `2px solid ${getWorkoutTypeColor(currentWorkout.type)}35`,
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px',
+            boxShadow: `0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px ${getWorkoutTypeColor(currentWorkout.type)}15, 0 0 20px ${getWorkoutTypeColor(currentWorkout.type)}12`,
+            transition: 'all 0.3s ease'
+          }}>
+            <h3 style={{
+              margin: '0 0 16px 0',
+              color: 'white',
+              fontSize: '1.3rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>📈</span> Progression Scheme
+            </h3>
+            <div style={{ display: 'grid', gap: '8px' }}>
+              {typeof currentWorkout.progression === 'object' ? (
+                Object.entries(currentWorkout.progression).map(([week, reps]) => (
+                  <div key={week} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 0' }}>
+                    <strong style={{ color: '#999', minWidth: '80px' }}>{week}:</strong>
+                    <span style={{ color: '#ddd' }}>{reps}</span>
+                  </div>
+                ))
+              ) : (
+                <p style={{ margin: 0, color: '#ddd' }}>{currentWorkout.progression}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* BENEFITS - Cross-Training Workouts */}
         {currentWorkout.benefits && (
           <div style={{

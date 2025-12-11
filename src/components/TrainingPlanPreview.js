@@ -137,7 +137,7 @@ function TrainingPlanPreview({ userProfile, trainingPlan }) {
             <div>
               <h3 style={{ color: '#AAAAAA', margin: '0 0 8px 0' }}>Training Days</h3>
               <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: '600' }}>
-                {trainingPlan.planOverview.runsPerWeek} days/week
+                {trainingPlan.planOverview.workoutsPerWeek || trainingPlan.planOverview.runsPerWeek} days/week
               </p>
             </div>
             {userProfile.standUpBikeType && (

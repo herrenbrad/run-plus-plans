@@ -3,7 +3,19 @@
  * Each method returns 3-4 workout options that target the same training system
  */
 
+import { StandUpBikeWorkoutLibrary } from '../lib/standup-bike-workout-library.js';
+import { RowingWorkoutLibrary } from '../lib/rowing-workout-library.js';
+import { AquaRunningWorkoutLibrary } from '../lib/aqua-running-workout-library.js';
+import { EllipticalWorkoutLibrary } from '../lib/elliptical-workout-library.js';
+
 class WorkoutOptionsService {
+    constructor() {
+        // Initialize cross-training libraries
+        this.standUpBikeLibrary = new StandUpBikeWorkoutLibrary();
+        this.rowingLibrary = new RowingWorkoutLibrary();
+        this.aquaLibrary = new AquaRunningWorkoutLibrary();
+        this.ellipticalLibrary = new EllipticalWorkoutLibrary();
+    }
     
     /**
      * Get speed workout options (VO2 max, neuromuscular power)
@@ -298,6 +310,205 @@ class WorkoutOptionsService {
                 benefits: 'Maintains speed while recovering, improves running form'
             }
         ];
+    }
+
+    /**
+     * Get stand-up bike workout options for "Switch to Cyclete" modal
+     * Maps run intensity to appropriate bike library categories
+     * @param {string} intensity - Run workout intensity: 'intervals', 'tempo', 'hills', 'longRun', 'easy'
+     * @param {string} bikeType - 'cyclete' or 'elliptigo'
+     * @param {number} duration - Target duration in minutes (optional)
+     * @returns {Array} Array of 3-4 bike workout options
+     */
+    getStandUpBikeOptions(intensity, bikeType, duration = null) {
+        const library = this.standUpBikeLibrary;
+        const workouts = [];
+        
+        // Map run intensity to bike library categories
+        let categories = [];
+        if (intensity === 'intervals') {
+            categories = ['INTERVAL_BIKE'];
+        } else if (intensity === 'tempo') {
+            categories = ['TEMPO_BIKE'];
+        } else if (intensity === 'hills') {
+            categories = ['POWER_RESISTANCE'];
+        } else if (intensity === 'longRun') {
+            categories = ['LONG_ENDURANCE_RIDES'];
+        } else if (intensity === 'easy') {
+            categories = ['AEROBIC_BASE', 'RECOVERY_SPECIFIC'];
+        } else {
+            // Default to easy
+            categories = ['AEROBIC_BASE', 'RECOVERY_SPECIFIC'];
+        }
+        
+        // Collect workouts from categories
+        categories.forEach(category => {
+            const categoryWorkouts = library.workoutLibrary[category] || [];
+            const availableWorkouts = categoryWorkouts.filter(w =>
+                w.equipment === bikeType || w.equipment === "both"
+            );
+            
+            // Take first 2-3 from each category
+            availableWorkouts.slice(0, 3).forEach(workout => {
+                // Prescribe the workout if duration is provided
+                let prescribedWorkout = workout;
+                if (duration) {
+                    try {
+                        prescribedWorkout = library.prescribeStandUpBikeWorkout(
+                            workout.name,
+                            bikeType,
+                            { duration, hasGarmin: true }
+                        );
+                    } catch (e) {
+                        // Fallback to original workout if prescription fails
+                        prescribedWorkout = workout;
+                    }
+                }
+                
+                workouts.push({
+                    id: `bike_${category}_${workout.name.replace(/\s+/g, '_').toLowerCase()}`,
+                    name: prescribedWorkout.name || workout.name,
+                    shortName: workout.name,
+                    description: prescribedWorkout.description || workout.description || workout.structure,
+                    duration: prescribedWorkout.duration || workout.duration || '30-45 minutes',
+                    intensity: workout.intensity || (intensity === 'easy' ? 'Easy' : 'Hard'),
+                    structure: prescribedWorkout.structure || workout.structure,
+                    focus: category === 'TEMPO_BIKE' ? 'Lactate Threshold' : 
+                           category === 'INTERVAL_BIKE' ? 'Speed & Power' :
+                           category === 'POWER_RESISTANCE' ? 'Power & Strength' :
+                           'Aerobic Base',
+                    equipment: bikeType,
+                    equipmentSpecific: true,
+                    sourceWorkout: prescribedWorkout,
+                    benefits: workout.benefits || 'Cross-training at equivalent effort'
+                });
+            });
+        });
+        
+        // Return 3-4 options
+        return workouts.slice(0, 4);
+    }
+
+    /**
+     * Get cross-training workout options for "Cross-Train Instead" modal
+     * Returns workouts from all available equipment matching the run intensity
+     * @param {string} intensity - Run workout intensity: 'intervals', 'tempo', 'hills', 'longRun', 'easy'
+     * @param {Object} userProfile - User profile with crossTrainingEquipment
+     * @param {number} duration - Target duration in minutes (optional)
+     * @returns {Array} Mixed array of cross-training workout options
+     */
+    getCrossTrainingOptions(intensity, userProfile, duration = null) {
+        const equipment = userProfile?.crossTrainingEquipment || {};
+        const workouts = [];
+        
+        // Map run intensity to library categories for each equipment type
+        const categoryMap = {
+            intervals: {
+                rowing: 'INTERVALS',
+                aqua: 'INTERVALS',
+                elliptical: 'INTERVALS'
+            },
+            tempo: {
+                rowing: 'TEMPO',
+                aqua: 'TEMPO',
+                elliptical: 'TEMPO'
+            },
+            hills: {
+                rowing: 'POWER',
+                aqua: 'HILLS',
+                elliptical: 'HILLS'
+            },
+            longRun: {
+                rowing: 'EASY',
+                aqua: 'EASY',
+                elliptical: 'EASY'
+            },
+            easy: {
+                rowing: 'EASY',
+                aqua: 'EASY',
+                elliptical: 'EASY'
+            }
+        };
+        
+        const categories = categoryMap[intensity] || categoryMap.easy;
+        
+        // Rowing workouts
+        if (equipment.rowing) {
+            const category = categories.rowing;
+            const rowingWorkouts = this.rowingLibrary.workoutLibrary[category] || [];
+            rowingWorkouts.slice(0, 1).forEach(workout => {
+                workouts.push({
+                    id: `row_${category}_${workout.name.replace(/\s+/g, '_').toLowerCase()}`,
+                    name: `🚣 ${workout.name}`,
+                    shortName: workout.name,
+                    description: workout.description || workout.structure,
+                    duration: workout.duration || '30-45 minutes',
+                    intensity: workout.intensity || intensity,
+                    structure: workout.structure,
+                    focus: category === 'TEMPO' ? 'Lactate Threshold' :
+                           category === 'INTERVALS' ? 'VO2 Max' :
+                           category === 'POWER' ? 'Power & Strength' :
+                           'Aerobic Base',
+                    equipmentType: 'rowing',
+                    equipment: 'rowing',
+                    sourceWorkout: workout,
+                    benefits: workout.benefits || 'Full-body power development'
+                });
+            });
+        }
+        
+        // Pool/Aqua Running workouts
+        if (equipment.pool) {
+            const category = categories.aqua;
+            const aquaWorkouts = this.aquaLibrary.workoutLibrary[category] || [];
+            aquaWorkouts.slice(0, 1).forEach(workout => {
+                workouts.push({
+                    id: `aqua_${category}_${workout.name.replace(/\s+/g, '_').toLowerCase()}`,
+                    name: `🏊 ${workout.name}`,
+                    shortName: workout.name,
+                    description: workout.description || workout.structure,
+                    duration: workout.duration || '30-45 minutes',
+                    intensity: workout.intensity || intensity,
+                    structure: workout.structure,
+                    focus: category === 'TEMPO' ? 'Lactate Threshold' :
+                           category === 'INTERVALS' ? 'VO2 Max' :
+                           category === 'HILLS' ? 'Power & Strength' :
+                           'Aerobic Base',
+                    equipmentType: 'pool',
+                    equipment: 'pool',
+                    sourceWorkout: workout,
+                    benefits: workout.benefits || 'Zero-impact running simulation'
+                });
+            });
+        }
+        
+        // Elliptical workouts
+        if (equipment.elliptical) {
+            const category = categories.elliptical;
+            const ellipticalWorkouts = this.ellipticalLibrary.workoutLibrary[category] || [];
+            ellipticalWorkouts.slice(0, 1).forEach(workout => {
+                workouts.push({
+                    id: `elliptical_${category}_${workout.name.replace(/\s+/g, '_').toLowerCase()}`,
+                    name: `🏃 ${workout.name}`,
+                    shortName: workout.name,
+                    description: workout.description || workout.structure,
+                    duration: workout.duration || '30-45 minutes',
+                    intensity: workout.intensity || intensity,
+                    structure: workout.structure,
+                    focus: category === 'TEMPO' ? 'Lactate Threshold' :
+                           category === 'INTERVALS' ? 'VO2 Max' :
+                           category === 'HILLS' ? 'Power & Strength' :
+                           'Aerobic Base',
+                    equipmentType: 'elliptical',
+                    equipment: 'elliptical',
+                    sourceWorkout: workout,
+                    benefits: workout.benefits || 'Low-impact running alternative'
+                });
+            });
+        }
+        
+        // If no equipment selected, return empty array (or could return generic options)
+        return workouts;
     }
 }
 

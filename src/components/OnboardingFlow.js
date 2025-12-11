@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase/config';
+import TrainingPlanService from '../services/TrainingPlanService.js';
 import TrainingPlanAIService from '../services/TrainingPlanAIService.js';
+import { PaceCalculator } from '../lib/pace-calculator';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { formatEquipmentName } from '../utils/typography';
@@ -255,6 +257,7 @@ function OnboardingFlow({ onComplete }) {
   const toast = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [showRaceTimeModal, setShowRaceTimeModal] = useState(false);
   const [formData, setFormData] = useState({
     // Basic Info (Steps 1-4 - Similar to Runna)
     goal: '',
@@ -268,9 +271,11 @@ function OnboardingFlow({ onComplete }) {
     // Recent race for VDOT fitness assessment
     recentRaceDistance: '',
     recentRaceTime: '',
+    confirmedNoRaceTime: false, // Flag to track if user confirmed they don't have a race time
 
     // Schedule (Steps 5-7 - Enhanced from Runna)
-    runsPerWeek: '',
+    workoutsPerWeek: '', // Total training sessions per week (running + cross-training)
+    runsPerWeek: '', // Backward compatibility - will be migrated to workoutsPerWeek
     availableDays: [],
     preferredBikeDays: [],
     longRunDay: '',
@@ -309,8 +314,7 @@ function OnboardingFlow({ onComplete }) {
     location: '',
     climate: '',
     trainingStyle: 'adventure', // Always use adventure mode - our core differentiator!
-    trainingPhilosophy: 'practical_periodization', // Default: Real World Training
-    hasGarmin: null // true, false, or null (not answered yet)
+    trainingPhilosophy: 'practical_periodization' // Default: Real World Training
   });
 
   const totalSteps = 7;
@@ -341,6 +345,13 @@ function OnboardingFlow({ onComplete }) {
   };
 
   const nextStep = () => {
+    // SMART INTERVENTION: Check for missing fitness data on Step 1
+    if (currentStep === 1 && !formData.recentRaceTime && !formData.recentRaceDistance && !formData.confirmedNoRaceTime) {
+      // Show confirmation modal instead of window.confirm for better UX
+      setShowRaceTimeModal(true);
+      return; // Stop here, wait for user decision
+    }
+
     const nextStepNumber = getNextStep(currentStep);
     if (nextStepNumber <= totalSteps) {
       setCurrentStep(nextStepNumber);
@@ -349,6 +360,31 @@ function OnboardingFlow({ onComplete }) {
     } else {
       handleComplete();
     }
+  };
+
+  const handleContinueWithoutRaceTime = () => {
+    // User confirmed they want to proceed without race time
+    // Set flags so Safety Buffer logic kicks in later (15% slower baseline)
+    setFormData(prev => ({ 
+      ...prev, 
+      confirmedNoRaceTime: true,
+      isEstimatedFitness: true // Flag for prompt generation
+    }));
+    setShowRaceTimeModal(false);
+    // Proceed to next step
+    const nextStepNumber = getNextStep(currentStep);
+    if (nextStepNumber <= totalSteps) {
+      setCurrentStep(nextStepNumber);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      handleComplete();
+    }
+  };
+
+  const handleAddRaceTime = () => {
+    // User wants to go back and add race time
+    setShowRaceTimeModal(false);
+    // Stay on current step (Step 1) so they can add the race time
   };
 
   // Determine previous step with conditional logic
@@ -453,6 +489,24 @@ function OnboardingFlow({ onComplete }) {
       // Build user profile for AI service
       // CRITICAL: Keep dates as YYYY-MM-DD strings to avoid timezone issues
       // Don't convert to ISO string - that shifts to UTC and can change the day
+      
+      // GOAL PACE TRAP FIX: If no recent race time, calculate safe baseline (15% slower than goal)
+      const paceCalculator = new PaceCalculator();
+      let recentRaceTime = formData.recentRaceTime;
+      let isEstimatedFitness = false;
+      
+      if (!recentRaceTime && formData.currentRaceTime && formData.raceDistance) {
+        // Extract just the time part if format is "Distance-Time"
+        const goalTimePart = formData.currentRaceTime.includes('-') 
+          ? formData.currentRaceTime.split('-')[1] 
+          : formData.currentRaceTime;
+        
+        // Calculate 15% slower than goal time
+        recentRaceTime = paceCalculator.addBufferToTime(goalTimePart, 1.15);
+        isEstimatedFitness = true;
+        logger.log('⚠️ No recent race time provided. Defaulting to Safe Baseline:', recentRaceTime);
+      }
+      
       const userProfile = {
         raceDistance: formData.raceDistance,
         raceTime: formData.currentRaceTime, // Goal time for race
@@ -461,9 +515,11 @@ function OnboardingFlow({ onComplete }) {
         raceElevationProfile: formData.raceElevationProfile || '',
         currentWeeklyMileage: formData.currentWeeklyMileage,
         currentLongRun: formData.currentLongRunDistance,
-        recentRaceTime: formData.recentRaceTime || formData.currentRaceTime,
+        recentRaceTime: recentRaceTime || formData.currentRaceTime, // Fallback to goal if calculation fails
         recentRaceDistance: formData.recentRaceDistance || formData.raceDistance,
-        runsPerWeek: formData.availableDays.length,
+        isEstimatedFitness: isEstimatedFitness, // Flag for prompt generation
+        workoutsPerWeek: formData.availableDays.length, // Total training days
+        runsPerWeek: formData.availableDays.length, // Backward compatibility
         availableDays: formData.availableDays,
         restDays: restDays,
         longRunDay: formData.longRunDay,
@@ -479,6 +535,8 @@ function OnboardingFlow({ onComplete }) {
         climate: formData.climate,
         location: formData.location,
         runningStatus: formData.runningStatus,
+        trainingStyle: formData.trainingStyle || 'adventure', // CRITICAL: Include training style for "Choose Adventure" feature
+        trainingPhilosophy: formData.trainingPhilosophy || 'practical_periodization',
         units: 'imperial',
         // CRITICAL: Include user's name for personalization (from Firebase Auth)
         name: userName,
@@ -487,36 +545,59 @@ function OnboardingFlow({ onComplete }) {
 
       logger.log('👤 User profile:', userProfile);
 
-      // Generate AI plan
-      const planResult = await TrainingPlanAIService.generateTrainingPlan(userProfile);
-
-      if (!planResult.success) {
-        throw new Error(`Failed to generate plan: ${planResult.error || 'Unknown error'}`);
+      // STEP 1: Generate deterministic plan structure (code-based, reliable)
+      logger.log('🏗️ Step 1: Generating deterministic plan structure...');
+      const planStructure = TrainingPlanService.generatePlanStructure(userProfile);
+      
+      if (!planStructure || !planStructure.weeks || planStructure.weeks.length === 0) {
+        throw new Error('Failed to generate plan structure - weeks array is missing');
       }
 
-      logger.log('✅ AI training plan created successfully');
-      logger.log('📊 Plan structure check:', {
-        hasPlan: !!planResult.plan,
-        hasWeeks: !!planResult.plan?.weeks,
-        weeksLength: planResult.plan?.weeks?.length,
-        planKeys: planResult.plan ? Object.keys(planResult.plan) : []
+      logger.log(`✅ Plan structure generated: ${planStructure.weeks.length} weeks`);
+
+      // STEP 2: Add AI coaching analysis (personality layer)
+      logger.log('🤖 Step 2: Adding AI coaching analysis...');
+      let coachingAnalysis = null;
+      try {
+        // Generate coaching analysis (AI only provides personality, not structure)
+        const coachingResult = await TrainingPlanAIService.generateCoachingAnalysis(userProfile);
+        if (coachingResult.success) {
+          coachingAnalysis = coachingResult.analysis;
+          logger.log('✅ AI coaching analysis generated');
+        } else {
+          throw new Error(coachingResult.error || 'Failed to generate coaching');
+        }
+      } catch (coachingError) {
+        logger.warn('⚠️ AI coaching failed, continuing without it:', coachingError);
+        // Don't fail the whole plan if coaching fails - structure is more important
+        coachingAnalysis = "Welcome to your training plan! This plan is designed specifically for your goals and schedule.";
+      }
+
+      // Combine structure + coaching into final plan
+      const finalPlan = {
+        ...planStructure,
+        aiCoachingAnalysis: coachingAnalysis,
+        fullPlanText: coachingAnalysis || "Your personalized training plan"
+      };
+
+      logger.log('📊 Final plan check:', {
+        hasPlan: !!finalPlan,
+        hasWeeks: !!finalPlan?.weeks,
+        weeksLength: finalPlan?.weeks?.length,
+        hasCoaching: !!finalPlan?.aiCoachingAnalysis
       });
 
       // CRITICAL: Validate plan has weeks array before proceeding
-      if (!planResult.plan) {
-        throw new Error('Plan generation returned no plan data');
-      }
-
-      if (!planResult.plan.weeks || planResult.plan.weeks.length === 0) {
+      if (!finalPlan.weeks || finalPlan.weeks.length === 0) {
         logger.error('❌ CRITICAL: Plan generated but weeks array is empty!');
-        logger.error('   Plan keys:', Object.keys(planResult.plan));
+        logger.error('   Plan keys:', Object.keys(finalPlan));
         throw new Error('Plan structure is invalid - weeks array is missing. Please try again or contact support.');
       }
 
-      logger.log(`✅ Plan validated: ${planResult.plan.weeks.length} weeks with workouts`);
+      logger.log(`✅ Plan validated: ${finalPlan.weeks.length} weeks with workouts`);
 
       // Pass both form data and plan to parent
-      await onComplete(formData, planResult.plan);
+      await onComplete(formData, finalPlan);
 
       // Navigate to welcome screen to show coaching analysis
       navigate('/welcome');
@@ -554,9 +635,6 @@ function OnboardingFlow({ onComplete }) {
         <p style={{ color: '#9CA3AF', maxWidth: '400px' }}>
           Our AI coach is analyzing your goals, fitness level, and schedule to create a custom plan just for you.
         </p>
-        <p style={{ color: '#6B7280', fontSize: '0.9rem', marginTop: '8px' }}>
-          This may take 10-15 seconds...
-        </p>
         <style>{`
           @keyframes spin {
             0% { transform: rotate(0deg); }
@@ -568,8 +646,88 @@ function OnboardingFlow({ onComplete }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', padding: '20px 0' }}>
-      <div className="container">
+    <>
+      {/* Missing Race Time Confirmation Modal */}
+      {showRaceTimeModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000,
+            padding: '20px'
+          }}
+          onClick={(e) => {
+            // Close modal when clicking backdrop
+            if (e.target === e.currentTarget) {
+              setShowRaceTimeModal(false);
+            }
+          }}
+        >
+          <div 
+            style={{
+              background: 'linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%)',
+              border: '1px solid #333',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '500px',
+              padding: '32px',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{
+              margin: '0 0 16px 0',
+              fontSize: '1.5rem',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              ⚠️ Missing Recent Race Time?
+            </h2>
+            
+            <p style={{
+              margin: '0 0 24px 0',
+              fontSize: '1rem',
+              color: '#E5E7EB',
+              lineHeight: '1.6'
+            }}>
+              We recommend entering a recent race result for the most accurate training paces. If you don't have one, we will build a plan based on a safe estimate.
+            </p>
+
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end'
+            }}>
+              <button
+                onClick={handleAddRaceTime}
+                className="btn btn-secondary"
+                style={{ minWidth: '120px' }}
+              >
+                Add Time
+              </button>
+              <button
+                onClick={handleContinueWithoutRaceTime}
+                className="btn btn-primary"
+                style={{ minWidth: '160px' }}
+              >
+                Continue Without
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ minHeight: '100vh', padding: '20px 0' }}>
+        <div className="container">
         {/* Progress Bar */}
         <div className="progress-bar" style={{ marginBottom: '20px' }}>
           <div 
@@ -606,6 +764,7 @@ function OnboardingFlow({ onComplete }) {
         </div>
       </div>
     </div>
+    </>
   );
 
   function renderStep() {
@@ -623,9 +782,7 @@ function OnboardingFlow({ onComplete }) {
               <div className="card-grid">
                 {[
                   { id: 'race', name: 'Train for a race', icon: '🏆' },
-                  { id: 'distance', name: 'Run a specific distance', icon: '📏' },
-                  { id: 'fitness', name: 'General fitness', icon: '💪' },
-                  { id: 'return', name: 'Return to running', icon: '🔄' }
+                  { id: 'distance', name: 'Run a specific distance', icon: '📏' }
                 ].map(goal => (
                   <div 
                     key={goal.id}
@@ -647,9 +804,7 @@ function OnboardingFlow({ onComplete }) {
                   { id: '5K', name: '5K', popular: true },
                   { id: '10K', name: '10K', popular: true },
                   { id: 'Half', name: 'Half Marathon', popular: true },
-                  { id: 'Marathon', name: 'Marathon', popular: true },
-                  { id: 'Ultra', name: 'Ultra Marathon', badge: 'We support 50K+!' },
-                  { id: 'Custom', name: 'Custom Distance', badge: 'Any distance!' }
+                  { id: 'Marathon', name: 'Marathon', popular: true }
                 ].map(distance => (
                   <div 
                     key={distance.id}
@@ -994,7 +1149,7 @@ function OnboardingFlow({ onComplete }) {
             <h2 style={{ color: '#FFFFFF', fontWeight: '700', fontSize: '1.75rem', marginBottom: '16px' }}>Training Schedule & Frequency</h2>
             <p><strong>🗓️ Let's plan your training week!</strong> Tell us about your schedule and preferences.</p>
 
-            {/* Runs Per Week */}
+            {/* Workouts Per Week */}
             <div style={{ marginBottom: '32px' }}>
               <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>How many days per week would you like to train?</h3>
               <p><strong>🚀 Unlike other apps, we don't restrict your choices!</strong> Pick what works for your schedule.</p>
@@ -1033,8 +1188,8 @@ function OnboardingFlow({ onComplete }) {
                 ].map(option => (
                   <div 
                     key={option.days}
-                    className={`card ${formData.runsPerWeek === option.days ? 'selected' : ''}`}
-                    onClick={() => updateFormData('runsPerWeek', option.days)}
+                    className={`card ${formData.workoutsPerWeek === option.days ? 'selected' : ''}`}
+                    onClick={() => updateFormData('workoutsPerWeek', option.days)}
                     style={{ cursor: 'pointer', textAlign: 'center' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', marginBottom: '6px' }}>
@@ -1054,14 +1209,14 @@ function OnboardingFlow({ onComplete }) {
             </div>
 
             {/* Available Days */}
-            {formData.runsPerWeek && (
+            {formData.workoutsPerWeek && (
               <div style={{ marginBottom: '32px' }}>
                 <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>Which days are you available to train?</h3>
-                <p>Select {formData.runsPerWeek} days that work best for your schedule.</p>
+                <p>Select {formData.workoutsPerWeek} days that work best for your schedule.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', maxWidth: '500px', margin: '0 auto' }}>
                   {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => {
                     const isSelected = formData.availableDays.includes(day);
-                    const isAtLimit = formData.availableDays.length >= formData.runsPerWeek;
+                    const isAtLimit = formData.availableDays.length >= formData.workoutsPerWeek;
                     const isDisabled = !isSelected && isAtLimit;
                     
                     return (
@@ -1077,7 +1232,7 @@ function OnboardingFlow({ onComplete }) {
                           updateFormData('availableDays', newDays);
                         } else {
                           // Only allow selection if under the limit
-                          if (formData.availableDays.length < formData.runsPerWeek) {
+                          if (formData.availableDays.length < formData.workoutsPerWeek) {
                             const newDays = [...formData.availableDays, day];
                             updateFormData('availableDays', newDays);
                           }
@@ -1097,18 +1252,18 @@ function OnboardingFlow({ onComplete }) {
                   })}
                 </div>
                 <div className="card" style={{ 
-                  background: formData.availableDays.length === formData.runsPerWeek 
+                  background: formData.availableDays.length === formData.workoutsPerWeek 
                     ? 'rgba(0, 255, 136, 0.1)' 
                     : 'rgba(255, 184, 0, 0.1)', 
-                  border: formData.availableDays.length === formData.runsPerWeek 
+                  border: formData.availableDays.length === formData.workoutsPerWeek 
                     ? '1px solid rgba(0, 255, 136, 0.3)'
                     : '1px solid rgba(255, 184, 0, 0.3)',
                   marginTop: '16px'
                 }}>
                   <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                    {formData.availableDays.length === formData.runsPerWeek 
-                      ? `✅ Perfect! Selected all ${formData.runsPerWeek} training days.`
-                      : `Selected: ${formData.availableDays.length}/${formData.runsPerWeek} days ${formData.availableDays.length < formData.runsPerWeek ? '(select more)' : ''}`
+                    {formData.availableDays.length === formData.workoutsPerWeek 
+                      ? `✅ Perfect! Selected all ${formData.workoutsPerWeek} training days.`
+                      : `Selected: ${formData.availableDays.length}/${formData.workoutsPerWeek} days ${formData.availableDays.length < formData.workoutsPerWeek ? '(select more)' : ''}`
                     }
                   </p>
                 </div>
@@ -1116,7 +1271,7 @@ function OnboardingFlow({ onComplete }) {
             )}
 
             {/* Long Run Day */}
-            {formData.availableDays.length === formData.runsPerWeek && (
+            {formData.availableDays.length === formData.workoutsPerWeek && (
               <div>
                 <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>Which day do you prefer for your long run?</h3>
                 <p><strong>🏃‍♂️ Personal preference matters!</strong> Pick the day that works best for your schedule.</p>
@@ -1428,78 +1583,6 @@ function OnboardingFlow({ onComplete }) {
             <h2 style={{ color: '#FFFFFF', fontWeight: '700', fontSize: '1.75rem', marginBottom: '16px' }}>Equipment & Training Preferences</h2>
             <p><strong>🚀 Unique to Run+ Plans!</strong> We're the only app with equipment-specific training.</p>
 
-            {/* Garmin Device Question */}
-            <div style={{ marginBottom: '32px' }}>
-              <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>Do you have a Garmin device?</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxWidth: '400px', margin: '0 auto' }}>
-                <div
-                  className={`card ${formData.hasGarmin === true ? 'selected' : ''}`}
-                  onClick={() => updateFormData('hasGarmin', true)}
-                  style={{ cursor: 'pointer', textAlign: 'center', padding: '24px' }}
-                >
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '1.2rem' }}>Yes</h4>
-                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#D1D5DB' }}>I have a Garmin</p>
-                </div>
-                <div
-                  className={`card ${formData.hasGarmin === false ? 'selected' : ''}`}
-                  onClick={() => updateFormData('hasGarmin', false)}
-                  style={{ cursor: 'pointer', textAlign: 'center', padding: '24px' }}
-                >
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '1.2rem' }}>No</h4>
-                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#D1D5DB' }}>I don't have one</p>
-                </div>
-              </div>
-
-              {/* Show RunEQ Data Field info if they have a Garmin */}
-              {formData.hasGarmin === true && (
-                <div className="card" style={{ background: 'rgba(0, 212, 255, 0.1)', border: '1px solid rgba(0, 212, 255, 0.3)', marginTop: '16px' }}>
-                  <h4 style={{ margin: '0 0 12px 0', color: '#FFFFFF', fontWeight: '600', fontSize: '1.1rem' }}>
-                    Download the RunEQ Data Field
-                  </h4>
-                  <p style={{ margin: '0 0 16px 0', fontSize: '0.95rem', color: '#E5E7EB' }}>
-                    Track your bike workouts with RunEQ miles on your Garmin device.
-                  </p>
-                  <a
-                    href="https://apps.garmin.com/apps/2327f1b2-a481-4c9e-b529-852e9989cf55"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: 'inline-block',
-                      padding: '12px 24px',
-                      background: 'rgba(0, 212, 255, 0.2)',
-                      border: '2px solid #00D4FF',
-                      borderRadius: '8px',
-                      color: '#00D4FF',
-                      textDecoration: 'none',
-                      fontWeight: '600',
-                      fontSize: '1rem',
-                      transition: 'all 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.background = 'rgba(0, 212, 255, 0.3)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.background = 'rgba(0, 212, 255, 0.2)';
-                    }}
-                  >
-                    Get RunEQ Data Field
-                  </a>
-                  <p style={{ margin: '12px 0 0 0', fontSize: '0.85rem', color: '#D1D5DB' }}>
-                    Your bike workouts will show RunEQ miles in the training plan
-                  </p>
-                </div>
-              )}
-
-              {/* Show info for non-Garmin users */}
-              {formData.hasGarmin === false && (
-                <div className="card" style={{ background: 'rgba(0, 255, 136, 0.1)', border: '1px solid rgba(0, 255, 136, 0.3)', marginTop: '16px' }}>
-                  <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                    <strong>No problem!</strong> Your bike workouts will show time and distance instead.
-                  </p>
-                </div>
-              )}
-            </div>
-
             {/* Unified Cross-Training Equipment Selection */}
             <div style={{ marginBottom: '32px' }}>
               <h3 style={{ color: '#FFFFFF', fontWeight: '600', fontSize: '1.3rem', marginBottom: '12px' }}>
@@ -1575,6 +1658,47 @@ function OnboardingFlow({ onComplete }) {
                     </div>
                   </button>
                 ))}
+
+                {/* Show Garmin RunEQ Data Field when Cyclete or ElliptiGO is selected */}
+                {formData.standUpBikeType && (
+                  <a
+                    href="https://apps.garmin.com/apps/2327f1b2-a481-4c9e-b529-852e9989cf55"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      padding: '14px 16px',
+                      fontSize: '0.9rem',
+                      border: '2px solid #00D4FF',
+                      background: 'rgba(0, 212, 255, 0.1)',
+                      color: '#00D4FF',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      textDecoration: 'none',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(0, 212, 255, 0.2)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(0, 212, 255, 0.1)';
+                    }}
+                  >
+                    <span style={{ fontSize: '1.5rem' }}>⌚</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        Get RunEQ Data Field (Free)
+                        <span className="badge badge-info" style={{ fontSize: '0.7rem', padding: '2px 6px', marginLeft: '4px' }}>Garmin</span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#86efac', marginTop: '2px' }}>
+                        Track RunEQ miles on your watch during {formData.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} rides
+                      </div>
+                    </div>
+                  </a>
+                )}
 
                 {/* Other Equipment */}
                 {[

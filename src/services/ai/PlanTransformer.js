@@ -150,8 +150,8 @@ class PlanTransformer {
                     });
 
                     // Try to extract distance from AI's workout description (e.g., "Long Run 10 miles")
-                    // CRITICAL: Check workout.extractedDistance first (from enrichPlanWithWorkouts)
-                    let extractedDistance = workout.extractedDistance || details.distance || 0;
+                    // CRITICAL: Check workout.distance first (may have been adjusted by PlanFixer), then extractedDistance
+                    let extractedDistance = workout.distance || workout.extractedDistance || details.distance || 0;
                     if (!extractedDistance) {
                         const distanceMatch = workout.description.match(/(\d+(?:\.\d+)?)\s*(mile|miles|mi|km)/i);
                         if (distanceMatch) {
@@ -227,12 +227,24 @@ class PlanTransformer {
                         rest_or_xt: 'Recovery / XT'
                     };
 
-                    // Clean workout name - remove [WORKOUT_ID: ...] tags if present
+                    // Clean workout name - remove [WORKOUT_ID: ...] tags if present (including malformed ones)
                     let cleanName = details.name || workout.description;
-                    cleanName = cleanName.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/g, '').trim();
-                    
+                    // First try complete format, then catch any partial/malformed WORKOUT_ID tags
+                    cleanName = cleanName
+                        .replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill|fartlek)_.+?_\d+\]\s*/g, '')
+                        .replace(/\[WORKOUT_ID[^\]]*\]?\s*/gi, '') // Catch malformed/truncated tags
+                        .trim();
+
+                    // If name is empty or still looks like a tag, use a sensible fallback
+                    if (!cleanName || cleanName.startsWith('[')) {
+                        cleanName = focusMap[normalizedType] || 'Workout';
+                    }
+
                     let cleanDescription = details.description || workout.description;
-                    cleanDescription = cleanDescription.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/g, '').trim();
+                    cleanDescription = cleanDescription
+                        .replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill|fartlek)_.+?_\d+\]\s*/g, '')
+                        .replace(/\[WORKOUT_ID[^\]]*\]?\s*/gi, '') // Catch malformed/truncated tags
+                        .trim();
 
                     return {
                         day: workout.day,
@@ -250,6 +262,13 @@ class PlanTransformer {
                         warmup: workoutObj.warmup,
                         cooldown: workoutObj.cooldown,
                         repetitions: workoutObj.repetitions || details.repetitions,
+                        // Rich library data - pass through for WorkoutDetail display
+                        hillRequirement: details.hillRequirement,
+                        intensity: details.intensity,
+                        progression: details.progression,
+                        safetyNotes: details.safetyNotes,
+                        duration: details.duration,
+                        specificFocus: details.focus, // The detailed focus from library (e.g., "VO2 max, lactate threshold, hill running economy")
                         metadata: {
                             workoutId: workout.workoutId,
                             aiGenerated: true,
@@ -259,28 +278,42 @@ class PlanTransformer {
                 }
 
                 // Fallback for workouts without library details (e.g., rest days, easy runs, bike days)
-                console.log(`  ⚠️ Using FALLBACK - description: "${workout.description}"`);
+                // CRITICAL: Fix "miless" typos BEFORE processing
+                let cleanDescription = workout.description || '';
+                if (cleanDescription) {
+                    cleanDescription = cleanDescription
+                        .replace(/miless/gi, 'miles')
+                        .replace(/milees/gi, 'miles')
+                        .replace(/milles/gi, 'miles')
+                        .replace(/milse/gi, 'miles')
+                        .replace(/mile\s+s/gi, 'miles');
+                    workout.description = cleanDescription; // Update the description
+                }
+                console.log(`  ⚠️ Using FALLBACK - description: "${cleanDescription}"`);
 
                 // Try to extract distance from description (e.g., "Easy 4 miles", "8 RunEQ miles")
-                let extractedDistance = 0;
-                const distanceMatch = workout.description.match(/(\d+(?:\.\d+)?)\s*(mile|miles|mi|km|RunEQ)/i);
-                if (distanceMatch) {
-                    extractedDistance = parseFloat(distanceMatch[1]);
-                    console.log(`  📏 Extracted distance: ${extractedDistance} ${distanceMatch[2]}`);
+                // CRITICAL: Check workout.distance first (may have been adjusted by PlanFixer)
+                let extractedDistance = workout.distance || 0;
+                if (!extractedDistance) {
+                    const distanceMatch = cleanDescription.match(/(\d+(?:\.\d+)?)\s*(mile|miles|mi|km|RunEQ)/i);
+                    if (distanceMatch) {
+                        extractedDistance = parseFloat(distanceMatch[1]);
+                        console.log(`  📏 Extracted distance: ${extractedDistance} ${distanceMatch[2]}`);
+                    }
                 }
 
                 // Determine focus for fallback workouts
                 // CRITICAL: Extract type from description, don't default to 'easy'
                 // Fallback workouts are rest days, easy runs, or bike days - extract type from description
                 let fallbackType = 'easy'; // Only default if we can't determine from description
-                const descLower = workout.description.toLowerCase();
+                const descLower = cleanDescription.toLowerCase();
                 if (descLower.includes('rest') || descLower === 'rest') {
                     fallbackType = 'rest';
                 } else if (descLower.includes('ride') || descLower.includes('runeq') || descLower.includes('bike')) {
                     fallbackType = 'bike';
                     // CRITICAL: For bike workouts, extract RunEQ miles (not convert to bike miles)
                     // The AI generates "Ride 3 RunEQ miles" - we want to preserve the RunEQ value
-                    const runEqMatch = workout.description.match(/(\d+(?:\.\d+)?)\s*RunEQ/i);
+                    const runEqMatch = cleanDescription.match(/(\d+(?:\.\d+)?)\s*RunEQ/i);
                     if (runEqMatch) {
                         extractedDistance = parseFloat(runEqMatch[1]);
                         console.log(`  📏 Extracted RunEQ distance: ${extractedDistance} RunEQ miles`);
@@ -308,20 +341,45 @@ class PlanTransformer {
                     rest_or_xt: 'Recovery / XT'
                 };
 
-                // Clean fallback workout name - remove [WORKOUT_ID: ...] tags if present
-                let cleanFallbackName = workout.description;
-                cleanFallbackName = cleanFallbackName.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/g, '').trim();
+                // Fix common AI typos first (e.g., "miless" -> "miles")
+                const fixTypos = (text) => {
+                    if (!text) return text;
+                    return text
+                        .replace(/miless/gi, 'miles')
+                        .replace(/milees/gi, 'miles')
+                        .replace(/milles/gi, 'miles')
+                        .replace(/milse/gi, 'miles')
+                        .replace(/mies/gi, 'miles');
+                };
+
+                // Clean fallback workout name - remove [WORKOUT_ID: ...] tags if present (including malformed ones)
+                // CRITICAL: Fix typos before cleaning tags
+                let cleanFallbackName = fixTypos(workout.description);
+                cleanFallbackName = cleanFallbackName
+                    .replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill|fartlek)_.+?_\d+\]\s*/g, '')
+                    .replace(/\[WORKOUT_ID[^\]]*\]?\s*/gi, '') // Catch malformed/truncated tags
+                    .trim();
+
+                // If name is empty or still looks like a tag, use a sensible fallback
+                if (!cleanFallbackName || cleanFallbackName.startsWith('[')) {
+                    cleanFallbackName = fallbackFocusMap[fallbackType] || 'Workout';
+                }
 
                 // CRITICAL: For bike workouts, preserve RunEQ in the name
                 let finalName = cleanFallbackName;
                 let finalDescription = cleanFallbackName;
                 if (fallbackType === 'bike' && workout.description.match(/RunEQ/i)) {
                     // Preserve "RunEQ miles" in the name/description
-                    const runEqMatch = workout.description.match(/(\d+(?:\.\d+)?)\s*RunEQ\s*miles?/i);
+                    const runEqMatch = fixTypos(workout.description).match(/(\d+(?:\.\d+)?)\s*RunEQ\s*miles?/i);
                     if (runEqMatch) {
                         finalName = `Ride ${runEqMatch[1]} RunEQ miles`;
-                        finalDescription = workout.description; // Keep original description with RunEQ
+                        // Fix typos in description before using it
+                        finalDescription = fixTypos(workout.description); // Keep original description with RunEQ, but fix typos
                     }
+                } else {
+                    // Fix typos in all other fallback descriptions
+                    finalName = cleanFallbackName; // Already fixed above
+                    finalDescription = fixTypos(workout.description);
                 }
                 
                 const fallbackWorkout = {
@@ -349,9 +407,43 @@ class PlanTransformer {
             if (week.weekNumber === 1 || week.weekNumber === Math.ceil(totalWeeks * 0.5) || week.weekNumber === totalWeeks) {
                 console.log(`📅 Week ${week.weekNumber}/${totalWeeks}: Phase = ${phaseLabel} (${phaseKey})`);
             }
+            
+            // CRITICAL: Calculate total mileage from workouts
+            // RunEQ miles REPLACE runs (both easy AND hard), so they count as running miles (not additional)
+            let calculatedTotalMileage = 0;
+            dashboardWorkouts.forEach(workout => {
+                if (workout.type === 'bike' && workout.distance) {
+                    // Hard RunEQ workouts (tempo, intervals) have type: 'bike' and distance
+                    // Easy RunEQ workouts also have type: 'bike' and distance
+                    // RunEQ miles REPLACE runs - they ARE running miles
+                    calculatedTotalMileage += parseFloat(workout.distance);
+                } else if (workout.distance && workout.type !== 'rest' && workout.type !== 'rest_or_xt' && workout.type !== 'bike') {
+                    // Running workouts - add distance (exclude bike type since we already handled it above)
+                    calculatedTotalMileage += workout.distance;
+                }
+            });
+            
+            // CRITICAL: Always prefer calculated total (includes RunEQ that AI might have missed)
+            // The parser and PlanFixer should have already fixed week.totalMileage, but recalculate here as final check
+            let finalTotalMileage;
+            if (calculatedTotalMileage > 0) {
+                // Always use calculated total as the source of truth (it's based on actual workouts)
+                // Only fall back to week.totalMileage if calculation failed
+                finalTotalMileage = Math.round(calculatedTotalMileage);
+                if (Math.abs(finalTotalMileage - (week.totalMileage || 0)) > 1) {
+                    console.log(`  📊 Week ${week.weekNumber}: Using calculated ${finalTotalMileage}mi (week.totalMileage was ${week.totalMileage}mi)`);
+                }
+            } else {
+                // Calculation failed - use week.totalMileage as fallback
+                finalTotalMileage = week.totalMileage || 0;
+                if (finalTotalMileage === 0) {
+                    console.warn(`  ⚠️ Week ${week.weekNumber}: Could not calculate mileage from workouts, using 0`);
+                }
+            }
+            
             return {
                 weekNumber: week.weekNumber,
-                totalMileage: week.totalMileage,
+                totalMileage: finalTotalMileage,
                 workouts: dashboardWorkouts,
                 phase: phaseKey,
                 weeklyFocus: phaseFocusMap[phaseLabel] || 'Periodized training',
@@ -360,12 +452,102 @@ class PlanTransformer {
             };
         });
 
-        // Clean WORKOUT_ID tags from coaching analysis for display
-        // Use a more aggressive regex that catches all variations
-        const workoutIdRegex = /\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_[^\]]+\]\s*/gi;
-        const cleanedCoachingText = enrichedPlan.fullPlanText
+        // CRITICAL: Ensure race day is in the final week with correct distance, type, and focus
+        // The AI sometimes forgets to include it, or includes it with wrong distance/type
+        if (dashboardWeeks.length > 0 && userProfile.raceDate) {
+            const finalWeek = dashboardWeeks[dashboardWeeks.length - 1];
+            const hasSunday = finalWeek.workouts.some(w => w.day === 'Sunday');
+            
+            // Calculate correct race distance
+            // Handle both "Half" and "Half Marathon" formats
+            const raceDist = userProfile.raceDistance || '';
+            const correctRaceDistance = raceDist === 'Marathon' || raceDist.includes('Marathon') ? 26.2 :
+                                      raceDist === 'Half' || raceDist.includes('Half') ? 13.1 :
+                                      raceDist === '10K' || raceDist.includes('10K') ? 6.2 :
+                                      raceDist === '5K' || raceDist.includes('5K') ? 3.1 : 0;
+            
+            // Find existing race day workout (if any)
+            const existingRaceDayIndex = finalWeek.workouts.findIndex(w =>
+                w.type === 'race' ||
+                (w.name && w.name.toLowerCase().includes('race')) ||
+                (w.description && w.description.toLowerCase().includes('race day'))
+            );
+            
+            // Check if existing race day is correct
+            const existingRaceDay = existingRaceDayIndex >= 0 ? finalWeek.workouts[existingRaceDayIndex] : null;
+            const isRaceDayCorrect = existingRaceDay && 
+                                    existingRaceDay.type === 'race' &&
+                                    Math.abs(existingRaceDay.distance - correctRaceDistance) < 0.5 &&
+                                    existingRaceDay.focus === 'Race Day';
+            
+            // Get race distance for display
+            const raceDistanceDisplay = userProfile.raceDistance === 'Half' ? 'Half Marathon' : userProfile.raceDistance;
+            const goalTime = userProfile.raceTime || '';
+
+            if (!hasSunday || !existingRaceDay || !isRaceDayCorrect) {
+                const raceDayWorkout = {
+                    day: 'Sunday',
+                    type: 'race',
+                    name: `🏁 Race Day: ${raceDistanceDisplay}`,
+                    description: goalTime ? `${raceDistanceDisplay} - Goal: ${goalTime}` : `${raceDistanceDisplay} Race`,
+                    distance: correctRaceDistance,
+                    focus: 'Race Day',
+                    workout: {
+                        name: `🏁 Race Day: ${raceDistanceDisplay}`,
+                        description: `Your ${raceDistanceDisplay} race! Execute your race plan and trust your training.`
+                    },
+                    metadata: {
+                        isRaceDay: true,
+                        raceDistance: userProfile.raceDistance,
+                        goalTime: goalTime
+                    }
+                };
+
+                // Remove existing Sunday workout (whether it's a wrong race day or a regular workout)
+                if (hasSunday) {
+                    finalWeek.workouts = finalWeek.workouts.filter(w => w.day !== 'Sunday');
+                }
+
+                // Add correct race day workout
+                finalWeek.workouts.push(raceDayWorkout);
+                
+                if (existingRaceDay && !isRaceDayCorrect) {
+                    console.log(`🏁 Fixed Race Day in final week (Week ${finalWeek.weekNumber}): Was distance=${existingRaceDay.distance}, type=${existingRaceDay.type}, focus=${existingRaceDay.focus} → Now distance=${correctRaceDistance}, type=race, focus=Race Day`);
+                } else {
+                    console.log(`🏁 Injected Race Day into final week (Week ${finalWeek.weekNumber})`);
+                }
+            }
+        }
+
+        // Clean coaching analysis for welcome page display:
+        // 1. Remove WORKOUT_ID tags
+        // 2. Strip the detailed week-by-week schedule (users see this on dashboard instead)
+        // 3. Fix common AI typos (e.g., "miless" -> "miles")
+        const workoutIdRegex = /\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill|fartlek)_[^\]]+\]\s*/gi;
+        let cleanedCoachingText = enrichedPlan.fullPlanText
             ? enrichedPlan.fullPlanText.replace(workoutIdRegex, '').trim()
             : enrichedPlan.fullPlanText;
+
+        // Strip the detailed week-by-week plan from the coaching text
+        // This prevents showing duplicate/conflicting data on welcome page vs dashboard
+        if (cleanedCoachingText) {
+            // Remove everything from "# Week-by-Week Training Schedule" or "# DETAILED" onwards
+            const weekSchedulePatterns = [
+                /#+\s*Week-by-Week Training Schedule[\s\S]*/i,
+                /#+\s*DETAILED\s+\d+-WEEK\s+TRAINING\s+PLAN[\s\S]*/i,
+                /#+\s*\d+-WEEK\s+TRAINING\s+PLAN[\s\S]*/i
+            ];
+            for (const pattern of weekSchedulePatterns) {
+                cleanedCoachingText = cleanedCoachingText.replace(pattern, '').trim();
+            }
+
+            // Fix common AI typos (e.g., "miless" -> "miles")
+            cleanedCoachingText = cleanedCoachingText
+                .replace(/miless/gi, 'miles')
+                .replace(/milees/gi, 'miles')
+                .replace(/milles/gi, 'miles')
+                .replace(/milse/gi, 'miles');
+        }
 
         // Format as YYYY-MM-DD for consistency
         const startDateString = planStartDate.toISOString().split('T')[0];

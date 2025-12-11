@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TrainingPlanAIService from '../services/TrainingPlanAIService';
+import { PaceCalculator } from '../lib/pace-calculator';
 import logger from '../utils/logger';
 import './SimpleOnboardingFlow.css';
 
@@ -95,6 +96,23 @@ export default function SimpleOnboardingFlow({ onComplete }) {
       const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       const restDays = allDays.filter(day => !formData.availableDays.includes(day));
 
+      // GOAL PACE TRAP FIX: If no recent race time, calculate safe baseline (15% slower than goal)
+      const paceCalculator = new PaceCalculator();
+      let recentRaceTime = formData.recentRaceTime;
+      let isEstimatedFitness = false;
+      
+      if (!recentRaceTime && formData.goalTime && formData.raceDistance) {
+        // Extract just the time part if format is "Distance-Time"
+        const goalTimePart = formData.goalTime.includes('-') 
+          ? formData.goalTime.split('-')[1] 
+          : formData.goalTime;
+        
+        // Calculate 15% slower than goal time
+        recentRaceTime = paceCalculator.addBufferToTime(goalTimePart, 1.15);
+        isEstimatedFitness = true;
+        logger.log('⚠️ No recent race time provided. Defaulting to Safe Baseline:', recentRaceTime);
+      }
+
       const userProfile = {
         raceDistance: formData.raceDistance,
         raceTime: formData.goalTime,
@@ -102,9 +120,11 @@ export default function SimpleOnboardingFlow({ onComplete }) {
         raceElevationProfile: formData.raceElevationProfile || '',
         currentWeeklyMileage: formData.currentWeeklyMileage,
         currentLongRun: formData.currentLongRunDistance,
-        recentRaceTime: formData.recentRaceTime || formData.goalTime,
+        recentRaceTime: recentRaceTime || formData.goalTime, // Fallback to goal if calculation fails
         recentRaceDistance: formData.recentRaceDistance || formData.raceDistance,
-        runsPerWeek: formData.availableDays.length,
+        isEstimatedFitness: isEstimatedFitness, // Flag for prompt generation
+        workoutsPerWeek: formData.availableDays.length,
+        runsPerWeek: formData.availableDays.length, // Backward compatibility
         availableDays: formData.availableDays,
         restDays: restDays,
         longRunDay: formData.longRunDay,
@@ -153,7 +173,6 @@ export default function SimpleOnboardingFlow({ onComplete }) {
         <div className="loading-spinner"></div>
         <h2>🤖 Generating Your Personalized Training Plan...</h2>
         <p>Our AI coach is analyzing your goals and creating a custom plan just for you.</p>
-        <p className="loading-subtext">This may take 10-15 seconds...</p>
       </div>
     );
   }

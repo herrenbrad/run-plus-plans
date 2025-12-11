@@ -105,3 +105,10 @@ export const useStravaSync = ({ userProfile, trainingPlan, currentWeek }) => {
 
 export default useStravaSync;
 
+
+
+
+
+
+
+

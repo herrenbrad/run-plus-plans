@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import TrainingPlanService from '../services/TrainingPlanService';
+import InjuryRecoveryService from '../services/InjuryRecoveryService';
 import TrainingPlanAIService from '../services/TrainingPlanAIService';
 import FirestoreService from '../services/FirestoreService';
 import { auth } from '../firebase/config';
@@ -101,7 +101,7 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
       logger.log('  Selected equipment:', selectedEquipment);
       logger.log('  Reduce training days by:', reduceTrainingDays);
 
-      const trainingPlanService = new TrainingPlanService();
+      const injuryRecoveryService = new InjuryRecoveryService();
 
       // Create updated profile with injury recovery settings
       const updatedProfile = {
@@ -126,7 +126,7 @@ function InjuryRecoveryModal({ isOpen, onClose, userProfile, trainingPlan, curre
         firstWeekWorkouts: trainingPlan?.weeks?.[0]?.workouts?.length || 0
       });
       
-      const updatedPlan = await trainingPlanService.regeneratePlanWithInjury(
+      const updatedPlan = await injuryRecoveryService.regeneratePlanWithInjury(
         trainingPlan,
         updatedProfile,
         currentWeek,
