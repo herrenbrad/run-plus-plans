@@ -12,6 +12,37 @@ class PlanParser {
     }
 
     /**
+     * Fix common AI typos in text (e.g., "miless" -> "miles")
+     * @param {string} text - Raw text that may contain typos
+     * @returns {string} Cleaned text with typos fixed
+     */
+    fixCommonTypos(text) {
+        if (!text) return text;
+
+        // Fix common AI typos:
+        // - "miless" -> "miles" (extra 's')
+        // - "milees" -> "miles" (extra 'e')
+        // - "milles" -> "miles" (double 'l')
+        // - "mile s" -> "miles" (space before 's')
+        // - "milse" -> "miles" (missing 's')
+        // - "mies" -> "miles" (missing 'l')
+        // Also fix "minuites" -> "minutes" and similar
+        let cleaned = text
+            .replace(/miless/gi, 'miles')
+            .replace(/milees/gi, 'miles')
+            .replace(/milles/gi, 'miles')
+            .replace(/milse/gi, 'miles')
+            .replace(/mies/gi, 'miles')
+            .replace(/mile\s+s/gi, 'miles') // "mile s" -> "miles"
+            .replace(/minuites/gi, 'minutes')
+            .replace(/minuetes/gi, 'minutes')
+            .replace(/minuts/gi, 'minutes')
+            .replace(/minute\s+s/gi, 'minutes'); // "minute s" -> "minutes"
+
+        return cleaned;
+    }
+
+    /**
      * Parse AI-generated plan text into structured format
      * @param {string} planText - Raw AI response text
      * @param {object} userProfile - User profile for pace calculations
@@ -19,15 +50,39 @@ class PlanParser {
      * @returns {object} Structured plan with weeks, workouts, and paces
      */
     parseAIPlanToStructure(planText, userProfile, startingWeek = null) {
-        const lines = planText.split('\n');
+        // CRITICAL: Fix common AI typos before parsing
+        const cleanedPlanText = this.fixCommonTypos(planText);
+        const lines = cleanedPlanText.split('\n');
         const weeks = [];
         let currentWeek = null;
         let paces = {};
         const seenWeekNumbers = new Set();
+        let inDetailedSection = false; // Track if we're in the detailed week-by-week section
 
         console.log(`\n=== PARSING AI PLAN (${lines.length} lines) ===`);
 
         lines.forEach((line, lineIndex) => {
+            // Detect the start of the detailed week-by-week section
+            // Look for headers like "Week-by-Week", "WEEK-BY-WEEK", "Training Schedule", etc.
+            // Or markdown headers (###) followed by "Week" which typically indicate the detailed section
+            if (!inDetailedSection) {
+                const isDetailedSectionHeader = 
+                    line.match(/week-by-week|training schedule|weekly schedule|week.*schedule/i) ||
+                    (line.match(/^###\s+Week\s+\d+/i) && line.match(/\d+\s*(miles|kilometers|km|mi)/i));
+                
+                if (isDetailedSectionHeader) {
+                    inDetailedSection = true;
+                    console.log(`📍 Entered detailed section at line ${lineIndex}: "${line.substring(0, 80)}"`);
+                }
+                
+                // Also detect if we see a week header with dates in parentheses - this is typically the detailed section
+                // Format: "Week 1 (Nov 28 - Nov 30)" or "### Week 1 (Nov 28 - Nov 30)"
+                if (!inDetailedSection && line.match(/Week\s+\d+\s*\([^)]+\s*[-–—]\s*[^)]+\)/i)) {
+                    inDetailedSection = true;
+                    console.log(`📍 Entered detailed section at line ${lineIndex} (detected week with date range): "${line.substring(0, 80)}"`);
+                }
+            }
+
             // DEBUG: Log all lines that contain "Week" to see what we're missing
             if (line.toLowerCase().includes('week')) {
                 console.log(`Line ${lineIndex} contains "week": "${line}"`);
@@ -49,6 +104,31 @@ class PlanParser {
                 const weekNumMatch = line.match(/^[\s#*]*Week\s+(\d+)/i);
                 if (weekNumMatch) {
                     const weekNum = parseInt(weekNumMatch[1]);
+                    
+                    // CRITICAL: Only parse weeks from the detailed section
+                    // Summary sections (checkpoint weeks) typically use bold (**Week X:) without markdown headers
+                    // Detailed sections have "### Week X (dates) • Phase • XX miles" format
+                    const isDetailedWeekFormat = line.match(/^###\s+Week\s+\d+/i);
+                    const isSummaryWeekFormat = line.match(/^\*\*Week\s+\d+:/i); // Summary weeks: "**Week 6: description**"
+                    
+                    // If we haven't entered the detailed section yet, check if this line looks like a detailed week
+                    if (!inDetailedSection && isDetailedWeekFormat) {
+                        inDetailedSection = true;
+                        console.log(`📍 Entered detailed section at line ${lineIndex} (detected markdown header week format)`);
+                    }
+                    
+                    // Skip summary weeks (bold format without markdown headers) - these don't have day-by-day workouts
+                    if (isSummaryWeekFormat) {
+                        console.log(`⏭️ Skipping Week ${weekNum} from summary section (bold format, no workouts) - line ${lineIndex}`);
+                        return;
+                    }
+                    
+                    // Skip weeks from summary sections (before detailed section starts)
+                    // But allow weeks with markdown headers (###) even if we haven't detected the section yet
+                    if (!inDetailedSection && !isDetailedWeekFormat) {
+                        console.log(`⏭️ Skipping Week ${weekNum} from summary section (line ${lineIndex})`);
+                        return;
+                    }
                     
                     // Find the LAST occurrence of "number + miles/km" (to avoid matching dates like "Nov 28")
                     // Look for patterns like "16 miles", "24 kilometers", etc. at the end of the line
@@ -84,11 +164,22 @@ class PlanParser {
                 // Skip duplicate week numbers (from coaching analysis section)
                 if (seenWeekNumbers.has(weekNum)) {
                     console.log(`Skipping duplicate Week ${weekNum} at line ${lineIndex}`);
+                    // CRITICAL: Close the current week if we see a duplicate (prevents collecting workouts into wrong week)
+                    if (currentWeek && currentWeek.workouts.length > 0) {
+                        weeks.push(currentWeek);
+                        currentWeek = null;
+                    }
                     return;
                 }
 
+                // CRITICAL: Close previous week before starting a new one
+                // Only add weeks that have workouts (prevents null weeks from summary sections)
                 if (currentWeek) {
-                    weeks.push(currentWeek);
+                    if (currentWeek.workouts.length > 0) {
+                        weeks.push(currentWeek);
+                    } else {
+                        console.log(`⚠️ Skipping Week ${currentWeek.weekNumber} - no workouts found`);
+                    }
                 }
 
                 seenWeekNumbers.add(weekNum);
@@ -136,19 +227,30 @@ class PlanParser {
                 };
                 const fullDayName = dayAbbrevToFull[normalizedDayAbbrev] || normalizedDayAbbrev;
                 
-                const rawDescription = workoutMatch[2].trim();
+                let rawDescription = workoutMatch[2].trim();
+                
+                // CRITICAL: Fix typos immediately when extracting from AI text
+                rawDescription = this.fixCommonTypos(rawDescription);
 
                 // Extract workout ID if present: [WORKOUT_ID: type_category_index]
                 // Format examples:
                 //   tempo_ALTERNATING_TEMPO_0 -> type:tempo, category:ALTERNATING_TEMPO, index:0
                 //   hill_medium_vo2_0 -> type:hill, category:medium_vo2, index:0
                 //   longrun_TRADITIONAL_EASY_1 -> type:longrun, category:TRADITIONAL_EASY, index:1
-                const idMatch = rawDescription.match(/\[WORKOUT_ID:\s*(tempo|interval|longrun|hill)_(.+?)_(\d+)\]/);
+                const idMatch = rawDescription.match(/\[WORKOUT_ID:\s*(tempo|interval|longrun|hill|fartlek)_(.+?)_(\d+)\]/);
 
-                // Remove the WORKOUT_ID tag from description for display
-                const cleanDescription = idMatch
-                    ? rawDescription.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill)_.+?_\d+\]\s*/, '').trim()
-                    : rawDescription;
+                // Extract bike workout format: [WORKOUT: CATEGORY - Name]
+                // Format example: [WORKOUT: RECOVERY_SPECIFIC - Recovery Spin]
+                const bikeMatch = rawDescription.match(/\[WORKOUT:\s*([A-Z_]+)\s*-\s*(.+?)\]/);
+
+                // Remove the WORKOUT_ID or WORKOUT tag from description for display
+                let cleanDescription = rawDescription;
+                if (idMatch) {
+                    cleanDescription = rawDescription.replace(/\[WORKOUT_ID:\s*(?:tempo|interval|longrun|hill|fartlek)_.+?_\d+\]\s*/, '').trim();
+                } else if (bikeMatch) {
+                    // For bike workouts, keep the workout name but remove the tag
+                    cleanDescription = rawDescription.replace(/\[WORKOUT:\s*[A-Z_]+\s*-\s*.+?\]\s*/, '').trim();
+                }
                 
                 // CRITICAL: Store original description before cleaning for distance extraction
                 const originalDescription = rawDescription;
@@ -168,10 +270,11 @@ class PlanParser {
                     day: fullDayName, // Use full day name for Dashboard compatibility
                     description: cleanDescription,
                     originalDescription: originalDescription, // Store original for distance extraction
-                    workoutId: idMatch ? idMatch[0] : null,
-                    workoutType: idMatch ? idMatch[1] : inferredType,
-                    workoutCategory: idMatch ? idMatch[2] : null,
-                    workoutIndex: idMatch ? parseInt(idMatch[3]) : null
+                    workoutId: idMatch ? idMatch[0] : (bikeMatch ? bikeMatch[0] : null),
+                    workoutType: idMatch ? idMatch[1] : (bikeMatch ? 'bike' : inferredType),
+                    workoutCategory: idMatch ? idMatch[2] : (bikeMatch ? bikeMatch[1] : null),
+                    workoutIndex: idMatch ? parseInt(idMatch[3]) : (bikeMatch ? bikeMatch[2] : null), // For bike, store the workout name
+                    bikeWorkoutName: bikeMatch ? bikeMatch[2].trim() : null // Store the workout name for bike workouts
                 });
                 console.log(`  ✅ Added workout: ${fullDayName} - ${cleanDescription.substring(0, 50)}`);
                 console.log(`     Day abbreviation: ${workoutMatch[1]}, Full name: ${fullDayName}`);
@@ -229,9 +332,53 @@ class PlanParser {
             }
         });
 
+        // Add the final week if it has workouts
         if (currentWeek) {
-            weeks.push(currentWeek);
+            if (currentWeek.workouts.length > 0) {
+                weeks.push(currentWeek);
+            } else {
+                console.log(`⚠️ Skipping final Week ${currentWeek.weekNumber} - no workouts found`);
+            }
         }
+
+        // CRITICAL: Recalculate totalMileage from actual workouts (AI's number is often wrong - doesn't include RunEQ)
+        weeks.forEach(week => {
+            let calculatedTotal = 0;
+            week.workouts.forEach(workout => {
+                const desc = workout.description || '';
+                const origDesc = workout.originalDescription || '';
+                
+                // Check for RunEQ miles first (they count as running miles)
+                // Match patterns like "Ride 4 RunEQ miles" or "4 RunEQ miles"
+                const runEqMatch = desc.match(/(\d+(?:\.\d+)?)\s*RunEQ/i) || 
+                                  origDesc.match(/(\d+(?:\.\d+)?)\s*RunEQ/i);
+                if (runEqMatch) {
+                    const runEqValue = parseFloat(runEqMatch[1]);
+                    calculatedTotal += runEqValue;
+                    console.log(`    📏 RunEQ: ${runEqValue} miles from "${desc.substring(0, 40)}"`);
+                } else if (desc.toLowerCase().includes('rest')) {
+                    // Rest days don't count
+                } else {
+                    // Regular running workout - extract miles
+                    // Match patterns like "6 miles" or "Long Run 7 miles" or "Tempo Run 6 miles"
+                    const runMatch = desc.match(/(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)\b/i) ||
+                                    origDesc.match(/(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)\b/i);
+                    if (runMatch) {
+                        const runValue = parseFloat(runMatch[1]);
+                        calculatedTotal += runValue;
+                        console.log(`    📏 Run: ${runValue} miles from "${desc.substring(0, 40)}"`);
+                    }
+                }
+            });
+            // ALWAYS use calculated total (includes RunEQ) instead of AI's number
+            const oldTotal = week.totalMileage;
+            week.totalMileage = calculatedTotal > 0 ? Math.round(calculatedTotal) : oldTotal;
+            if (calculatedTotal > 0 && Math.abs(oldTotal - week.totalMileage) > 1) {
+                console.log(`  📊 Week ${week.weekNumber}: AI said ${oldTotal}mi, calculated ${week.totalMileage}mi (includes RunEQ)`);
+            } else if (calculatedTotal > 0) {
+                console.log(`  ✅ Week ${week.weekNumber}: ${week.totalMileage}mi (matches AI or calculated correctly)`);
+            }
+        });
 
         console.log(`\n=== PARSING COMPLETE ===`);
         console.log(`Parsed ${weeks.length} weeks:`, weeks.map(w => `Week ${w.weekNumber} (${w.totalMileage}mi, ${w.workouts.length} workouts)`));

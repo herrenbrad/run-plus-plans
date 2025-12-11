@@ -829,6 +829,7 @@ export class StandUpBikeWorkoutLibrary {
         let workout = null;
         let category = null;
 
+        // First try exact or substring match
         for (const [cat, workouts] of Object.entries(this.workoutLibrary)) {
             const found = workouts.find(w =>
                 (w.name.toLowerCase().includes(workoutName.toLowerCase()) ||
@@ -839,6 +840,26 @@ export class StandUpBikeWorkoutLibrary {
                 workout = found;
                 category = cat;
                 break;
+            }
+        }
+        
+        // If no exact match, try fuzzy matching by key words (e.g., "Recovery Spin" -> "Recovery Ride")
+        if (!workout) {
+            const workoutNameLower = workoutName.toLowerCase();
+            const keyWords = workoutNameLower.split(/\s+/).filter(w => w.length > 3); // Get meaningful words
+            
+            for (const [cat, workouts] of Object.entries(this.workoutLibrary)) {
+                const found = workouts.find(w => {
+                    const wNameLower = w.name.toLowerCase();
+                    // Check if any key word from workoutName appears in the library workout name
+                    const hasMatchingKeyWord = keyWords.some(keyWord => wNameLower.includes(keyWord));
+                    return hasMatchingKeyWord && (w.equipment === equipment || w.equipment === "both");
+                });
+                if (found) {
+                    workout = found;
+                    category = cat;
+                    break;
+                }
             }
         }
 

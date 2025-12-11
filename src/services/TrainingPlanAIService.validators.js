@@ -39,15 +39,25 @@ export function validateHardDays(weeks, qualityDays) {
     week.workouts.forEach(workout => {
       if (qualityDays.includes(workout.day)) {
         const descLower = (workout.description || '').toLowerCase();
-        const isHardWorkout = descLower.includes('tempo') || 
+        // CRITICAL: Check workoutType FIRST - it's more reliable than description text
+        const isHardWorkout = workout.workoutType === 'tempo' ||
+                             workout.workoutType === 'interval' ||
+                             workout.workoutType === 'hill' ||
+                             workout.type === 'tempo' ||
+                             workout.type === 'interval' ||
+                             workout.type === 'hill' ||
+                             descLower.includes('tempo') || 
                              descLower.includes('interval') || 
                              descLower.includes('hill') ||
-                             descLower.includes('speed') ||
-                             workout.workoutType === 'tempo' ||
-                             workout.workoutType === 'interval' ||
-                             workout.workoutType === 'hill';
+                             descLower.includes('speed');
         const isRest = descLower.includes('rest') || workout.type === 'rest';
-        const isEasy = descLower.includes('easy') && !isHardWorkout;
+        // Only flag as "easy" if it's explicitly an easy run AND not a hard workout
+        // Note: Some hard workouts (like "Sandwich Tempo") have "easy" in their description
+        // but are still hard workouts, so we check workoutType first
+        const isEasy = descLower.includes('easy') && !isHardWorkout && 
+                      !descLower.includes('tempo') && 
+                      !descLower.includes('interval') && 
+                      !descLower.includes('hill');
         
         if (isRest || (isEasy && !isHardWorkout)) {
           errors.push(`Week ${week.weekNumber}: ${workout.day} is a hard day but has ${workout.description}`);
@@ -119,6 +129,52 @@ export function validateRunEQMiles(weeks) {
   
   if (errors.length > 0) {
     console.error('❌ RUNEQ MILES VALIDATION FAILED:', errors);
+    return { valid: false, errors };
+  }
+  
+  return { valid: true };
+}
+
+/**
+ * Validate that every week has a long run (except race week which has race day)
+ */
+export function validateLongRunsPresent(weeks, longRunDay = 'Sunday', isRaceWeek = null) {
+  const errors = [];
+  
+  weeks.forEach((week, index) => {
+    // Skip race week (final week) - it should have race day instead
+    const isFinalWeek = index === weeks.length - 1;
+    const shouldHaveRaceDay = isRaceWeek !== null ? isRaceWeek : isFinalWeek;
+    
+    if (shouldHaveRaceDay) {
+      // Check for race day instead
+      const hasRaceDay = week.workouts.some(w =>
+        w.type === 'race' ||
+        (w.name && w.name.toLowerCase().includes('race')) ||
+        (w.description && w.description.toLowerCase().includes('race day'))
+      );
+      if (!hasRaceDay) {
+        errors.push(`Week ${week.weekNumber}: Final week missing race day workout`);
+      }
+      return; // Skip long run check for race week
+    }
+    
+    // Check for long run on specified day
+    const hasLongRun = week.workouts.some(w =>
+      w.type === 'longRun' ||
+      (w.day === longRunDay && (
+        (w.description || '').toLowerCase().includes('long run') ||
+        (w.name || '').toLowerCase().includes('long run')
+      ))
+    );
+    
+    if (!hasLongRun) {
+      errors.push(`Week ${week.weekNumber}: Missing long run on ${longRunDay}`);
+    }
+  });
+  
+  if (errors.length > 0) {
+    console.error('❌ LONG RUN PRESENCE VALIDATION FAILED:', errors);
     return { valid: false, errors };
   }
   
@@ -238,6 +294,16 @@ export function validateTrainingPlan(plan, userProfile) {
   if (!runEQResult.valid) {
     results.valid = false;
     results.errors.push(...runEQResult.errors);
+  }
+  
+  // Validate long runs present
+  // CRITICAL: Pass null for isRaceWeek so function determines final week itself
+  // Don't pass true for all weeks just because raceDate exists!
+  const longRunDay = userProfile?.longRunDay || 'Sunday';
+  const longRunsResult = validateLongRunsPresent(plan.weeks, longRunDay, null);
+  if (!longRunsResult.valid) {
+    results.valid = false;
+    results.errors.push(...longRunsResult.errors);
   }
   
   // Validate long run distance
