@@ -186,6 +186,58 @@ export class HillWorkoutLibrary {
                         cooldown: "15 min easy"
                     },
                     focus: "Terrain adaptation, variable pacing, race preparation"
+                },
+                {
+                    name: "Kenyan Hills",
+                    duration: "40-55 minutes total",
+                    description: "Tempo-style continuous hill running - maintain effort on BOTH uphills AND downhills. No recovery zone.",
+                    hillRequirement: {
+                        grade: "moderate",
+                        distance: "400m - 1 mile loop",
+                        description: "Find an undulating loop with varied terrain - doesn't need to be one big hill"
+                    },
+                    workout: {
+                        warmup: "10-15 min easy jog to the loop",
+                        main: "20-30 min continuous loops OR 2x15 min with 2 min recovery",
+                        execution: "Maintain EFFORT on uphills, downhills, AND flats - pace varies, effort stays constant",
+                        cooldown: "10-15 min easy jog"
+                    },
+                    intensity: "Moderately Hard (TE 3.0-3.5)",
+                    effort: {
+                        heartRate: "Zone 3-4 (~85-90% max HR) - may drop slightly on descents but NEVER to recovery zone",
+                        perceived: "Tempo effort throughout - comfortably hard, sustainable but challenging"
+                    },
+                    focus: "Sustained threshold effort on varied terrain, downhill running skill, mental toughness",
+                    benefits: "Leg strength and tendon development, threshold endurance, learn to run FAST downhill (race skill!), faster leg turnover on all surfaces",
+                    coachingTips: [
+                        "Plan your loop in advance - don't think about directions while suffering",
+                        "Great with a training partner, even at different paces",
+                        "Pace WILL vary - focus on EFFORT staying constant",
+                        "If you're recovering on the downhills, you're doing regular hills, not Kenyan Hills",
+                        "The downhill is NOT recovery - that's what makes it 'Kenyan'"
+                    ],
+                    safetyNotes: [
+                        "Downhill at tempo is higher injury risk - stay controlled",
+                        "Build up gradually - start with 15 min continuous",
+                        "Focus on quick cadence on descent, not long strides"
+                    ],
+                    progression: {
+                        beginner: "15-20 min continuous",
+                        intermediate: "2 x 15 min with 2 min recovery",
+                        advanced: "30 min continuous at true tempo effort"
+                    },
+                    perfectFor: [
+                        "Bored of regular tempo runs",
+                        "Hilly race preparation (Boston, Medellín!)",
+                        "Time-crunched training (high ROI)",
+                        "Runners who need downhill practice"
+                    ],
+                    runEqOptions: {
+                        optionA: "Full running workout as prescribed",
+                        optionB: "Warmup/cooldown on Cyclete, Kenyan Hills running",
+                        optionC: "Alternate loops: 1 running, 1 Cyclete",
+                        optionD: "Full Cyclete on hilly route (maintain tempo effort up AND down)"
+                    }
                 }
             ],
 

@@ -119,3 +119,105 @@ export function formatWorkoutDate(date) {
   return date.toLocaleDateString('en-US', options);
 }
 
+/**
+ * Check if a workout date is in the past
+ * @param {number} weekNumber - Week number (1-based)
+ * @param {string} dayName - Day name (e.g., "Monday", "Tuesday")
+ * @param {object} trainingPlan - Training plan with planOverview.startDate
+ * @returns {boolean} True if workout date is in the past
+ */
+export function isWorkoutInPast(weekNumber, dayName, trainingPlan) {
+  if (!trainingPlan?.planOverview?.startDate) {
+    return false;
+  }
+
+  const planStartDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
+  const msPerDay = 24 * 60 * 60 * 1000;
+
+  // Calculate the Monday of the week containing the start date (same as getWeekDateRange)
+  const dayOfWeek = planStartDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+  const mondayOfStartWeek = new Date(planStartDate.getTime() - (daysFromMonday * msPerDay));
+
+  // Calculate the Monday of the requested week
+  const weekStartDate = new Date(mondayOfStartWeek.getTime() + ((weekNumber - 1) * 7 * msPerDay));
+
+  // Map day names to offset from Monday
+  const dayOffsets = {
+    'Monday': 0, 'Mon': 0,
+    'Tuesday': 1, 'Tue': 1,
+    'Wednesday': 2, 'Wed': 2,
+    'Thursday': 3, 'Thu': 3,
+    'Friday': 4, 'Fri': 4,
+    'Saturday': 5, 'Sat': 5,
+    'Sunday': 6, 'Sun': 6
+  };
+
+  const daysToAdd = dayOffsets[dayName];
+  if (daysToAdd === undefined) {
+    return false; // Unknown day name, can't determine if past
+  }
+
+  const workoutDate = new Date(weekStartDate.getTime() + (daysToAdd * msPerDay));
+
+  // Set both dates to midnight for fair comparison
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  workoutDate.setHours(0, 0, 0, 0);
+
+  return workoutDate < today;
+}
+
+/**
+ * Check if a workout is before the plan's start date (for filtering Week 1 partial weeks)
+ * @param {number} weekNumber - Week number (1-based)
+ * @param {string} dayName - Day name (e.g., "Monday", "Tuesday")
+ * @param {object} trainingPlan - Training plan with planOverview.startDate
+ * @returns {boolean} True if workout is before plan start date
+ */
+export function isWorkoutBeforePlanStart(weekNumber, dayName, trainingPlan) {
+  // Only applies to Week 1
+  if (weekNumber !== 1) return false;
+
+  if (!trainingPlan?.planOverview?.startDate) {
+    return false;
+  }
+
+  const planStartDate = new Date(trainingPlan.planOverview.startDate + 'T00:00:00');
+  const planStartDayOfWeek = planStartDate.getDay(); // 0 = Sunday, 6 = Saturday
+
+  // Map day names to day of week numbers (includes abbreviations)
+  const dayOfWeekNumbers = {
+    'Sunday': 0, 'Sun': 0,
+    'Monday': 1, 'Mon': 1,
+    'Tuesday': 2, 'Tue': 2,
+    'Wednesday': 3, 'Wed': 3,
+    'Thursday': 4, 'Thu': 4,
+    'Friday': 5, 'Fri': 5,
+    'Saturday': 6, 'Sat': 6
+  };
+
+  const workoutDayOfWeek = dayOfWeekNumbers[dayName];
+  if (workoutDayOfWeek === undefined) {
+    return false;
+  }
+
+  // For Week 1, we need to filter days that come before the start day
+  // Week structure: Mon(1), Tue(2), Wed(3), Thu(4), Fri(5), Sat(6), Sun(0)
+  // If plan starts Saturday (6), we want to keep Sat(6) and Sun(0), filter Mon-Fri(1-5)
+  // If plan starts Wednesday (3), we want to keep Wed-Sun, filter Mon-Tue(1-2)
+
+  // Sunday (0) is special - it's always the END of the week, so never filter it
+  if (workoutDayOfWeek === 0) {
+    return false; // Sunday is always included
+  }
+
+  // For all other days, filter if the workout day is before the start day
+  // (but only if start day isn't Sunday, which would mean full week)
+  if (planStartDayOfWeek !== 0 && workoutDayOfWeek < planStartDayOfWeek) {
+    return true; // Day is before plan started this week
+  }
+
+  return false;
+}
+

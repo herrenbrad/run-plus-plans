@@ -10,6 +10,7 @@ import { IntervalWorkoutLibrary } from './interval-workout-library.js';
 import { LongRunWorkoutLibrary } from './long-run-workout-library.js';
 import { StandUpBikeWorkoutLibrary } from './standup-bike-workout-library.js';
 import { PaceCalculator } from './pace-calculator.js';
+import { PlanMathCalculator } from './plan-math-calculator.js';
 import logger from '../utils/logger.js';
 
 export class TrainingPlanGenerator {
@@ -120,7 +121,8 @@ export class TrainingPlanGenerator {
             raceTime = null,
             raceDate = null,             // Race date for final week "Race Day" workout
             currentPaces = null,
-            runsPerWeek = 4,
+            workoutsPerWeek = null, // New field name
+            runsPerWeek = null, // Backward compatibility - prefer workoutsPerWeek
             runEqPreference = 0,
             weeksAvailable = null,
             experienceLevel, // beginner, intermediate, advanced - required
@@ -191,10 +193,12 @@ export class TrainingPlanGenerator {
                     useProgression: true
                 };
             } else {
-                // No current fitness data - use goal paces (old behavior, but logged as warning)
-                console.warn('⚠️ No current fitness data provided - using goal paces from Week 1');
-                console.warn('   This may prescribe paces that are too fast for current fitness level');
-                trainingPaces = goalPaces;
+                // GOAL PACE TRAP FIX: No current fitness data - use SAFE START PACES (15% slower than goal)
+                console.warn('⚠️ No current fitness data provided - defaulting to Safe Start Paces (15% slower than goal)');
+                console.warn('   This prevents injury risk from starting at goal pace when current fitness is unknown');
+                // Create safety buffer: 15% slower = multiply seconds by 1.15
+                const safetyPaces = this.paceCalculator.adjustPaces(goalPaces, 1.15);
+                trainingPaces = safetyPaces;
             }
         } else {
             throw new Error("Either currentPaces or raceTime must be provided");
@@ -203,10 +207,17 @@ export class TrainingPlanGenerator {
         // Determine plan length
         const planWeeks = weeksAvailable || template.weeksRecommended;
 
+        // Use workoutsPerWeek if provided, otherwise fall back to runsPerWeek
+        const effectiveWorkoutsPerWeek = workoutsPerWeek || runsPerWeek;
+        
+        if (!effectiveWorkoutsPerWeek) {
+            throw new Error('workoutsPerWeek or runsPerWeek is required');
+        }
+
         // Calculate weekly structure using USER inputs
         const weeklyStructure = this.calculateWeeklyStructure(
             template,
-            runsPerWeek,
+            effectiveWorkoutsPerWeek,
             experienceLevel,
             availableDays,
             hardSessionDays,
@@ -317,7 +328,8 @@ export class TrainingPlanGenerator {
             planOverview: {
                 raceDistance,
                 raceTime,
-                runsPerWeek,
+                workoutsPerWeek: effectiveWorkoutsPerWeek, // Use new field name
+                runsPerWeek: effectiveWorkoutsPerWeek, // Keep for backward compatibility
                 totalWeeks: planWeeks,
                 runEqPreference,
                 experienceLevel,
@@ -350,10 +362,12 @@ export class TrainingPlanGenerator {
     /**
      * Calculate optimal weekly structure using USER schedule inputs
      */
-    calculateWeeklyStructure(template, runsPerWeek, experienceLevel, availableDays, hardSessionDays, longRunDay, preferredBikeDays, currentWeeklyMileage, startDay) {
-        const runIndex = template.runsPerWeek.indexOf(runsPerWeek);
+    calculateWeeklyStructure(template, workoutsPerWeek, experienceLevel, availableDays, hardSessionDays, longRunDay, preferredBikeDays, currentWeeklyMileage, startDay) {
+        // Support both field names in template (backward compatibility)
+        const templateWorkouts = template.workoutsPerWeek || template.runsPerWeek;
+        const runIndex = templateWorkouts.indexOf(workoutsPerWeek);
         if (runIndex === -1) {
-            throw new Error(`${runsPerWeek} runs per week not supported for this distance`);
+            throw new Error(`${workoutsPerWeek} workouts per week not supported for this distance`);
         }
 
         logger.log('📊 calculateWeeklyStructure received:');
@@ -367,22 +381,23 @@ export class TrainingPlanGenerator {
         logger.log('📊 DIAGNOSTIC - Template values at structure creation:');
         logger.log('  template.peakWeeklyMileage array:', template.peakWeeklyMileage);
         logger.log('  template.longRunMax array:', template.longRunMax);
-        logger.log('  runIndex:', runIndex, '(for', runsPerWeek, 'runs/week)');
+        logger.log('  runIndex:', runIndex, '(for', workoutsPerWeek, 'workouts/week)');
         logger.log('  Selected peakMileage:', template.peakWeeklyMileage[runIndex]);
         logger.log('  Selected longRunMax:', template.longRunMax[runIndex]);
 
         const structure = {
-            runsPerWeek,
+            workoutsPerWeek: workoutsPerWeek, // New field name
+            runsPerWeek: workoutsPerWeek, // Backward compatibility
             peakMileage: template.peakWeeklyMileage[runIndex],
             longRunMax: template.longRunMax[runIndex],
             currentWeeklyMileage: currentWeeklyMileage, // Store for Week 1 calculation
             currentLongRunDistance: 0, // Store current long run for progressive build
             // USER SCHEDULE - not hardcoded!
-            availableDays: availableDays || this.getDefaultAvailableDays(runsPerWeek),
+            availableDays: availableDays || this.getDefaultAvailableDays(workoutsPerWeek),
             hardSessionDays: hardSessionDays || [],
             longRunDay: longRunDay || 'Saturday',
             preferredBikeDays: preferredBikeDays || [],
-            restDays: 7 - runsPerWeek,
+            restDays: 7 - workoutsPerWeek,
             startDay: startDay // e.g., 'Friday' for Week 1 partial week
         };
 
@@ -543,7 +558,7 @@ export class TrainingPlanGenerator {
 
         // Generate workouts for each day using USER schedule
         const workouts = this.generateWeekWorkouts(
-            structure.runsPerWeek,
+            structure.workoutsPerWeek || structure.runsPerWeek,
             weeklyMileage,
             currentPhase,
             template,
@@ -555,7 +570,8 @@ export class TrainingPlanGenerator {
             standUpBikeType,
             structure,  // Pass the full structure with user's schedule
             runningStatus,  // Pass running status for bike-only mode
-            hasGarmin  // Pass hasGarmin preference for workout formatting
+            hasGarmin,  // Pass hasGarmin preference for workout formatting
+            isRestWeek  // Pass isRestWeek flag for recovery week intensity reduction
         );
 
         return {
@@ -572,7 +588,7 @@ export class TrainingPlanGenerator {
     /**
      * Generate workouts for a specific week using USER schedule inputs
      */
-    generateWeekWorkouts(runsPerWeek, weeklyMileage, phase, template, paces, runEqPreference, experienceLevel, weekNumber, totalWeeks, standUpBikeType, structure, runningStatus = 'active', hasGarmin = true) {
+    generateWeekWorkouts(runsPerWeek, weeklyMileage, phase, template, paces, runEqPreference, experienceLevel, weekNumber, totalWeeks, standUpBikeType, structure, runningStatus = 'active', hasGarmin = true, isRestWeek = false) {
         const workouts = [];
         const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -606,30 +622,142 @@ export class TrainingPlanGenerator {
         const baseOtherMiles = Math.round(remainingMiles / (runsPerWeek - 1));
 
         // Helper function to calculate workout-specific distance
+        // Recovery weeks: reduce all distances by ~20%
+        const distanceMultiplier = isRestWeek ? 0.8 : 1.0;
         const calculateWorkoutDistance = (workoutType) => {
+            let baseDistance;
             switch(workoutType) {
                 case 'tempo':
                     // Tempo needs warmup + tempo work + cooldown
-                    return Math.round(baseOtherMiles * 1.4);
+                    baseDistance = Math.round(baseOtherMiles * 1.4);
+                    break;
                 case 'intervals':
                     // Intervals need warmup + work + cooldown
-                    return Math.round(baseOtherMiles * 1.25);
+                    baseDistance = Math.round(baseOtherMiles * 1.25);
+                    break;
                 case 'hills':
                     // Hills take longer with climbs
-                    return Math.round(baseOtherMiles * 1.2);
+                    baseDistance = Math.round(baseOtherMiles * 1.2);
+                    break;
                 case 'bike':
                 case 'recovery':
                     // Bike/recovery days are shorter
-                    return Math.round(baseOtherMiles * 0.8);
+                    baseDistance = Math.round(baseOtherMiles * 0.8);
+                    break;
                 case 'easy':
                 default:
                     // Easy runs are base distance
-                    return baseOtherMiles;
+                    baseDistance = baseOtherMiles;
+                    break;
             }
+            // Apply recovery week reduction
+            return Math.round(baseDistance * distanceMultiplier);
         };
 
         // Track which hard session we're on
         let hardSessionIndex = 0;
+
+        // TASK 2: RACE WEEK STRUCTURE - Force taper schedule for final week
+        const isRaceWeek = weekNumber === totalWeeks;
+        if (isRaceWeek) {
+            logger.log(`🏁 RACE WEEK DETECTED - Enforcing taper schedule`);
+            // Race week: Very short volume, no hard workouts, race on Sunday
+            // Mon/Tue: Very Short Easy Runs (30-40% volume)
+            // Wed: Shakeout (2-3 miles)
+            // Thu/Fri: Rest
+            // Sat: Shakeout or Rest
+            // Sun: Race Day (handled separately by race day feature)
+            
+            const raceWeekVolume = Math.round(weeklyMileage * 0.35); // 35% of normal volume
+            const shakeoutDistance = 2; // 2-3 miles for shakeout
+            
+            allDays.forEach(day => {
+                if (day === 'Monday' || day === 'Tuesday') {
+                    // Very short easy runs (30-40% volume)
+                    if (availableDays.includes(day)) {
+                        const easyDistance = Math.round(raceWeekVolume * 0.4);
+                        const paceData = paces.paces || paces;
+                        workouts.push({
+                            day,
+                            type: 'easy',
+                            workout: this.generateEasyRun(easyDistance, runEqPreference, paceData),
+                            distance: easyDistance,
+                            focus: 'Recovery'
+                        });
+                    } else {
+                        workouts.push({
+                            day,
+                            type: 'rest',
+                            workout: { name: 'Rest Day', description: 'Complete rest' },
+                            distance: 0,
+                            focus: 'Recovery'
+                        });
+                    }
+                } else if (day === 'Wednesday') {
+                    // Shakeout (2-3 miles)
+                    if (availableDays.includes(day)) {
+                        const paceData = paces.paces || paces;
+                        workouts.push({
+                            day,
+                            type: 'easy',
+                            workout: this.generateEasyRun(shakeoutDistance, runEqPreference, paceData),
+                            distance: shakeoutDistance,
+                            focus: 'Shakeout'
+                        });
+                    } else {
+                        workouts.push({
+                            day,
+                            type: 'rest',
+                            workout: { name: 'Rest Day', description: 'Complete rest' },
+                            distance: 0,
+                            focus: 'Recovery'
+                        });
+                    }
+                } else if (day === 'Thursday' || day === 'Friday') {
+                    // Rest days
+                    workouts.push({
+                        day,
+                        type: 'rest',
+                        workout: { name: 'Rest Day', description: 'Complete rest before race' },
+                        distance: 0,
+                        focus: 'Recovery'
+                    });
+                } else if (day === 'Saturday') {
+                    // Shakeout or Rest
+                    if (availableDays.includes(day)) {
+                        const paceData = paces.paces || paces;
+                        workouts.push({
+                            day,
+                            type: 'easy',
+                            workout: this.generateEasyRun(shakeoutDistance, runEqPreference, paceData),
+                            distance: shakeoutDistance,
+                            focus: 'Shakeout'
+                        });
+                    } else {
+                        workouts.push({
+                            day,
+                            type: 'rest',
+                            workout: { name: 'Rest Day', description: 'Complete rest before race' },
+                            distance: 0,
+                            focus: 'Recovery'
+                        });
+                    }
+                } else if (day === 'Sunday') {
+                    // Race Day - will be replaced by generateRaceDayWorkout if race date provided
+                    // For now, create placeholder that will be replaced
+                    workouts.push({
+                        day,
+                        type: 'longRun', // Placeholder - will be replaced by race day feature
+                        workout: this.selectLongRunWorkout(phase, longRunMiles, runEqPreference, paces.paces || paces),
+                        distance: longRunMiles,
+                        focus: 'Race Day'
+                    });
+                }
+            });
+            
+            logger.log(`✅ Race week taper schedule generated (${raceWeekVolume} miles total)`);
+            return workouts; // Early return - race week handled
+        }
 
         // For Week 1, only generate workouts from start date through Sunday
         // Get start day from structure (passed from options)
@@ -723,12 +851,25 @@ export class TrainingPlanGenerator {
                 } else {
                     // Normal running hard sessions
                     logger.log(`     ✅ Result: HARD RUN SESSION (hardSessionIndex: ${hardSessionIndex})`);
-                    const workoutType = this.selectWorkoutType(hardSessionIndex, phase, template);
+                    let workoutType = this.selectWorkoutType(hardSessionIndex, phase, template);
+                    
+                    // RECOVERY WEEK AMNESIA FIX: Downgrade intensity during recovery weeks
+                    if (isRestWeek) {
+                        logger.log(`     🔄 Recovery Week: Downgrading ${workoutType} intensity`);
+                        if (workoutType === 'intervals') {
+                            workoutType = 'intervals_recovery'; // Flag for MIXED_INTERVALS category
+                        } else if (workoutType === 'tempo') {
+                            workoutType = 'tempo_recovery'; // Flag for TRADITIONAL_TEMPO category
+                        } else if (workoutType === 'hills') {
+                            workoutType = 'hills_recovery'; // Flag for short_power category
+                        }
+                    }
+                    
                     const workoutDistance = calculateWorkoutDistance(workoutType);
                     workouts.push({
                         day,
                         type: workoutType,
-                        workout: this.selectQualityWorkout(workoutType, phase, workoutDistance, runEqPreference, paces, weekNumber, totalWeeks),
+                        workout: this.selectQualityWorkout(workoutType, phase, workoutDistance, runEqPreference, paces, weekNumber, totalWeeks, isRestWeek),
                         distance: workoutDistance,
                         focus: this.getWorkoutFocus(workoutType)
                     });
@@ -843,12 +984,21 @@ export class TrainingPlanGenerator {
     /**
      * Select specific workout from appropriate library with USER-SPECIFIC PACES
      */
-    selectQualityWorkout(workoutType, phase, targetDistance, runEqPreference, paces, weekNumber, totalWeeks) {
+    selectQualityWorkout(workoutType, phase, targetDistance, runEqPreference, paces, weekNumber, totalWeeks, isRestWeek = false) {
         const phaseInfo = this.trainingPhases[phase.phase];
 
         // Extract pace data and track intervals from full pace object
         const paceData = paces.paces || paces; // Handle both formats
         const trackIntervals = paces.trackIntervals || null;
+
+        // RECOVERY WEEK AMNESIA FIX: Route to downgraded categories
+        if (workoutType === 'intervals_recovery') {
+            return this.selectIntervalWorkout(phase, runEqPreference, paceData, trackIntervals, weekNumber, totalWeeks, 'MIXED_INTERVALS');
+        } else if (workoutType === 'tempo_recovery') {
+            return this.selectTempoWorkout(phase, runEqPreference, paceData, weekNumber, totalWeeks, 'TRADITIONAL_TEMPO');
+        } else if (workoutType === 'hills_recovery') {
+            return this.selectHillWorkout(phase, runEqPreference, paceData, weekNumber, totalWeeks, 'short_power');
+        }
 
         switch (workoutType) {
             case "hills":
@@ -862,9 +1012,10 @@ export class TrainingPlanGenerator {
         }
     }
 
-    selectHillWorkout(phase, runEqPreference, paces, weekNumber, totalWeeks) {
+    selectHillWorkout(phase, runEqPreference, paces, weekNumber, totalWeeks, forcedCategory = null) {
         const phaseInfo = this.trainingPhases[phase.phase];
-        const category = phaseInfo.hillFocus;
+        // RECOVERY WEEK: Use forced category (short_power) if provided
+        const category = forcedCategory || phaseInfo.hillFocus;
 
         const workouts = this.hillLibrary.getWorkoutsByCategory(category);
         if (workouts.length === 0) {
@@ -878,18 +1029,24 @@ export class TrainingPlanGenerator {
         return this.hillLibrary.prescribeHillWorkout(selectedWorkout.name, { runEqPreference, paces });
     }
 
-    selectTempoWorkout(phase, runEqPreference, paces, weekNumber, totalWeeks) {
+    selectTempoWorkout(phase, runEqPreference, paces, weekNumber, totalWeeks, forcedCategory = null) {
         const phaseInfo = this.trainingPhases[phase.phase];
 
-        // Select tempo category based on phase
-        const categoryMap = {
-            base: "TRADITIONAL_TEMPO",
-            build: "TEMPO_INTERVALS",
-            peak: "RACE_SPECIFIC",
-            taper: "ALTERNATING_TEMPO"
-        };
+        // RECOVERY WEEK: Use forced category (TRADITIONAL_TEMPO) if provided
+        let category;
+        if (forcedCategory) {
+            category = forcedCategory;
+        } else {
+            // Select tempo category based on phase
+            const categoryMap = {
+                base: "TRADITIONAL_TEMPO",
+                build: "TEMPO_INTERVALS",
+                peak: "RACE_SPECIFIC",
+                taper: "ALTERNATING_TEMPO"
+            };
+            category = categoryMap[phase.phase];
+        }
 
-        const category = categoryMap[phase.phase];
         const workouts = this.tempoLibrary.getWorkoutsByCategory(category);
         const selectedWorkout = this.selectWorkoutAvoidingRepetition(workouts, 'tempo');
         return this.tempoLibrary.prescribeTempoWorkout(selectedWorkout.name, { 
@@ -900,18 +1057,24 @@ export class TrainingPlanGenerator {
         });
     }
 
-    selectIntervalWorkout(phase, runEqPreference, paces, trackIntervals, weekNumber, totalWeeks) {
+    selectIntervalWorkout(phase, runEqPreference, paces, trackIntervals, weekNumber, totalWeeks, forcedCategory = null) {
         const phaseInfo = this.trainingPhases[phase.phase];
 
-        // Select interval category based on phase
-        const categoryMap = {
-            base: "LONG_INTERVALS",
-            build: "VO2_MAX",
-            peak: "SHORT_SPEED",
-            taper: "MIXED_INTERVALS"
-        };
+        // RECOVERY WEEK: Use forced category (MIXED_INTERVALS) if provided
+        let category;
+        if (forcedCategory) {
+            category = forcedCategory;
+        } else {
+            // Select interval category based on phase
+            const categoryMap = {
+                base: "LONG_INTERVALS",
+                build: "VO2_MAX",
+                peak: "SHORT_SPEED",
+                taper: "MIXED_INTERVALS"
+            };
+            category = categoryMap[phase.phase];
+        }
 
-        const category = categoryMap[phase.phase];
         const workouts = this.intervalLibrary.getWorkoutsByCategory(category);
         const selectedWorkout = this.selectWorkoutAvoidingRepetition(workouts, 'intervals');
 
@@ -1075,6 +1238,18 @@ export class TrainingPlanGenerator {
             throw new Error(`No workouts available for type: ${workoutType}`);
         }
 
+        // CRITICAL: Ensure workout history is initialized
+        if (!this.workoutHistory) {
+            this.workoutHistory = {
+                intervals: [],
+                tempo: [],
+                hills: []
+            };
+        }
+        if (!this.workoutHistory[workoutType]) {
+            this.workoutHistory[workoutType] = [];
+        }
+
         // If only 1-2 workouts available, just alternate
         if (workouts.length <= 2) {
             const lastUsed = this.workoutHistory[workoutType][this.workoutHistory[workoutType].length - 1];
@@ -1082,11 +1257,13 @@ export class TrainingPlanGenerator {
             if (available.length > 0) {
                 const selected = available[Math.floor(Math.random() * available.length)];
                 this.workoutHistory[workoutType].push(selected.name);
+                logger.log(`  🎲 Selected ${workoutType}: "${selected.name}" (avoided: ${lastUsed || 'none'})`);
                 return selected;
             }
             // If all filtered out, just use any
             const selected = workouts[Math.floor(Math.random() * workouts.length)];
             this.workoutHistory[workoutType].push(selected.name);
+            logger.log(`  🎲 Selected ${workoutType}: "${selected.name}" (only option available)`);
             return selected;
         }
 
@@ -1096,15 +1273,18 @@ export class TrainingPlanGenerator {
 
         if (available.length === 0) {
             // All workouts recently used (shouldn't happen with 3+), reset history
+            logger.log(`  ⚠️ All ${workoutType} workouts recently used, resetting history`);
             this.workoutHistory[workoutType] = [];
             const selected = workouts[Math.floor(Math.random() * workouts.length)];
             this.workoutHistory[workoutType].push(selected.name);
+            logger.log(`  🎲 Selected ${workoutType}: "${selected.name}" (after reset)`);
             return selected;
         }
 
         // Select randomly from available workouts
         const selected = available[Math.floor(Math.random() * available.length)];
         this.workoutHistory[workoutType].push(selected.name);
+        logger.log(`  🎲 Selected ${workoutType}: "${selected.name}" (avoided: ${recentlyUsed.join(', ') || 'none'})`);
 
         // Keep history manageable (last 5 workouts)
         if (this.workoutHistory[workoutType].length > 5) {

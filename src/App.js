@@ -20,6 +20,7 @@ import WorkoutDetail from './components/WorkoutDetail';
 import AdminApproval from './components/AdminApproval';
 import PhaseMigrationAdmin from './components/PhaseMigrationAdmin';
 import StravaCallback from './components/StravaCallback';
+import DevMode from './components/DevMode';
 import { ToastProvider, useToast } from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -381,7 +382,11 @@ function AppContent() {
             path="/welcome"
             element={
               trainingPlan ?
-                <PlanWelcomeScreen trainingPlan={trainingPlan} /> :
+                <PlanWelcomeScreen 
+                  trainingPlan={trainingPlan} 
+                  userProfile={userProfile}
+                  onPlanUpdated={handleOnboardingComplete}
+                /> :
                 <Navigate to="/onboarding" replace />
             }
           />
@@ -425,6 +430,10 @@ function AppContent() {
           <Route
             path="/admin/migrate-phases"
             element={<PhaseMigrationAdmin />}
+          />
+          <Route
+            path="/dev"
+            element={<DevMode />}
           />
           <Route
             path="/auth/strava/callback"
