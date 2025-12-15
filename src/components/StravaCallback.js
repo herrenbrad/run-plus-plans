@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import StravaService from '../services/StravaService';
+import StravaService from '../services/stravaService';
 import FirestoreService from '../services/FirestoreService';
 import { auth } from '../firebase/config';
 

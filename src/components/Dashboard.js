@@ -16,12 +16,11 @@ import DashboardCoaching from './DashboardCoaching';
 import { formatTrainingSystem, formatEquipmentName, titleCase } from '../utils/typography';
 // Calorie calculator removed - weight significantly affects calories and we don't collect weight data
 // import { calorieCalculator } from '../lib/calorie-calculator.js';
-import StravaService from '../services/StravaService';
+import StravaService from '../services/stravaService';
 import logger from '../utils/logger';
 import { useToast } from './Toast';
 import { calculateCurrentWeek, getWeekDateRange, getWorkoutDate, formatWorkoutDate, isWorkoutInPast, isWorkoutBeforePlanStart } from '../utils/weekCalculations';
 import { getNormalizedWorkoutType, isLongRun, getWorkoutDistance, cleanWorkoutText, formatWorkoutTypeName } from '../utils/workoutHelpers';
-import useStravaSync from '../hooks/useStravaSync';
 import useWorkoutCompletion from '../hooks/useWorkoutCompletion';
 import useWorkoutActions from '../hooks/useWorkoutActions';
 import './Dashboard.css';
@@ -144,12 +143,7 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
     setWorkoutCompletions(completedWorkouts);
   }, [completedWorkouts]);
 
-  // Strava sync hook
-  const { stravaSyncing, handleManualStravaSync, handleDisconnectStrava } = useStravaSync({
-    userProfile,
-    trainingPlan,
-    currentWeek
-  });
+  // Strava sync is now handled by DashboardHeader using useStrava hook
 
   // Workout completion hook
   const {

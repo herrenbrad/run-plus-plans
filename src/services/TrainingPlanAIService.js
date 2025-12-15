@@ -1806,7 +1806,7 @@ SEQUENCING RULES:
         const updatedWorkoutsPerWeek = getWorkoutsPerWeek(updatedProfile);
         prompt += `- Training Days Per Week: ${updatedWorkoutsPerWeek} (total workouts including cross-training)\n`;
         prompt += `- Available Training Days: ${(updatedProfile.availableDays || []).join(', ')}\n`;
-        prompt += `- Hard Workout Days: ${(updatedProfile.hardSessionDays || []).join(', ')}\n`;
+        prompt += `- Hard Workout Days: ${(updatedProfile.hardSessionDays || updatedProfile.qualityDays || []).join(', ')}\n`;
         prompt += `- Long Run Day: ${updatedProfile.longRunDay}\n`;
         if (updatedProfile.preferredBikeDays && updatedProfile.preferredBikeDays.length > 0) {
             const bikeType = updatedProfile.standUpBikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO';

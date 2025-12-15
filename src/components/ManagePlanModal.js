@@ -65,7 +65,8 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
             
             setWorkoutsPerWeek(settings.workoutsPerWeek || settings.runsPerWeek || 5);
             setTrainingDays(loadedTrainingDays);
-            setHardDays(settings.hardSessionDays || []);
+            // CRITICAL: Check both field names - older profiles use 'qualityDays', newer use 'hardSessionDays'
+            setHardDays(settings.hardSessionDays || settings.qualityDays || []);
             // Ensure longRunDay is in the training days, otherwise use first training day or Sunday
             setLongRunDay(
               loadedTrainingDays.includes(loadedLongRunDay) 
@@ -259,7 +260,7 @@ function ManagePlanModal({ isOpen, onClose, userProfile, trainingPlan, currentWe
           workoutsPerWeek: userProfile.workoutsPerWeek || userProfile.runsPerWeek,
           runsPerWeek: userProfile.workoutsPerWeek || userProfile.runsPerWeek, // Backward compatibility
           availableDays: userProfile.availableDays || [],
-          hardSessionDays: userProfile.hardSessionDays || [],
+          hardSessionDays: userProfile.hardSessionDays || userProfile.qualityDays || [],
           longRunDay: userProfile.longRunDay,
           preferredBikeDays: userProfile.preferredBikeDays || []
         };

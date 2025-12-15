@@ -158,16 +158,22 @@ class TrainingPlanService {
     generateWeekWorkouts(weekNumber, profile, weekMath, phasePlan, totalWeeks) {
         const workouts = [];
         const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        
+
         // Store profile for helper methods
         this.currentProfile = profile;
-        
+
+        // CRITICAL: Check if user is in cross-training only mode (injured/can't run)
+        const isCrossTrainingOnly = profile.runningStatus === 'crossTrainingOnly';
+        if (isCrossTrainingOnly) {
+            logger.log(`  🚴 Week ${weekNumber}: CROSS-TRAINING ONLY mode (no running workouts)`);
+        }
+
         // Get current phase (convert to lowercase for workout libraries)
-        const phaseBlock = phasePlan.find(p => 
+        const phaseBlock = phasePlan.find(p =>
             weekNumber >= p.startWeek && weekNumber <= p.endWeek
         );
         const currentPhase = phaseBlock ? { phase: phaseBlock.phase.toLowerCase() } : { phase: 'base' };
-        
+
         // Get schedule from profile
         const restDays = profile.restDays || [];
         const availableDays = profile.availableDays || [];
@@ -262,23 +268,56 @@ class TrainingPlanService {
             if (restDays.includes(day)) {
                 workouts.push(this.createRestWorkout(day));
             } else if (day === longRunDay) {
-                workouts.push(this.createLongRunWorkout(
-                    day, 
-                    longRunDistance, 
-                    weekNumber === totalWeeks,
-                    profile,
-                    currentPhase,
-                    weekNumber,
-                    totalWeeks
-                ));
+                // Race week always gets race day (even in cross-training only mode - goal is to race!)
+                const isRaceWeek = weekNumber === totalWeeks;
+                if (isRaceWeek) {
+                    // Race day - always show regardless of running status
+                    workouts.push(this.createLongRunWorkout(
+                        day,
+                        longRunDistance,
+                        true, // isRaceWeek
+                        profile,
+                        currentPhase,
+                        weekNumber,
+                        totalWeeks
+                    ));
+                } else if (isCrossTrainingOnly && standUpBikeType) {
+                    // CRITICAL: In cross-training only mode, replace long run with long bike ride
+                    workouts.push(this.createBikeWorkout(
+                        day,
+                        standUpBikeType,
+                        true, // isHardDay - long sessions are quality sessions
+                        weekMath,
+                        currentPhase,
+                        weekNumber,
+                        totalWeeks,
+                        hardSessionIndex,
+                        longRunDistance // Use long run distance for the bike workout
+                    ));
+                    hardSessionIndex++;
+                } else if (isCrossTrainingOnly) {
+                    // Cross-training only but no bike - rest day (can't run)
+                    workouts.push(this.createRestWorkout(day));
+                } else {
+                    // Normal mode - running long run
+                    workouts.push(this.createLongRunWorkout(
+                        day,
+                        longRunDistance,
+                        false, // not race week
+                        profile,
+                        currentPhase,
+                        weekNumber,
+                        totalWeeks
+                    ));
+                }
             } else if (preferredBikeDays.includes(day) && standUpBikeType) {
                 // Bike day - check if it's also a quality day
                 const isHardBikeDay = qualityDays.includes(day);
                 if (isHardBikeDay) {
                     // Hard bike day - increment hard session index
                     workouts.push(this.createBikeWorkout(
-                        day, 
-                        standUpBikeType, 
+                        day,
+                        standUpBikeType,
                         true, // isHardDay
                         weekMath,
                         currentPhase,
@@ -291,8 +330,8 @@ class TrainingPlanService {
                 } else {
                     // Easy bike day - use library for variety
                     workouts.push(this.createBikeWorkout(
-                        day, 
-                        standUpBikeType, 
+                        day,
+                        standUpBikeType,
                         false, // isHardDay
                         weekMath,
                         currentPhase,
@@ -303,20 +342,57 @@ class TrainingPlanService {
                     ));
                 }
             } else if (qualityDays.includes(day)) {
-                // Hard running day
-                workouts.push(this.createHardRunWorkout(
-                    day, 
-                    avgRunningDistance, 
-                    currentPhase, 
-                    weekNumber,
-                    totalWeeks,
-                    profile,
-                    hardSessionIndex
-                ));
-                hardSessionIndex++; // Increment for next hard day
+                // CRITICAL: In cross-training only mode, replace hard runs with hard bike workouts
+                if (isCrossTrainingOnly && standUpBikeType) {
+                    workouts.push(this.createBikeWorkout(
+                        day,
+                        standUpBikeType,
+                        true, // isHardDay
+                        weekMath,
+                        currentPhase,
+                        weekNumber,
+                        totalWeeks,
+                        hardSessionIndex,
+                        avgRunningDistance
+                    ));
+                    hardSessionIndex++;
+                } else if (isCrossTrainingOnly) {
+                    // Cross-training only but no bike - rest day (can't run)
+                    workouts.push(this.createRestWorkout(day));
+                } else {
+                    // Normal mode - hard running day
+                    workouts.push(this.createHardRunWorkout(
+                        day,
+                        avgRunningDistance,
+                        currentPhase,
+                        weekNumber,
+                        totalWeeks,
+                        profile,
+                        hardSessionIndex
+                    ));
+                    hardSessionIndex++; // Increment for next hard day
+                }
             } else if (availableDays.includes(day)) {
-                // Easy run day
-                workouts.push(this.createEasyRunWorkout(day, avgRunningDistance));
+                // CRITICAL: In cross-training only mode, replace easy runs with easy bike workouts
+                if (isCrossTrainingOnly && standUpBikeType) {
+                    workouts.push(this.createBikeWorkout(
+                        day,
+                        standUpBikeType,
+                        false, // isHardDay (easy day)
+                        weekMath,
+                        currentPhase,
+                        weekNumber,
+                        totalWeeks,
+                        0,
+                        avgRunningDistance
+                    ));
+                } else if (isCrossTrainingOnly) {
+                    // Cross-training only but no bike - rest day (can't run)
+                    workouts.push(this.createRestWorkout(day));
+                } else {
+                    // Normal mode - easy run day
+                    workouts.push(this.createEasyRunWorkout(day, avgRunningDistance));
+                }
             } else {
                 // Not an available day - rest
                 workouts.push(this.createRestWorkout(day));

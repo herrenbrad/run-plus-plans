@@ -77,8 +77,21 @@ function PlanDebugTool({ userProfile, trainingPlan, onClose }) {
       units: profile.units || 'imperial',
       // Ensure availableDays is an array
       availableDays: availableDays,
-      // Ensure hardSessionDays is an array
-      hardSessionDays: profile.hardSessionDays || profile.qualityDays || [],
+      // Ensure hardSessionDays is an array - if missing, auto-generate sensible defaults
+      // For a typical training week, hard days should be Tuesday and Thursday (or similar spread)
+      hardSessionDays: profile.hardSessionDays || profile.qualityDays || (() => {
+        // Auto-generate hard days if none exist (CRITICAL for fixing corrupted plans)
+        const available = availableDays.filter(d => d !== (profile.longRunDay || 'Sunday'));
+        if (available.length >= 2) {
+          // Pick 2 spread-out hard days: typically Tue/Thu or similar
+          const preferredHardDays = ['Tuesday', 'Thursday'];
+          const hardDays = preferredHardDays.filter(d => available.includes(d));
+          if (hardDays.length >= 2) return hardDays;
+          // Fallback: pick first two non-long-run available days
+          return available.slice(0, 2);
+        }
+        return available.length > 0 ? [available[0]] : [];
+      })(),
       // Ensure restDays is calculated
       restDays: restDays
     };

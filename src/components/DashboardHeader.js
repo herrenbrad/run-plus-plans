@@ -12,8 +12,8 @@ import { calculateMileageBreakdown, calculateRollingDistance } from '../utils/st
 import { formatPhase } from '../utils/typography';
 import FirestoreService from '../services/FirestoreService';
 import logger from '../utils/logger';
-import useStravaSync from '../hooks/useStravaSync';
-import StravaService from '../services/StravaService';
+import useStrava from '../hooks/useStrava';
+import StravaService from '../services/stravaService';
 
 export default function DashboardHeader({
   currentWeek,
@@ -30,11 +30,13 @@ export default function DashboardHeader({
   toast
 }) {
   const navigate = useNavigate();
-  const { stravaSyncing, handleManualStravaSync, handleDisconnectStrava } = useStravaSync({
-    userProfile,
-    trainingPlan,
-    currentWeek
-  });
+  const { isSyncing: stravaSyncing, syncActivities, disconnectStrava } = useStrava(userProfile);
+
+  // Wrap sync and disconnect for compatibility with existing code
+  const handleManualStravaSync = async () => {
+    await syncActivities(trainingPlan);
+  };
+  const handleDisconnectStrava = disconnectStrava;
 
   const dateRange = getWeekDateRange(currentWeek, trainingPlan);
   const mileageBreakdown = calculateMileageBreakdown(currentWeekData, getWorkouts);

@@ -60,96 +60,35 @@ class StravaSyncService {
       const activities = await StravaService.getActivities(accessToken, 1, 50, planStartDate);
       logger.log(`📥 Fetched ${activities.length} Strava activities ${planStartDate ? `since ${planStartDate.toLocaleDateString()}` : ''}`);
 
-      // Get workouts from training plan
-      // Handle case where weeks array might be empty (Dashboard generates workouts on the fly)
-      logger.log('🔍 Debug sync:', {
-        currentWeek,
-        totalWeeks: trainingPlan.weeks?.length,
-        weeksArrayExists: !!trainingPlan.weeks,
-        weekIndex: currentWeek - 1,
-        weekDataExists: !!trainingPlan.weeks?.[currentWeek - 1],
-        weekData: trainingPlan.weeks?.[currentWeek - 1] ? {
-          weekNumber: trainingPlan.weeks[currentWeek - 1].weekNumber,
-          hasWorkouts: !!trainingPlan.weeks[currentWeek - 1].workouts,
-          workoutCount: trainingPlan.weeks[currentWeek - 1].workouts?.length
-        } : null
-      });
+      // Get current week's workouts
+      const currentWeekData = trainingPlan.weeks[currentWeek - 1];
+      if (!currentWeekData || !currentWeekData.workouts) {
+        logger.log('⚠️ No workouts found for current week');
+        return { success: false, error: 'No workouts in current week' };
+      }
+
+      // Also get previous 2 weeks for matching (in case they logged workout late)
+      const weeksToCheck = [currentWeek];
+      if (currentWeek > 1) weeksToCheck.push(currentWeek - 1);
+      if (currentWeek > 2) weeksToCheck.push(currentWeek - 2);
 
       let allWorkouts = [];
-
-      // If weeks array exists and has data, use it
-      if (trainingPlan.weeks && trainingPlan.weeks.length > 0) {
-        // Also get previous 2 weeks for matching (in case they logged workout late)
-        const weeksToCheck = [currentWeek];
-        if (currentWeek > 1) weeksToCheck.push(currentWeek - 1);
-        if (currentWeek > 2) weeksToCheck.push(currentWeek - 2);
-
-        weeksToCheck.forEach(weekNum => {
-          const weekData = trainingPlan.weeks[weekNum - 1];
-          if (weekData && weekData.workouts) {
-            weekData.workouts.forEach(workout => {
-              // workoutIndex is always 0 for primary planned workouts
-              // (index 1+ is for "Something Else" additional workouts added by user)
-              allWorkouts.push({
-                ...workout,
-                weekNumber: weekNum,
-                workoutIndex: 0
-              });
+      weeksToCheck.forEach(weekNum => {
+        const weekData = trainingPlan.weeks[weekNum - 1];
+        if (weekData && weekData.workouts) {
+          weekData.workouts.forEach(workout => {
+            // workoutIndex is always 0 for primary planned workouts
+            // (index 1+ is for "Something Else" additional workouts added by user)
+            allWorkouts.push({
+              ...workout,
+              weekNumber: weekNum,
+              workoutIndex: 0
             });
-          }
-        });
-      } else {
-        // Weeks array is empty - Dashboard generates workouts on the fly
-        // Generate minimal workout structure for current week based on plan start date
-        logger.log('⚠️ Weeks array is empty - generating minimal workout structure for matching');
-        
-        if (!planStartDate) {
-          logger.log('⚠️ Cannot generate workouts - no plan start date');
-          return { success: false, error: 'Training plan structure not available' };
-        }
-
-        // Generate workouts for current week based on start date
-        // Calculate which day of week the plan starts
-        const startDayOfWeek = planStartDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        
-        // Calculate date for each day of current week
-        const msPerDay = 24 * 60 * 60 * 1000;
-        const daysSinceStart = (currentWeek - 1) * 7;
-        const weekStartDate = new Date(planStartDate.getTime() + (daysSinceStart * msPerDay));
-        
-        // Generate workouts for each day of the week
-        const preferredBikeDays = userProfile.preferredBikeDays || [];
-        
-        for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-          const workoutDate = new Date(weekStartDate.getTime() + (dayOffset * msPerDay));
-          const dayName = dayNames[workoutDate.getDay()];
-          const isBikeDay = preferredBikeDays.includes(dayName);
-          
-          // Create minimal workout structure for matching
-          allWorkouts.push({
-            day: dayName,
-            type: isBikeDay ? 'bike' : (dayOffset === 0 || dayOffset === 6 ? 'rest' : 'easy'),
-            date: workoutDate.toISOString().split('T')[0], // YYYY-MM-DD format
-            weekNumber: currentWeek,
-            workoutIndex: 0,
-            equipmentSpecific: isBikeDay,
-            workout: {
-              name: isBikeDay ? 'Bike Workout' : 'Easy Run',
-              description: isBikeDay ? 'Cyclete workout' : 'Easy run'
-            }
           });
         }
-        
-        logger.log(`✅ Generated ${allWorkouts.length} workouts for week ${currentWeek} based on plan start date`);
-      }
+      });
 
-      if (allWorkouts.length === 0) {
-        logger.log('⚠️ No workouts available for matching - sync will complete with 0 matches');
-        // Don't return error - just proceed with 0 workouts, sync will complete successfully with 0 matches
-      }
-
-      logger.log(`🔍 Checking ${allWorkouts.length} workouts for matching`);
+      logger.log(`🔍 Checking ${allWorkouts.length} workouts across ${weeksToCheck.length} weeks`);
 
       // Match activities to workouts
       const matches = [];
@@ -276,30 +215,24 @@ class StravaSyncService {
         activityIsRun: isRunActivity
       });
 
-      // Check date match first (same day required)
-      const dateMatches = (
-        activityDate.getFullYear() === workoutDate.getFullYear() &&
-        activityDate.getMonth() === workoutDate.getMonth() &&
-        activityDate.getDate() === workoutDate.getDate()
-      );
+      // Skip if types don't match
+      if (isBikeActivity && !isBikeWorkout) {
+        logger.log(`    ❌ Type mismatch: bike activity but not bike workout`);
+        continue;
+      }
+      if (isRunActivity && !isRunWorkout) {
+        logger.log(`    ❌ Type mismatch: run activity but not run workout`);
+        continue;
+      }
 
-      if (!dateMatches) {
+      // Check date match (same day)
+      if (
+        activityDate.getFullYear() !== workoutDate.getFullYear() ||
+        activityDate.getMonth() !== workoutDate.getMonth() ||
+        activityDate.getDate() !== workoutDate.getDate()
+      ) {
         logger.log(`    ❌ Date mismatch`);
         continue;
-      }
-
-      // Type matching: Allow exact matches first, then allow cross-type matches for "life adaptations"
-      // This allows users to do a run when bike is scheduled (or vice versa) - flexibility for real life
-      const exactTypeMatch = (isBikeActivity && isBikeWorkout) || (isRunActivity && isRunWorkout);
-      const crossTypeMatch = (isBikeActivity && isRunWorkout) || (isRunActivity && isBikeWorkout);
-      
-      if (!exactTypeMatch && !crossTypeMatch) {
-        logger.log(`    ❌ Type mismatch: ${activity.type} activity doesn't match ${workout.type} workout`);
-        continue;
-      }
-
-      if (crossTypeMatch) {
-        logger.log(`    ⚠️ Life adaptation detected: ${activity.type} activity matched to ${workout.type} workout`);
       }
 
       // Found a match!
@@ -378,23 +311,6 @@ class StravaSyncService {
       // Convert to RunEQ completion format with all the detailed data
       const completionData = StravaService.convertToRunEQCompletion(detailedActivity, streams);
 
-      // Check if this is a "life adaptation" (cross-type match)
-      const rideTypes = ['Ride', 'VirtualRide', 'EBikeRide'];
-      const runTypes = ['Run', 'VirtualRun'];
-      const isBikeActivity = rideTypes.includes(stravaActivity.type);
-      const isRunActivity = runTypes.includes(stravaActivity.type);
-      const isBikeWorkout = workout.type === 'bike' || workout.equipmentSpecific;
-      const isRunWorkout = ['tempo', 'intervals', 'hills', 'longRun', 'easy'].includes(workout.type);
-      const isLifeAdaptation = (isBikeActivity && isRunWorkout) || (isRunActivity && isBikeWorkout);
-
-      // Add note for life adaptations
-      let notes = completionData.notes || `Synced from Strava: ${stravaActivity.name}`;
-      if (isLifeAdaptation) {
-        const scheduledType = isBikeWorkout ? 'bike' : 'run';
-        const actualType = isBikeActivity ? 'bike' : 'run';
-        notes = `Life adaptation: Did ${actualType} instead of scheduled ${scheduledType}. ${notes}`;
-      }
-
       // Match the key format used by Dashboard: weekNumber-day-workoutIndex
       const workoutKey = `${workout.weekNumber}-${workout.day}-${workout.workoutIndex || 0}`;
 
@@ -408,9 +324,7 @@ class StravaSyncService {
           completedAt: new Date().toISOString(),
           completed: true,
           ...completionData,
-          notes: notes, // Override notes with life adaptation info if applicable
           autoCompletedFromStrava: true,
-          isLifeAdaptation: isLifeAdaptation, // Flag for UI to display differently
         }
       });
 

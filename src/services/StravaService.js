@@ -5,7 +5,6 @@
 
 import STRAVA_CONFIG from '../config/strava';
 import { auth } from '../firebase/config';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import logger from '../utils/logger';
 
 class StravaService {
@@ -27,58 +26,55 @@ class StravaService {
 
   /**
    * Exchange authorization code for access token
-   * Uses Firebase Function to keep client secret secure
    * @param {string} code - Authorization code from Strava callback
    * @returns {Promise<object>} Token response with access_token, refresh_token, athlete data
    */
   async exchangeToken(code) {
-    try {
-      const functions = getFunctions();
-      const exchangeStravaToken = httpsCallable(functions, 'exchangeStravaToken');
-      
-      const result = await exchangeStravaToken({
+    const response = await fetch('https://www.strava.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: STRAVA_CONFIG.clientId,
+        client_secret: STRAVA_CONFIG.clientSecret,
         code: code,
-        clientId: STRAVA_CONFIG.clientId,
-      });
+        grant_type: 'authorization_code',
+      }),
+    });
 
-      if (!result.data.success) {
-        logger.error('❌ Strava token exchange error:', result.data.error);
-        throw new Error(`Strava token exchange failed: ${result.data.error}`);
-      }
-
-      return result.data.data;
-    } catch (error) {
-      logger.error('❌ Strava token exchange error:', error);
-      throw new Error(`Strava token exchange failed: ${error.message}`);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Strava token exchange failed: ${error.message || response.statusText}`);
     }
+
+    return response.json();
   }
 
   /**
    * Refresh an expired access token
-   * Uses Firebase Function to keep client secret secure
    * @param {string} refreshToken - Refresh token from previous authorization
    * @returns {Promise<object>} New token response
    */
   async refreshAccessToken(refreshToken) {
-    try {
-      const functions = getFunctions();
-      const refreshStravaToken = httpsCallable(functions, 'refreshStravaToken');
-      
-      const result = await refreshStravaToken({
-        refreshToken: refreshToken,
-        clientId: STRAVA_CONFIG.clientId,
-      });
+    const response = await fetch('https://www.strava.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: STRAVA_CONFIG.clientId,
+        client_secret: STRAVA_CONFIG.clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
 
-      if (!result.data.success) {
-        logger.error('❌ Strava token refresh error:', result.data.error);
-        throw new Error(`Failed to refresh Strava access token: ${result.data.error}`);
-      }
-
-      return result.data.data;
-    } catch (error) {
-      logger.error('❌ Strava token refresh error:', error);
-      throw new Error(`Failed to refresh Strava access token: ${error.message}`);
+    if (!response.ok) {
+      throw new Error('Failed to refresh Strava access token');
     }
+
+    return response.json();
   }
 
   /**
