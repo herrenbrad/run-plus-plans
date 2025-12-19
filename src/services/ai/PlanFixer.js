@@ -253,8 +253,77 @@ class PlanFixer {
     }
 
     /**
+     * Fix long run distances using plan-math targets
+     * CRITICAL: This ensures long runs are properly progressive, not flat
+     *
+     * @param {Object} plan - The training plan object with weeks array
+     * @param {Object} profile - User profile with longRunDay
+     */
+    fixLongRunDistances(plan, profile) {
+        if (!plan.weeks || plan.weeks.length === 0) return;
+
+        const longRunDay = profile.longRunDay || 'Sunday';
+
+        plan.weeks.forEach((week, weekIndex) => {
+            // Get the plan-math long run target for this week
+            const targetLongRun = week._planMathTargets?.longRun || week.longRunTarget;
+            if (!targetLongRun) return; // No target available
+
+            // Find the long run workout
+            const longRunWorkout = week.workouts.find(w =>
+                w.type === 'longRun' ||
+                w.day === longRunDay ||
+                (w.description || '').toLowerCase().includes('long run') ||
+                (w.name || '').toLowerCase().includes('long run')
+            );
+
+            if (longRunWorkout) {
+                const oldDistance = longRunWorkout.distance || 0;
+
+                // Only fix if significantly different (more than 1 mile off)
+                if (Math.abs(oldDistance - targetLongRun) > 1) {
+                    console.log(`  🏃 Week ${week.weekNumber}: Long run ${oldDistance}mi → ${targetLongRun}mi (from plan-math)`);
+
+                    // Update distance in workout object
+                    longRunWorkout.distance = targetLongRun;
+                    longRunWorkout.extractedDistance = targetLongRun;
+
+                    // Update distance in description/name
+                    if (longRunWorkout.description) {
+                        longRunWorkout.description = longRunWorkout.description.replace(
+                            /(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)/i,
+                            `${targetLongRun} mile${targetLongRun !== 1 ? 's' : ''}`
+                        );
+                    }
+                    if (longRunWorkout.name) {
+                        longRunWorkout.name = longRunWorkout.name.replace(
+                            /(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)/i,
+                            `${targetLongRun} mile${targetLongRun !== 1 ? 's' : ''}`
+                        );
+                    }
+                    if (longRunWorkout.workout?.name) {
+                        longRunWorkout.workout.name = longRunWorkout.workout.name.replace(
+                            /(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)/i,
+                            `${targetLongRun} mile${targetLongRun !== 1 ? 's' : ''}`
+                        );
+                    }
+                    if (longRunWorkout.fullWorkoutDetails?.name) {
+                        longRunWorkout.fullWorkoutDetails.name = longRunWorkout.fullWorkoutDetails.name.replace(
+                            /(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)/i,
+                            `${targetLongRun} mile${targetLongRun !== 1 ? 's' : ''}`
+                        );
+                    }
+                    if (longRunWorkout.fullWorkoutDetails) {
+                        longRunWorkout.fullWorkoutDetails.distance = targetLongRun;
+                    }
+                }
+            }
+        });
+    }
+
+    /**
      * Fix missing long runs by adding them to weeks that are missing them
-     * 
+     *
      * @param {Object} plan - The training plan object with weeks array
      * @param {Object} profile - User profile with longRunDay
      */

@@ -614,7 +614,10 @@ SEQUENCING RULES:
 
             // CRITICAL: Fix mileage mismatches BEFORE transformation (adjusts workout distances)
             planFixer.fixMileageMismatches(enrichedPlan, normalizedProfile);
-            
+
+            // CRITICAL: Fix long run distances using plan-math targets (ensures progressive long runs)
+            planFixer.fixLongRunDistances(enrichedPlan, normalizedProfile);
+
             // CRITICAL: Fix missing long runs BEFORE transformation (ensures every week has a long run)
             planFixer.fixMissingLongRuns(enrichedPlan, normalizedProfile);
 
