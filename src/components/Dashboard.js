@@ -15,7 +15,7 @@ import DashboardCoaching from './DashboardCoaching';
 import { formatTrainingSystem, formatEquipmentName, titleCase } from '../utils/typography';
 // Calorie calculator removed - weight significantly affects calories and we don't collect weight data
 // import { calorieCalculator } from '../lib/calorie-calculator.js';
-import StravaService from '../services/stravaService';
+import StravaService from '../services/StravaService';
 import logger from '../utils/logger';
 import { useToast } from './Toast';
 import { calculateCurrentWeek, getWeekDateRange, getWorkoutDate, formatWorkoutDate, isWorkoutInPast, isWorkoutBeforePlanStart } from '../utils/weekCalculations';
