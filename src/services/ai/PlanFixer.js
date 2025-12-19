@@ -197,18 +197,22 @@ class PlanFixer {
             const difference = Math.abs(actualTotal - targetMileage);
             if (difference > 2 && actualTotal > 0 && workoutsWithDistance.length > 0) {
                 const adjustmentRatio = targetMileage / actualTotal;
-                
-                // Only adjust if ratio is reasonable (0.7 to 1.3) - don't make drastic changes
-                if (adjustmentRatio >= 0.7 && adjustmentRatio <= 1.3) {
-                    console.log(`  🔧 Week ${week.weekNumber}: Adjusting from ${actualTotal.toFixed(1)}mi to ${targetMileage}mi (ratio: ${adjustmentRatio.toFixed(2)})`);
-                    
+
+                // CRITICAL: When using plan-math targets, ALWAYS apply the fix - they're deterministic and correct
+                // Only use ratio safeguard for fallback calculations (when no plan-math target available)
+                const usingPlanMathTarget = week._planMathTargets && week._planMathTargets.weeklyMileage;
+                const ratioIsReasonable = adjustmentRatio >= 0.4 && adjustmentRatio <= 2.5; // Widened from 0.7-1.3
+
+                if (usingPlanMathTarget || ratioIsReasonable) {
+                    console.log(`  🔧 Week ${week.weekNumber}: Adjusting from ${actualTotal.toFixed(1)}mi to ${targetMileage}mi (ratio: ${adjustmentRatio.toFixed(2)}${usingPlanMathTarget ? ', plan-math enforced' : ''})`);
+
                     workoutsWithDistance.forEach(({ workout, distance }) => {
                         const newDistance = Math.max(2, Math.round(distance * adjustmentRatio)); // Minimum 2 miles
-                        
+
                         // Update distance in workout object (handle both enrichedPlan and dashboardPlan structures)
                         workout.distance = newDistance;
                         workout.extractedDistance = newDistance; // Also update extractedDistance for enrichedPlan
-                        
+
                         // Update distance in description/name if present
                         if (workout.description) {
                             workout.description = workout.description.replace(
@@ -241,7 +245,7 @@ class PlanFixer {
                             }
                         }
                     });
-                    
+
                     // Update week total mileage
                     week.totalMileage = targetMileage;
                     console.log(`  ✅ Week ${week.weekNumber}: Adjusted to ${targetMileage}mi total`);
