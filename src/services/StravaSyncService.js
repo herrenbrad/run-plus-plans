@@ -73,16 +73,40 @@ class StravaSyncService {
       if (currentWeek > 2) weeksToCheck.push(currentWeek - 2);
 
       let allWorkouts = [];
+
+      // Day name to index mapping (Sunday = 0)
+      const dayNameToIndex = {
+        'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+        'Thursday': 4, 'Friday': 5, 'Saturday': 6
+      };
+      const msPerDay = 24 * 60 * 60 * 1000;
+
       weeksToCheck.forEach(weekNum => {
         const weekData = trainingPlan.weeks[weekNum - 1];
         if (weekData && weekData.workouts) {
           weekData.workouts.forEach(workout => {
+            // Calculate the actual date for this workout if not present
+            let workoutDate = workout.date;
+            if (!workoutDate && planStartDate && workout.day) {
+              // Calculate: start date + (weekNum - 1) weeks + day offset
+              const dayIndex = dayNameToIndex[workout.day];
+              const startDayIndex = planStartDate.getDay();
+              // Days from week start (assuming plan starts on its actual day)
+              let daysFromWeekStart = dayIndex - startDayIndex;
+              if (daysFromWeekStart < 0) daysFromWeekStart += 7;
+              const totalDays = ((weekNum - 1) * 7) + daysFromWeekStart;
+              const calculatedDate = new Date(planStartDate.getTime() + (totalDays * msPerDay));
+              workoutDate = calculatedDate.toISOString().split('T')[0];
+              logger.log(`  📅 Calculated date for ${workout.day} week ${weekNum}: ${workoutDate}`);
+            }
+
             // workoutIndex is always 0 for primary planned workouts
             // (index 1+ is for "Something Else" additional workouts added by user)
             allWorkouts.push({
               ...workout,
               weekNumber: weekNum,
-              workoutIndex: 0
+              workoutIndex: 0,
+              date: workoutDate
             });
           });
         }
@@ -200,8 +224,21 @@ class StravaSyncService {
       }
 
       // Match activity type to workout type
-      const isBikeWorkout = workout.type === 'bike' || workout.equipmentSpecific;
-      const isRunWorkout = ['tempo', 'intervals', 'hills', 'longRun', 'easy'].includes(workout.type);
+      // Check multiple ways a workout could be a bike workout:
+      // - type: 'bike'
+      // - type: 'cross-training' with bike-related crossTrainingType
+      // - equipmentSpecific: true (stand-up bike workouts)
+      // - description contains bike/cyclete/elliptigo/runeq
+      const workoutTypeLower = (workout.type || '').toLowerCase();
+      const descLower = (workout.description || workout.workout?.description || '').toLowerCase();
+      const isBikeWorkout =
+        workoutTypeLower === 'bike' ||
+        workout.equipmentSpecific === true ||
+        descLower.includes('cyclete') ||
+        descLower.includes('elliptigo') ||
+        descLower.includes('runeq') ||
+        (workoutTypeLower === 'cross-training' && descLower.includes('bike'));
+      const isRunWorkout = ['tempo', 'intervals', 'hills', 'longrun', 'easy', 'long-run', 'interval', 'hill'].includes(workoutTypeLower);
 
       // Parse workout date as local time (not UTC) to avoid timezone shifts
       const workoutDate = new Date(workout.date + ' 00:00:00');

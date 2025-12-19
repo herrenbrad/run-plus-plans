@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
-import stravaService from '../services/stravaService';
+import StravaService from '../services/StravaService';
 import logger from '../utils/logger';
 import { useToast } from '../components/Toast';
 
@@ -38,7 +38,7 @@ export const useStrava = (userProfile) => {
         setIsConnecting(true);
         try {
           // Exchange the code for tokens and get athlete data
-          const { access_token, refresh_token, expires_at, athlete } = await stravaService.exchangeToken(code);
+          const { access_token, refresh_token, expires_at, athlete } = await StravaService.exchangeToken(code);
 
           // Update the user's document in Firestore
           const userRef = doc(db, 'users', auth.currentUser.uid);
@@ -74,7 +74,7 @@ export const useStrava = (userProfile) => {
   const connectStrava = useCallback(() => {
     setIsConnecting(true);
     try {
-      const authUrl = stravaService.getAuthorizationUrl();
+      const authUrl = StravaService.getAuthorizationUrl();
       logger.log('Redirecting to Strava for authorization...');
       window.location.href = authUrl;
     } catch (error) {
@@ -123,7 +123,7 @@ export const useStrava = (userProfile) => {
     }
     setIsSyncing(true);
     try {
-      const result = await stravaService.syncActivities(auth.currentUser.uid, userProfile, trainingPlan);
+      const result = await StravaService.syncActivities(auth.currentUser.uid, userProfile, trainingPlan);
       toast.success(`Sync complete! ${result.workoutsCompleted} workouts were automatically updated.`);
       
       // Instead of reloading, we fetch the updated user doc and return the new completions.

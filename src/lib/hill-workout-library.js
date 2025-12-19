@@ -5,6 +5,50 @@
  */
 import { convertWorkoutStructures } from './workout-structure-converter.js';
 
+/**
+ * Helper to safely extract pace from various formats
+ * @param {Object|string|null} paceObj - Can be {min, max}, {pace}, or string like "8:30-9:00"
+ * @param {boolean} preferMax - If true, prefer max/slower pace; if false, prefer min/faster
+ * @returns {string|null} - Clean pace string without "/mile" suffix, or null if unavailable
+ */
+const getPace = (paceObj, preferMax = true) => {
+    if (!paceObj) return null;
+
+    // Helper to strip "/mile" suffix if present
+    const stripMileSuffix = (pace) => {
+        if (!pace) return null;
+        return pace.replace(/\/mile$/i, '').trim();
+    };
+
+    // Format: {min: "8:30", max: "9:00"} or {min: "8:30/mile", max: "9:00/mile"}
+    if (paceObj.max) {
+        return stripMileSuffix(preferMax ? paceObj.max : paceObj.min);
+    }
+    if (paceObj.min) {
+        return stripMileSuffix(paceObj.min);
+    }
+
+    // Format: {pace: "8:45"} or {pace: "8:30-9:00"}
+    if (paceObj.pace) {
+        const cleanPace = stripMileSuffix(paceObj.pace);
+        // If it's a range, extract min or max
+        const parts = cleanPace.split('-');
+        if (parts.length === 2) {
+            return preferMax ? parts[1].trim() : parts[0].trim();
+        }
+        return cleanPace;
+    }
+
+    // Format: direct string "8:45" or "8:30-9:00"
+    if (typeof paceObj === 'string') {
+        const cleanPace = stripMileSuffix(paceObj);
+        const parts = cleanPace.split('-');
+        return preferMax ? parts[parts.length - 1].trim() : parts[0].trim();
+    }
+
+    return null;
+};
+
 export class HillWorkoutLibrary {
     constructor() {
         this.hillGradeGuidelines = {
@@ -375,22 +419,24 @@ export class HillWorkoutLibrary {
      * Uses appropriate pace based on workout intensity
      */
     injectPacesIntoName(name, paces, intensity) {
-        let updatedName = name;
+        // Safely extract paces using helper
+        const intervalPace = getPace(paces?.interval);
+        const thresholdPace = getPace(paces?.threshold);
 
         // For hill workouts, use pace based on intensity
         // Hill workouts are typically threshold effort, but can be intervals for steep/short hills
-        if (intensity && intensity.toLowerCase().includes('short') && paces.interval) {
+        if (intensity && intensity.toLowerCase().includes('short') && intervalPace) {
             // Short/steep hills = interval pace
-            updatedName = `${name} (${paces.interval.pace}/mi)`;
-        } else if (paces.threshold) {
+            return `${name} (${intervalPace}/mi)`;
+        } else if (thresholdPace) {
             // Most hill workouts = threshold pace
-            updatedName = `${name} (${paces.threshold.pace}/mi)`;
-        } else if (paces.interval) {
+            return `${name} (${thresholdPace}/mi)`;
+        } else if (intervalPace) {
             // Fallback to interval pace if no threshold
-            updatedName = `${name} (${paces.interval.pace}/mi)`;
+            return `${name} (${intervalPace}/mi)`;
         }
 
-        return updatedName;
+        return name;
     }
 
     generateTerrainInstructions(hillRequirement) {

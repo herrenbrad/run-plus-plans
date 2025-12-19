@@ -5,6 +5,50 @@
  */
 import { convertVagueStructureToSpecific } from './workout-structure-converter.js';
 
+/**
+ * Helper to safely extract pace from various formats
+ * @param {Object|string|null} paceObj - Can be {min, max}, {pace}, or string like "8:30-9:00"
+ * @param {boolean} preferMax - If true, prefer max/slower pace; if false, prefer min/faster
+ * @returns {string|null} - Clean pace string without "/mile" suffix, or null if unavailable
+ */
+const getPace = (paceObj, preferMax = true) => {
+    if (!paceObj) return null;
+
+    // Helper to strip "/mile" suffix if present
+    const stripMileSuffix = (pace) => {
+        if (!pace) return null;
+        return pace.replace(/\/mile$/i, '').trim();
+    };
+
+    // Format: {min: "8:30", max: "9:00"} or {min: "8:30/mile", max: "9:00/mile"}
+    if (paceObj.max) {
+        return stripMileSuffix(preferMax ? paceObj.max : paceObj.min);
+    }
+    if (paceObj.min) {
+        return stripMileSuffix(paceObj.min);
+    }
+
+    // Format: {pace: "8:45"} or {pace: "8:30-9:00"}
+    if (paceObj.pace) {
+        const cleanPace = stripMileSuffix(paceObj.pace);
+        // If it's a range, extract min or max
+        const parts = cleanPace.split('-');
+        if (parts.length === 2) {
+            return preferMax ? parts[1].trim() : parts[0].trim();
+        }
+        return cleanPace;
+    }
+
+    // Format: direct string "8:45" or "8:30-9:00"
+    if (typeof paceObj === 'string') {
+        const cleanPace = stripMileSuffix(paceObj);
+        const parts = cleanPace.split('-');
+        return preferMax ? parts[parts.length - 1].trim() : parts[0].trim();
+    }
+
+    return null;
+};
+
 export class TempoWorkoutLibrary {
     constructor() {
         this.tempoIntensityGuidelines = {
@@ -239,14 +283,13 @@ export class TempoWorkoutLibrary {
      * Inject specific pace numbers into workout name
      */
     injectPacesIntoName(name, paces) {
-        let updatedName = name;
-
-        // Add threshold pace to the name
-        if (paces.threshold) {
-            updatedName = `${name} (${paces.threshold.pace}/mi)`;
+        // Add threshold pace to the name using safe extraction
+        const thresholdPace = getPace(paces?.threshold);
+        if (thresholdPace) {
+            return `${name} (${thresholdPace}/mi)`;
         }
 
-        return updatedName;
+        return name;
     }
 
     /**
@@ -257,24 +300,30 @@ export class TempoWorkoutLibrary {
         // First, convert any vague ranges to specific values
         let updatedStructure = convertVagueStructureToSpecific(structure, weekNumber, totalWeeks);
 
+        // Safely extract paces using helper
+        const thresholdPace = getPace(paces?.threshold);
+        const easyPaceMin = getPace(paces?.easy, false);  // false = prefer min/faster
+        const easyPaceMax = getPace(paces?.easy, true);   // true = prefer max/slower
+        const marathonPace = getPace(paces?.marathon);
+
         // Then replace generic pace terms with actual paces
-        if (paces.threshold) {
-            updatedStructure = updatedStructure.replace(/@ tempo/g, `@ ${paces.threshold.pace}/mile`);
-            updatedStructure = updatedStructure.replace(/\bmin tempo\b/g, `min @ ${paces.threshold.pace}/mile`);
-            updatedStructure = updatedStructure.replace(/tempo pace/g, `${paces.threshold.pace}/mile`);
+        if (thresholdPace) {
+            updatedStructure = updatedStructure.replace(/@ tempo/g, `@ ${thresholdPace}/mile`);
+            updatedStructure = updatedStructure.replace(/\bmin tempo\b/g, `min @ ${thresholdPace}/mile`);
+            updatedStructure = updatedStructure.replace(/tempo pace/g, `${thresholdPace}/mile`);
         }
 
-        if (paces.easy) {
+        if (easyPaceMin && easyPaceMax) {
             // Only replace "easy" if it doesn't already have a pace
-            updatedStructure = updatedStructure.replace(/\beasy warmup\b/g, `easy (${paces.easy.min}-${paces.easy.max}/mile) warmup`);
-            updatedStructure = updatedStructure.replace(/\beasy cooldown\b/g, `easy (${paces.easy.min}-${paces.easy.max}/mile) cooldown`);
-            updatedStructure = updatedStructure.replace(/(\d+)(-\d+)? min easy\b/g, `$1$2 min easy (${paces.easy.min}-${paces.easy.max}/mile)`);
+            updatedStructure = updatedStructure.replace(/\beasy warmup\b/g, `easy (${easyPaceMin}-${easyPaceMax}/mile) warmup`);
+            updatedStructure = updatedStructure.replace(/\beasy cooldown\b/g, `easy (${easyPaceMin}-${easyPaceMax}/mile) cooldown`);
+            updatedStructure = updatedStructure.replace(/(\d+)(-\d+)? min easy\b/g, `$1$2 min easy (${easyPaceMin}-${easyPaceMax}/mile)`);
         }
 
-        if (paces.marathon) {
-            updatedStructure = updatedStructure.replace(/@ marathon pace/g, `@ ${paces.marathon.pace}/mile`);
-            updatedStructure = updatedStructure.replace(/@ half pace/g, `@ ${paces.marathon.pace}/mile`); // Approximate half with marathon
-            updatedStructure = updatedStructure.replace(/@ MP/g, `@ ${paces.marathon.pace}/mile`);
+        if (marathonPace) {
+            updatedStructure = updatedStructure.replace(/@ marathon pace/g, `@ ${marathonPace}/mile`);
+            updatedStructure = updatedStructure.replace(/@ half pace/g, `@ ${marathonPace}/mile`); // Approximate half with marathon
+            updatedStructure = updatedStructure.replace(/@ MP/g, `@ ${marathonPace}/mile`);
         }
 
         return updatedStructure;

@@ -129,28 +129,14 @@ class InjuryRecoveryService {
             const isInjuryWeek = weekNumber >= injuryStartWeek && weekNumber <= injuryEndWeek;
             const isReturnWeek = weekNumber === returnToRunningWeek;
 
-            // CRITICAL: Only generate workouts on the fly for injury weeks and return week
-            // For post-recovery weeks, preserve the original structure (even if null) to avoid overwriting progressive distances
+            // CRITICAL: Injury/return weeks MUST have workout data to function
+            // If they don't, the plan is corrupted and needs regeneration
             if ((isInjuryWeek || isReturnWeek) && (!week || !week.workouts || week.workouts.length === 0)) {
-                logger.warn(`  ⚠️ Week ${weekNumber} (injury/return week) is null or has no workouts - generating workouts on the fly`);
+                logger.error(`  ❌ Week ${weekNumber} (injury/return week) has no workout data - plan is corrupted`);
+                throw new Error(`Cannot create injury recovery plan: Week ${weekNumber} has no workout data. Please regenerate your training plan using "Manage Plan" before creating an injury recovery protocol.`);
+            }
 
-                // Import generateWeekWorkouts dynamically to avoid circular dependencies
-                const { generateWeekWorkouts } = await import('../utils/workoutGeneration.js');
-                const generatedWorkouts = generateWeekWorkouts(weekNumber, updatedProfile);
-
-                // Create a week structure from generated workouts
-                week = {
-                    week: weekNumber,
-                    weekDates: { displayText: `Week ${weekNumber}` },
-                    phase: 'base',
-                    totalMileage: generatedWorkouts.reduce((sum, w) => {
-                        const dist = w.workout?.distance || parseFloat(w.workout?.name?.match(/(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)/i)?.[1]) || 0;
-                        return sum + dist;
-                    }, 0),
-                    workouts: generatedWorkouts
-                };
-                logger.log(`  ✅ Generated ${generatedWorkouts.length} workouts for week ${weekNumber}`);
-            } else if (!week || !week.workouts || week.workouts.length === 0) {
+            if (!week || !week.workouts || week.workouts.length === 0) {
                 // For post-recovery weeks, preserve null structure - don't generate workouts
                 // This prevents overwriting the plan with static distances
                 logger.warn(`  ⚠️ Week ${weekNumber} (post-recovery) is null - preserving null structure to avoid overwriting plan`);

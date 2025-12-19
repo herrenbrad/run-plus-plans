@@ -266,21 +266,28 @@ class FirestoreService {
 
   /**
    * Save modified workout (when user changes workout via "Something Else")
+   * @param {string} userId - Firebase user ID
+   * @param {number} weekNumber - Week number in training plan
+   * @param {string} day - Day name (e.g., "Wednesday")
+   * @param {object} modifiedWorkout - The modified workout data
+   * @param {number} workoutIndex - Index of workout on that day (0 for primary, 1+ for two-a-days)
    */
-  async saveModifiedWorkout(userId, weekNumber, day, modifiedWorkout) {
+  async saveModifiedWorkout(userId, weekNumber, day, modifiedWorkout, workoutIndex = 0) {
     try {
       const userRef = doc(db, 'users', userId);
 
-      // Store in a separate collection for modified workouts
+      // Key format must match localStorage: weekNumber-day-index
+      const workoutKey = `${weekNumber}-${day}-${workoutIndex}`;
+
       await updateDoc(userRef, {
-        [`modifiedWorkouts.${weekNumber}-${day}`]: {
+        [`modifiedWorkouts.${workoutKey}`]: {
           ...modifiedWorkout,
           modifiedAt: serverTimestamp()
         },
         updatedAt: serverTimestamp()
       });
 
-      console.log('✅ Modified workout saved');
+      console.log('✅ Modified workout saved:', workoutKey);
       return { success: true };
     } catch (error) {
       console.error('❌ Error saving modified workout:', error);

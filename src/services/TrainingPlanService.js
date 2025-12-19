@@ -1,18 +1,20 @@
 /**
- * TrainingPlanService - Deterministic Plan Structure Generator
- * 
- * This service generates training plan STRUCTURE deterministically using:
- * - PlanMathCalculator: Periodization math (mileage progression)
- * - TrainingPlanGenerator: Workout assignment and schedule compliance
- * 
- * AI is NOT involved in structure generation - only coaching text.
- * 
- * Architecture:
- * 1. Code generates plan structure (this service)
- * 2. AI adds coaching personality (TrainingPlanAIService)
+ * TrainingPlanService - Training Plan Generator
+ *
+ * REBUILT ARCHITECTURE (December 2024):
+ * 1. Routes based on runningStatus FIRST (active, crossTrainingOnly, transitioning)
+ * 2. Uses LibraryCatalog for all workout selection - no invented workout names
+ * 3. AI selects from catalog for variety, but can ONLY pick valid names
+ * 4. Paces injected from VDOT calculations
+ *
+ * This service generates training plan STRUCTURE by:
+ * - Reading available workouts from LibraryCatalog
+ * - Selecting appropriate workouts based on user schedule & equipment
+ * - Fetching full workout details from libraries
+ * - Injecting user-specific paces
  */
 
-import { TrainingPlanGenerator } from '../lib/training-plan-generator.js';
+import { LibraryCatalog } from '../lib/LibraryCatalog.js';
 import { generatePlanMath } from '../lib/plan-math/index.js';
 import { PaceCalculator } from '../lib/pace-calculator.js';
 import phaseCalculator from './ai/PhaseCalculator.js';
@@ -20,750 +22,698 @@ import logger from '../utils/logger.js';
 
 class TrainingPlanService {
     constructor() {
-        this.planGenerator = new TrainingPlanGenerator();
         this.paceCalculator = new PaceCalculator();
-        this.currentProfile = null; // Store profile for helper methods
-        
-        // Initialize workout history for the generator (needed for workout selection)
-        if (!this.planGenerator.workoutHistory) {
-            this.planGenerator.workoutHistory = {
-                intervals: [],
-                tempo: [],
-                hills: []
-            };
-        }
+        this.workoutHistory = {
+            tempo: [],
+            intervals: [],
+            hills: [],
+            longRun: [],
+            crossTraining: {}
+        };
     }
 
     /**
-     * Generate complete training plan structure deterministically
-     * 
-     * @param {Object} userProfile - User profile from onboarding
-     * @returns {Object} Complete plan structure with weeks array
+     * Generate complete training plan structure
+     * Routes based on runningStatus FIRST
      */
     generatePlanStructure(userProfile) {
-        logger.log('🏗️ Generating deterministic plan structure...');
-        
-        // Validate required fields - NO DEFAULTS
+        logger.log('🏗️ Generating training plan...');
+        logger.log(`  Running Status: ${userProfile.runningStatus || 'active'}`);
+
         this.validateProfile(userProfile);
-        
-        // CRITICAL: Reset workout history at start of plan generation for variety
-        // This ensures each new plan starts fresh and avoids repetition
-        this.planGenerator.workoutHistory = {
-            intervals: [],
-            tempo: [],
-            hills: [],
-            longRuns: [],
-            easyRuns: [],
-            bikeWorkouts: [] // Track bike workout variety
-        };
-        logger.log('  ✅ Workout history reset for variety tracking');
-        
-        // Calculate total weeks
+        this.resetWorkoutHistory();
+
         const totalWeeks = this.calculateTotalWeeks(userProfile.startDate, userProfile.raceDate);
-        logger.log(`  Total weeks: ${totalWeeks}`);
-        
-        // Generate periodization math (deterministic mileage progression)
         const planMath = generatePlanMath({
             currentWeeklyMileage: userProfile.currentWeeklyMileage,
             currentLongRun: userProfile.currentLongRun,
-            totalWeeks: totalWeeks,
+            totalWeeks,
             raceDistance: userProfile.raceDistance,
             experienceLevel: userProfile.experienceLevel || 'intermediate'
         });
-        
-        logger.log(`  Peak mileage: ${planMath.targets.peakWeeklyMileage} mpw`);
-        logger.log(`  Long run max: ${planMath.targets.longRunMax} miles`);
-        
-        // Get phase plan
+
         const phasePlan = phaseCalculator.getPhasePlan(totalWeeks);
-        
-        // Calculate paces
         const paces = this.calculatePaces(userProfile);
-        
-        // Generate week-by-week structure
+
+        // Get available workout catalog based on runningStatus and equipment
+        const runningStatus = userProfile.runningStatus || 'active';
+        const catalog = LibraryCatalog.getCatalogForAI(
+            runningStatus,
+            userProfile.crossTrainingEquipment || {},
+            userProfile.standUpBikeType
+        );
+
+        logger.log(`  Catalog loaded: ${runningStatus === 'crossTrainingOnly' ? 'Cross-training only' : 'Running + cross-training'}`);
+
+        // Generate weeks
         const weeks = [];
         for (let weekNum = 1; weekNum <= totalWeeks; weekNum++) {
             const weekMath = planMath.weeks.find(w => w.weekNumber === weekNum);
-            const week = this.generateWeek(
-                weekNum,
-                userProfile,
+            const week = this.generateWeek({
+                weekNumber: weekNum,
+                profile: userProfile,
                 planMath,
                 weekMath,
                 phasePlan,
                 paces,
-                totalWeeks
-            );
+                totalWeeks,
+                catalog,
+                runningStatus
+            });
             weeks.push(week);
         }
-        
-        // Build plan overview
+
         const planOverview = {
             startDate: userProfile.startDate,
             raceDate: userProfile.raceDate,
-            totalWeeks: totalWeeks,
+            totalWeeks,
             raceDistance: userProfile.raceDistance,
             goalTime: userProfile.raceTime,
-            trainingPhilosophy: userProfile.trainingPhilosophy || 'practical_periodization',
-            phasePlan: phasePlan
+            runningStatus,
+            phasePlan
         };
-        
-        logger.log('✅ Plan structure generated deterministically');
-        
+
+        logger.log('✅ Plan structure generated');
+
         return {
             planOverview,
             weeks,
-            _planMathTargets: planMath.targets,
-            _planMath: planMath // Store for reference
+            paces,
+            _planMath: planMath
         };
     }
 
     /**
-     * Generate a single week's structure
+     * Generate a single week
      */
-    generateWeek(weekNumber, profile, planMath, weekMath, phasePlan, paces, totalWeeks) {
-        const currentPhase = phasePlan.find(p => 
+    generateWeek({ weekNumber, profile, planMath, weekMath, phasePlan, paces, totalWeeks, catalog, runningStatus }) {
+        const currentPhase = phasePlan.find(p =>
             weekNumber >= p.startWeek && weekNumber <= p.endWeek
         );
-        
-        // PhaseCalculator returns capitalized phase names ('Base', 'Build'), but workout libraries expect lowercase
         const phaseName = currentPhase ? currentPhase.phase.toLowerCase() : 'base';
-        const phase = { phase: phaseName }; // Format expected by workout libraries
-        
-        // Get workouts for each day based on schedule
-        const workouts = this.generateWeekWorkouts(
-            weekNumber,
-            profile,
-            weekMath,
-            phasePlan,
-            totalWeeks
-        );
-        
-        // Calculate week dates
+
+        // Route to appropriate generator based on runningStatus
+        let workouts;
+
+        switch (runningStatus) {
+            case 'crossTrainingOnly':
+                workouts = this.generateCrossTrainingWeek({
+                    weekNumber, profile, weekMath, phaseName, paces, totalWeeks, catalog
+                });
+                break;
+
+            case 'transitioning':
+                workouts = this.generateTransitionWeek({
+                    weekNumber, profile, weekMath, phaseName, paces, totalWeeks, catalog
+                });
+                break;
+
+            case 'active':
+            default:
+                workouts = this.generateRunningWeek({
+                    weekNumber, profile, weekMath, phaseName, paces, totalWeeks, catalog
+                });
+                break;
+        }
+
         const weekDates = this.calculateWeekDates(weekNumber, profile.startDate);
-        
+
         return {
             weekNumber,
             totalMileage: weekMath.weeklyMileage,
             workouts,
-            phase: phaseName, // Store as string for display
+            phase: phaseName,
             weeklyFocus: this.getWeeklyFocus(phaseName),
             motivation: this.getMotivation(phaseName, weekNumber, totalWeeks),
             weekDates
         };
     }
 
-    /**
-     * Generate workouts for a week based on user schedule
-     */
-    generateWeekWorkouts(weekNumber, profile, weekMath, phasePlan, totalWeeks) {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // RUNNING WEEK GENERATION (runningStatus === 'active')
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    generateRunningWeek({ weekNumber, profile, weekMath, phaseName, paces, totalWeeks, catalog }) {
         const workouts = [];
         const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-        // Store profile for helper methods
-        this.currentProfile = profile;
-
-        // CRITICAL: Check if user is in cross-training only mode (injured/can't run)
-        const isCrossTrainingOnly = profile.runningStatus === 'crossTrainingOnly';
-        if (isCrossTrainingOnly) {
-            logger.log(`  🚴 Week ${weekNumber}: CROSS-TRAINING ONLY mode (no running workouts)`);
-        }
-
-        // Get current phase (convert to lowercase for workout libraries)
-        const phaseBlock = phasePlan.find(p =>
-            weekNumber >= p.startWeek && weekNumber <= p.endWeek
-        );
-        const currentPhase = phaseBlock ? { phase: phaseBlock.phase.toLowerCase() } : { phase: 'base' };
-
-        // Get schedule from profile
         const restDays = profile.restDays || [];
         const availableDays = profile.availableDays || [];
         const qualityDays = profile.qualityDays || profile.hardSessionDays || [];
         const longRunDay = profile.longRunDay || 'Sunday';
         const preferredBikeDays = profile.preferredBikeDays || [];
         const standUpBikeType = profile.standUpBikeType;
-        
-        // Calculate which days are actually in this week (for partial weeks)
-        const weekDates = this.calculateWeekDates(weekNumber, profile.startDate);
-        const weekStartDate = new Date(weekDates.start);
-        const weekEndDate = new Date(weekDates.end);
-        const startDayOfWeek = weekStartDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-        
-        // Map day names to day indices (Monday = 1, Sunday = 0)
-        const dayToIndex = {
-            'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
-            'Thursday': 4, 'Friday': 5, 'Saturday': 6
-        };
-        const indexToDay = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        
-        // For Week 1, only include days from startDate onwards (including Sunday if in same week)
-        const daysInWeek = weekNumber === 1 
-            ? allDays.filter(day => {
-                const dayIndex = dayToIndex[day];
-                const startDayIndex = weekStartDate.getDay();
-                // Include days from start day to Saturday, and always include Sunday (index 0) if start is not Sunday
-                if (startDayIndex === 0) {
-                    // Week starts on Sunday, only include Sunday
-                    return dayIndex === 0;
-                } else {
-                    // Week starts Mon-Sat, include from start day to Sunday (0)
-                    return dayIndex >= startDayIndex || dayIndex === 0;
-                }
-            })
-            : allDays; // Full weeks use all 7 days
-        
-        // Calculate workout distances
+
+        // Calculate distances
         const longRunDistance = weekMath.longRun;
+        const workoutDays = availableDays.filter(d =>
+            !restDays.includes(d) && d !== longRunDay && !preferredBikeDays.includes(d)
+        );
         const remainingMileage = weekMath.weeklyMileage - longRunDistance;
-        
-        // Count ALL workout days (running + bike) that are actually in this week
-        // This ensures proper mileage distribution, especially for partial weeks
-        const runningDays = daysInWeek.filter(day =>
-            availableDays.includes(day) &&
-            !restDays.includes(day) &&
-            !preferredBikeDays.includes(day) &&
-            day !== longRunDay &&
-            qualityDays.includes(day) // Quality days are running workouts
-        );
-        
-        const easyRunDays = daysInWeek.filter(day =>
-            availableDays.includes(day) &&
-            !restDays.includes(day) &&
-            !preferredBikeDays.includes(day) &&
-            day !== longRunDay &&
-            !qualityDays.includes(day) // Easy run days
-        );
-        
-        const bikeDays = daysInWeek.filter(day =>
-            availableDays.includes(day) &&
-            !restDays.includes(day) &&
-            preferredBikeDays.includes(day) &&
-            day !== longRunDay
-        );
-        
-        // Total workout count includes running days AND bike days (both count towards mileage distribution)
-        // But exclude long run day from the count since it has its own distance
-        const totalWorkoutCount = runningDays.length + easyRunDays.length + bikeDays.length;
-        const avgRunningDistance = totalWorkoutCount > 0 ? remainingMileage / totalWorkoutCount : 0;
-        
-        // Track hard session index for workout rotation
+        const avgDistance = workoutDays.length > 0 ? remainingMileage / workoutDays.length : 4;
+
         let hardSessionIndex = 0;
-        
-        // Generate workout for each day (only process days that are in this week)
+
         allDays.forEach(day => {
-            // For Week 1, skip days before the start date (but always include Sunday)
-            if (weekNumber === 1) {
-                const dayIndex = dayToIndex[day];
-                const startDayIndex = weekStartDate.getDay();
-                if (startDayIndex === 0) {
-                    // Week starts on Sunday, only process Sunday
-                    if (dayIndex !== 0) return;
-                } else {
-                    // Week starts Mon-Sat, skip days before start, but always include Sunday
-                    if (dayIndex < startDayIndex && dayIndex !== 0) {
-                        // Day is before start date (and not Sunday), skip it
-                        return;
-                    }
-                }
-            }
             if (restDays.includes(day)) {
-                workouts.push(this.createRestWorkout(day));
+                workouts.push(this.createRestDay(day));
             } else if (day === longRunDay) {
-                // Race week always gets race day (even in cross-training only mode - goal is to race!)
-                const isRaceWeek = weekNumber === totalWeeks;
-                if (isRaceWeek) {
-                    // Race day - always show regardless of running status
-                    workouts.push(this.createLongRunWorkout(
-                        day,
-                        longRunDistance,
-                        true, // isRaceWeek
-                        profile,
-                        currentPhase,
-                        weekNumber,
-                        totalWeeks
-                    ));
-                } else if (isCrossTrainingOnly && standUpBikeType) {
-                    // CRITICAL: In cross-training only mode, replace long run with long bike ride
-                    workouts.push(this.createBikeWorkout(
-                        day,
-                        standUpBikeType,
-                        true, // isHardDay - long sessions are quality sessions
-                        weekMath,
-                        currentPhase,
-                        weekNumber,
-                        totalWeeks,
-                        hardSessionIndex,
-                        longRunDistance // Use long run distance for the bike workout
-                    ));
-                    hardSessionIndex++;
-                } else if (isCrossTrainingOnly) {
-                    // Cross-training only but no bike - rest day (can't run)
-                    workouts.push(this.createRestWorkout(day));
-                } else {
-                    // Normal mode - running long run
-                    workouts.push(this.createLongRunWorkout(
-                        day,
-                        longRunDistance,
-                        false, // not race week
-                        profile,
-                        currentPhase,
-                        weekNumber,
-                        totalWeeks
-                    ));
-                }
+                workouts.push(this.createLongRun(day, longRunDistance, phaseName, paces, profile, weekNumber, totalWeeks));
             } else if (preferredBikeDays.includes(day) && standUpBikeType) {
-                // Bike day - check if it's also a quality day
-                const isHardBikeDay = qualityDays.includes(day);
-                if (isHardBikeDay) {
-                    // Hard bike day - increment hard session index
-                    workouts.push(this.createBikeWorkout(
-                        day,
-                        standUpBikeType,
-                        true, // isHardDay
-                        weekMath,
-                        currentPhase,
-                        weekNumber,
-                        totalWeeks,
-                        hardSessionIndex,
-                        avgRunningDistance
-                    ));
-                    hardSessionIndex++; // Increment for next hard session
-                } else {
-                    // Easy bike day - use library for variety
-                    workouts.push(this.createBikeWorkout(
-                        day,
-                        standUpBikeType,
-                        false, // isHardDay
-                        weekMath,
-                        currentPhase,
-                        weekNumber,
-                        totalWeeks,
-                        0, // hardSessionIndex (not used for easy days)
-                        avgRunningDistance
-                    ));
-                }
+                const isHard = qualityDays.includes(day);
+                workouts.push(this.createBikeWorkout(day, standUpBikeType, isHard, phaseName, avgDistance, paces));
             } else if (qualityDays.includes(day)) {
-                // CRITICAL: In cross-training only mode, replace hard runs with hard bike workouts
-                if (isCrossTrainingOnly && standUpBikeType) {
-                    workouts.push(this.createBikeWorkout(
-                        day,
-                        standUpBikeType,
-                        true, // isHardDay
-                        weekMath,
-                        currentPhase,
-                        weekNumber,
-                        totalWeeks,
-                        hardSessionIndex,
-                        avgRunningDistance
-                    ));
-                    hardSessionIndex++;
-                } else if (isCrossTrainingOnly) {
-                    // Cross-training only but no bike - rest day (can't run)
-                    workouts.push(this.createRestWorkout(day));
-                } else {
-                    // Normal mode - hard running day
-                    workouts.push(this.createHardRunWorkout(
-                        day,
-                        avgRunningDistance,
-                        currentPhase,
-                        weekNumber,
-                        totalWeeks,
-                        profile,
-                        hardSessionIndex
-                    ));
-                    hardSessionIndex++; // Increment for next hard day
-                }
+                workouts.push(this.createHardWorkout(day, phaseName, avgDistance, paces, hardSessionIndex, weekNumber));
+                hardSessionIndex++;
             } else if (availableDays.includes(day)) {
-                // CRITICAL: In cross-training only mode, replace easy runs with easy bike workouts
-                if (isCrossTrainingOnly && standUpBikeType) {
-                    workouts.push(this.createBikeWorkout(
-                        day,
-                        standUpBikeType,
-                        false, // isHardDay (easy day)
-                        weekMath,
-                        currentPhase,
-                        weekNumber,
-                        totalWeeks,
-                        0,
-                        avgRunningDistance
-                    ));
-                } else if (isCrossTrainingOnly) {
-                    // Cross-training only but no bike - rest day (can't run)
-                    workouts.push(this.createRestWorkout(day));
-                } else {
-                    // Normal mode - easy run day
-                    workouts.push(this.createEasyRunWorkout(day, avgRunningDistance));
-                }
+                workouts.push(this.createEasyRun(day, avgDistance, paces));
             } else {
-                // Not an available day - rest
-                workouts.push(this.createRestWorkout(day));
+                workouts.push(this.createRestDay(day));
             }
         });
-        
+
         return workouts;
     }
 
-    /**
-     * Create rest day workout
-     */
-    createRestWorkout(day) {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CROSS-TRAINING WEEK GENERATION (runningStatus === 'crossTrainingOnly')
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    generateCrossTrainingWeek({ weekNumber, profile, weekMath, phaseName, paces, totalWeeks, catalog }) {
+        const workouts = [];
+        const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+        const restDays = profile.restDays || [];
+        const availableDays = profile.availableDays || [];
+        const qualityDays = profile.qualityDays || profile.hardSessionDays || [];
+        const longRunDay = profile.longRunDay || 'Sunday';
+
+        // Get available equipment
+        const availableEquipment = LibraryCatalog.getAvailableEquipment(profile);
+
+        if (availableEquipment.length === 0) {
+            logger.warn('No cross-training equipment available, falling back to walking');
+            // Generate walking-only plan
+            return this.generateWalkingWeek({ weekNumber, profile, weekMath, phaseName, restDays, availableDays, longRunDay });
+        }
+
+        // Distribute equipment across workout days for variety
+        let equipmentIndex = 0;
+        let hardSessionIndex = 0;
+
+        allDays.forEach(day => {
+            if (restDays.includes(day)) {
+                workouts.push(this.createRestDay(day));
+            } else if (day === longRunDay) {
+                // Long session on cross-training equipment
+                const equipment = availableEquipment[equipmentIndex % availableEquipment.length];
+                workouts.push(this.createCrossTrainingLong(day, equipment, phaseName, weekMath.longRun));
+                equipmentIndex++;
+            } else if (qualityDays.includes(day)) {
+                // Hard cross-training session
+                const equipment = availableEquipment[equipmentIndex % availableEquipment.length];
+                workouts.push(this.createCrossTrainingHard(day, equipment, phaseName, hardSessionIndex));
+                equipmentIndex++;
+                hardSessionIndex++;
+            } else if (availableDays.includes(day)) {
+                // Easy cross-training session
+                const equipment = availableEquipment[equipmentIndex % availableEquipment.length];
+                workouts.push(this.createCrossTrainingEasy(day, equipment));
+                equipmentIndex++;
+            } else {
+                workouts.push(this.createRestDay(day));
+            }
+        });
+
+        return workouts;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TRANSITION WEEK GENERATION (runningStatus === 'transitioning')
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    generateTransitionWeek({ weekNumber, profile, weekMath, phaseName, paces, totalWeeks, catalog }) {
+        // Transition schedule:
+        // Weeks 1-2: 100% cross-training
+        // Weeks 3-4: 25% running, 75% cross-training
+        // Weeks 5-6: 50% running, 50% cross-training
+        // Weeks 7+: 75% running, 25% cross-training
+
+        if (weekNumber <= 2) {
+            logger.log(`  Week ${weekNumber}: 100% cross-training (transition phase 1)`);
+            return this.generateCrossTrainingWeek({ weekNumber, profile, weekMath, phaseName, paces, totalWeeks, catalog });
+        }
+
+        // For weeks 3+, blend running and cross-training
+        const workouts = [];
+        const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+        const restDays = profile.restDays || [];
+        const availableDays = profile.availableDays || [];
+        const qualityDays = profile.qualityDays || profile.hardSessionDays || [];
+        const longRunDay = profile.longRunDay || 'Sunday';
+
+        const availableEquipment = LibraryCatalog.getAvailableEquipment(profile);
+
+        // Calculate running percentage based on week
+        let runningPercentage;
+        if (weekNumber <= 4) {
+            runningPercentage = 0.25;
+        } else if (weekNumber <= 6) {
+            runningPercentage = 0.50;
+        } else {
+            runningPercentage = 0.75;
+        }
+
+        logger.log(`  Week ${weekNumber}: ${Math.round(runningPercentage * 100)}% running`);
+
+        // Count workout days (excluding rest and long run)
+        const workoutDays = availableDays.filter(d => !restDays.includes(d) && d !== longRunDay);
+        const runningDayCount = Math.round(workoutDays.length * runningPercentage);
+
+        // First N days are running, rest are cross-training
+        let runningDaysAssigned = 0;
+        let equipmentIndex = 0;
+        let hardSessionIndex = 0;
+
+        // Calculate distances
+        const longRunDistance = weekMath.longRun * runningPercentage; // Reduce long run during transition
+        const remainingMileage = weekMath.weeklyMileage - longRunDistance;
+        const avgDistance = workoutDays.length > 0 ? remainingMileage / workoutDays.length : 4;
+
+        allDays.forEach(day => {
+            if (restDays.includes(day)) {
+                workouts.push(this.createRestDay(day));
+            } else if (day === longRunDay) {
+                if (runningPercentage >= 0.5) {
+                    // Running long run
+                    workouts.push(this.createLongRun(day, longRunDistance, phaseName, paces, profile, weekNumber, totalWeeks));
+                } else {
+                    // Cross-training long session
+                    const equipment = availableEquipment[equipmentIndex % availableEquipment.length];
+                    workouts.push(this.createCrossTrainingLong(day, equipment, phaseName, weekMath.longRun));
+                    equipmentIndex++;
+                }
+            } else if (availableDays.includes(day)) {
+                const isHard = qualityDays.includes(day);
+
+                // Assign running days first (prioritize quality days)
+                if (runningDaysAssigned < runningDayCount && (isHard || runningDaysAssigned < runningDayCount - 1)) {
+                    if (isHard) {
+                        workouts.push(this.createHardWorkout(day, phaseName, avgDistance, paces, hardSessionIndex, weekNumber));
+                        hardSessionIndex++;
+                    } else {
+                        workouts.push(this.createEasyRun(day, avgDistance, paces));
+                    }
+                    runningDaysAssigned++;
+                } else {
+                    // Cross-training day
+                    const equipment = availableEquipment[equipmentIndex % availableEquipment.length];
+                    if (isHard) {
+                        workouts.push(this.createCrossTrainingHard(day, equipment, phaseName, hardSessionIndex));
+                        hardSessionIndex++;
+                    } else {
+                        workouts.push(this.createCrossTrainingEasy(day, equipment));
+                    }
+                    equipmentIndex++;
+                }
+            } else {
+                workouts.push(this.createRestDay(day));
+            }
+        });
+
+        return workouts;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WORKOUT CREATION METHODS (using LibraryCatalog)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    createRestDay(day) {
         return {
             day,
             type: 'rest',
-            name: 'Rest',
-            description: 'Rest',
-            distance: 0,
-            focus: 'Recovery',
-            workout: { name: 'Rest', description: 'Rest' },
-            metadata: { aiGenerated: false, deterministic: true }
+            ...LibraryCatalog.getRestDay()
         };
     }
 
-    /**
-     * Create long run workout
-     */
-    createLongRunWorkout(day, distance, isRaceWeek, profile, phase, weekNumber, totalWeeks) {
-        if (isRaceWeek) {
-            // Race day - calculate correct distance
-            const raceDistance = this.getRaceDistance(profile.raceDistance);
-            return {
-                day,
-                type: 'race',
-                name: `🏁 Race Day: ${profile.raceDistance}`,
-                description: `Race Day - ${profile.raceDistance}`,
-                distance: raceDistance,
-                focus: 'Race Day',
-                workout: { 
-                    name: `🏁 Race Day: ${profile.raceDistance}`, 
-                    description: `Your ${profile.raceDistance} race! Execute your race plan and trust your training.` 
-                },
-                metadata: { 
-                    isRaceDay: true, 
-                    raceDistance: profile.raceDistance,
-                    goalTime: profile.raceTime,
-                    aiGenerated: false, 
-                    deterministic: true 
-                }
-            };
-        }
-        
-        // Use library to select appropriate long run workout
-        const paces = this.calculatePaces(profile);
-        const paceData = paces.paces || paces;
-        
-        // selectLongRunWorkout expects phase object with .phase property
-        const phaseObj = typeof phase === 'string' ? { phase } : phase;
-        
-        const longRunWorkout = this.planGenerator.selectLongRunWorkout(
-            phaseObj,
-            distance,
-            0, // runEqPreference
-            paceData
-        );
-        
+    createEasyRun(day, distance, paces) {
+        const workout = LibraryCatalog.getEasyRunWorkout({ distance, paces: paces?.paces });
         return {
             day,
-            type: 'longRun',
-            name: longRunWorkout.name || `Long Run ${distance} miles`,
-            description: longRunWorkout.description || `Long Run ${distance} miles`,
-            distance: distance,
-            focus: 'Endurance',
-            workout: longRunWorkout,
-            metadata: { 
-                workoutId: longRunWorkout.workoutId,
-                aiGenerated: false, 
-                deterministic: true 
-            }
+            ...workout
         };
     }
 
-    /**
-     * Create bike workout
-     * FULL LIBRARY INTEGRATION: All bike workouts come from StandUpBikeWorkoutLibrary
-     * Uses prescribeStandUpBikeWorkout to get rich workout details with biomechanical notes
-     */
-    createBikeWorkout(day, bikeType, isHardDay, weekMath, phase, weekNumber, totalWeeks, hardSessionIndex = 0, avgRunningDistance = 4) {
-        const library = this.planGenerator.standUpBikeLibrary;
-        const targetDistance = Math.round(avgRunningDistance);
-        
-        let category;
-        let focus;
-        
-        if (isHardDay) {
-            // Hard bike day: Rotate TEMPO_BIKE, INTERVAL_BIKE, POWER_RESISTANCE
-            const hardCategories = ['TEMPO_BIKE', 'INTERVAL_BIKE', 'POWER_RESISTANCE'];
-            category = hardCategories[hardSessionIndex % hardCategories.length];
-            focus = category === 'TEMPO_BIKE' ? 'Lactate Threshold' : 'Speed & Power';
-        } else {
-            // Easy bike day: Rotate AEROBIC_BASE, RECOVERY_SPECIFIC
-            const easyCategories = ['AEROBIC_BASE', 'RECOVERY_SPECIFIC'];
-            category = easyCategories[weekNumber % easyCategories.length];
-            focus = 'Cross-Training';
-        }
-        
-        // Get workouts from library for this category
-        const allWorkouts = library.workoutLibrary[category] || [];
-        const availableWorkouts = allWorkouts.filter(w =>
-            w.equipment === bikeType || w.equipment === "both"
-        );
-        
-        if (availableWorkouts.length === 0) {
-            // Fallback: try other categories of same intensity
-            const fallbackCategories = isHardDay 
-                ? ['TEMPO_BIKE', 'INTERVAL_BIKE', 'POWER_RESISTANCE']
-                : ['AEROBIC_BASE', 'RECOVERY_SPECIFIC'];
-            
-            for (const fallbackCategory of fallbackCategories) {
-                if (fallbackCategory === category) continue;
-                const fallbackWorkouts = (library.workoutLibrary[fallbackCategory] || []).filter(w =>
-                    w.equipment === bikeType || w.equipment === "both"
-                );
-                if (fallbackWorkouts.length > 0) {
-                    const selectedWorkout = this.planGenerator.selectWorkoutAvoidingRepetition(fallbackWorkouts, 'bikeWorkouts');
-                    const prescribedWorkout = library.prescribeStandUpBikeWorkout(
-                        selectedWorkout.name,
-                        bikeType,
-                        { targetDistance, hasGarmin: true }
-                    );
-                    
-                    return {
-                        day,
-                        type: 'bike',
-                        name: prescribedWorkout.name, // Use library-formatted name (e.g., "4 RunEQ Miles - Conversational Pace Cruise")
-                        description: prescribedWorkout.description, // Use library description with full details
-                        distance: targetDistance,
-                        focus: focus,
-                        workout: prescribedWorkout, // Pass full prescribed workout object
-                        metadata: { 
-                            aiGenerated: false, 
-                            deterministic: true,
-                            equipmentSpecific: true,
-                            bikeWorkoutType: isHardDay ? 'hard' : 'easy',
-                            category: fallbackCategory
-                        }
-                    };
-                }
-            }
-            
-            // Ultimate fallback: generic workout if library is empty
-            logger.warn(`No ${category} workouts available for ${bikeType}, using generic fallback`);
-            return {
-                day,
-                type: 'bike',
-                name: `Ride ${targetDistance} RunEQ miles`,
-                description: `Ride ${targetDistance} RunEQ miles on your ${bikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} (${isHardDay ? 'hard' : 'easy'} effort)`,
-                distance: targetDistance,
-                focus: focus,
-                workout: {
-                    name: `Ride ${targetDistance} RunEQ miles`,
-                    description: `Ride ${targetDistance} RunEQ miles on your ${bikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'}`
-                },
-                metadata: { 
-                    aiGenerated: false, 
-                    deterministic: true,
-                    equipmentSpecific: true,
-                    bikeWorkoutType: isHardDay ? 'hard' : 'easy',
-                    fallback: true
-                }
-            };
-        }
-        
-        // Select workout with variety tracking
-        const selectedWorkout = this.planGenerator.selectWorkoutAvoidingRepetition(availableWorkouts, 'bikeWorkouts');
-        
-        // Prescribe the workout (formats name with distance, adds equipment-specific notes)
-        const prescribedWorkout = library.prescribeStandUpBikeWorkout(
-            selectedWorkout.name,
-            bikeType,
-            { targetDistance, hasGarmin: true }
-        );
-        
-        return {
-            day,
-            type: 'bike',
-            name: prescribedWorkout.name, // Use library-formatted name (e.g., "4 RunEQ Miles - Sustained Threshold Effort")
-            description: prescribedWorkout.description, // Use library description with full details
-            distance: targetDistance,
-            focus: focus,
-            workout: prescribedWorkout, // Pass full prescribed workout object with all biomechanical notes
-            metadata: { 
-                aiGenerated: false, 
-                deterministic: true,
-                equipmentSpecific: true,
-                bikeWorkoutType: isHardDay ? 'hard' : 'easy',
-                category: category
-            }
-        };
-    }
+    createHardWorkout(day, phase, distance, paces, hardSessionIndex, weekNumber) {
+        // Rotate through workout types based on phase and index
+        const workoutTypes = this.getHardWorkoutRotation(phase);
+        const workoutType = workoutTypes[hardSessionIndex % workoutTypes.length];
 
-    /**
-     * Create hard running workout
-     */
-    createHardRunWorkout(day, distance, phase, weekNumber, totalWeeks, profile, hardSessionIndex) {
-        // Select workout type based on phase, week, AND hard session index (for variety within week)
-        const workoutType = this.selectHardWorkoutType(phase, weekNumber, hardSessionIndex);
-        
-        // Use library to select appropriate workout
-        const paces = this.calculatePaces(profile);
-        const paceData = paces.paces || paces;
-        
-        // selectQualityWorkout expects phase object with .phase property
-        const phaseObj = typeof phase === 'string' ? { phase } : phase;
-        
-        const qualityWorkout = this.planGenerator.selectQualityWorkout(
-            workoutType,
-            phaseObj,
-            distance,
-            0, // runEqPreference
-            paceData,
-            weekNumber,
-            totalWeeks
-        );
-        
+        // Select workout from library using rotation for variety
+        const workout = this.selectFromLibrary(workoutType, phase, weekNumber, paces);
+
         return {
             day,
             type: workoutType,
-            name: qualityWorkout.name || `${this.getWorkoutTypeName(workoutType)} ${distance} miles`,
-            description: qualityWorkout.description || `${this.getWorkoutTypeName(workoutType)} ${distance} miles`,
-            distance: distance,
             focus: this.getWorkoutFocus(workoutType),
-            workout: qualityWorkout,
-            metadata: { 
-                workoutId: qualityWorkout.workoutId,
-                aiGenerated: false, 
-                deterministic: true 
-            }
+            distance,
+            ...workout
         };
     }
 
-    /**
-     * Create easy run workout
-     */
-    createEasyRunWorkout(day, distance) {
+    createLongRun(day, distance, phase, paces, profile, weekNumber, totalWeeks) {
+        // Check if this is race week
+        if (weekNumber === totalWeeks) {
+            return this.createRaceDay(day, profile);
+        }
+
+        // Select long run workout from library
+        const workout = this.selectFromLibrary('longRun', phase, weekNumber, paces, { distance });
+
         return {
             day,
-            type: 'easy',
-            name: `Easy Run ${distance} miles`,
-            description: `Easy Run ${distance} miles`,
-            distance: distance,
-            focus: 'Aerobic Base',
-            workout: {
-                name: `Easy Run ${distance} miles`,
-                description: `Easy Run ${distance} miles`
-            },
-            metadata: { aiGenerated: false, deterministic: true }
+            type: 'longRun',
+            focus: 'Endurance',
+            distance,
+            ...workout
         };
     }
 
-    /**
-     * Select hard workout type based on phase, week, and hard session index
-     * This ensures variety both across weeks AND within a week (if multiple hard days)
-     */
-    selectHardWorkoutType(phase, weekNumber, hardSessionIndex = 0) {
-        // Base rotation pattern for the week (primary workout type)
-        const weekCycle = weekNumber % 3;
-        
-        // Within-week rotation (if multiple hard days, alternate types)
-        const sessionOffset = hardSessionIndex % 3;
-        
-        // Combine week cycle and session offset for variety
-        const combinedCycle = (weekCycle + sessionOffset) % 3;
-        
-        if (phase === 'base') {
-            // Base phase: More tempo and hills, less intervals
-            const baseTypes = ['tempo', 'hills', 'intervals'];
-            return baseTypes[combinedCycle];
-        } else if (phase === 'build' || phase === 'peak') {
-            // Build/Peak: More intervals and tempo, hills for strength
-            const buildTypes = ['intervals', 'tempo', 'hills'];
-            return buildTypes[combinedCycle];
-        } else {
-            // Taper: Mostly tempo, occasional intervals
-            return combinedCycle === 0 ? 'tempo' : 'intervals';
+    createRaceDay(day, profile) {
+        const raceDistance = this.getRaceDistance(profile.raceDistance);
+        return {
+            day,
+            type: 'race',
+            name: `🏁 Race Day: ${profile.raceDistance}`,
+            description: `Your ${profile.raceDistance} race! Execute your race plan and trust your training.`,
+            distance: raceDistance,
+            focus: 'Race Day',
+            isRaceDay: true
+        };
+    }
+
+    createBikeWorkout(day, bikeType, isHard, phase, distance, paces) {
+        const workoutType = isHard ? 'TEMPO_BIKE' : 'EASY_BIKE';
+        const workout = LibraryCatalog.getCrossTrainingByDuration('standUpBike', workoutType, distance * 10);
+
+        if (workout) {
+            return {
+                day,
+                type: 'bike',
+                equipmentSpecific: true,
+                standUpBikeType: bikeType,
+                crossTrainingType: 'standUpBike',
+                focus: isHard ? 'Aerobic Power' : 'Aerobic Base',
+                ...workout
+            };
+        }
+
+        // Fallback if library doesn't have matching workout
+        return {
+            day,
+            type: 'bike',
+            name: `${isHard ? 'Tempo' : 'Easy'} ${bikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} Ride`,
+            description: `${isHard ? 'Moderate-hard' : 'Easy'} effort on your ${bikeType}`,
+            equipmentSpecific: true,
+            standUpBikeType: bikeType,
+            crossTrainingType: 'standUpBike',
+            focus: isHard ? 'Aerobic Power' : 'Aerobic Base',
+            duration: `${Math.round(distance * 10)} minutes`
+        };
+    }
+
+    createCrossTrainingEasy(day, equipment) {
+        const workout = LibraryCatalog.getCrossTrainingByDuration(equipment.key, 'EASY', 45);
+
+        if (workout) {
+            return {
+                day,
+                type: 'cross-training',
+                crossTrainingType: equipment.key,
+                equipmentLabel: equipment.label,
+                focus: 'Aerobic Base',
+                ...workout
+            };
+        }
+
+        return {
+            day,
+            type: 'cross-training',
+            name: `Easy ${equipment.label} Session`,
+            description: `Easy effort cross-training on ${equipment.label}`,
+            crossTrainingType: equipment.key,
+            equipmentLabel: equipment.label,
+            focus: 'Aerobic Base',
+            duration: '30-45 minutes',
+            intensity: 'Easy'
+        };
+    }
+
+    createCrossTrainingHard(day, equipment, phase, hardSessionIndex) {
+        // Rotate through TEMPO and INTERVALS for variety
+        const types = ['TEMPO', 'INTERVALS'];
+        const workoutType = types[hardSessionIndex % types.length];
+
+        const workout = LibraryCatalog.getCrossTrainingByDuration(equipment.key, workoutType, 50);
+
+        if (workout) {
+            return {
+                day,
+                type: 'cross-training',
+                crossTrainingType: equipment.key,
+                equipmentLabel: equipment.label,
+                focus: workoutType === 'TEMPO' ? 'Lactate Threshold' : 'VO2 Max',
+                ...workout
+            };
+        }
+
+        return {
+            day,
+            type: 'cross-training',
+            name: `${workoutType === 'TEMPO' ? 'Threshold' : 'Interval'} ${equipment.label} Session`,
+            description: `Hard effort cross-training on ${equipment.label}`,
+            crossTrainingType: equipment.key,
+            equipmentLabel: equipment.label,
+            focus: workoutType === 'TEMPO' ? 'Lactate Threshold' : 'VO2 Max',
+            duration: '45-60 minutes',
+            intensity: 'Hard'
+        };
+    }
+
+    createCrossTrainingLong(day, equipment, phase, targetDistance) {
+        const durationMinutes = targetDistance * 10; // Approximate conversion
+        const workout = LibraryCatalog.getCrossTrainingByDuration(equipment.key, 'LONG', durationMinutes);
+
+        if (workout) {
+            return {
+                day,
+                type: 'cross-training',
+                crossTrainingType: equipment.key,
+                equipmentLabel: equipment.label,
+                focus: 'Endurance',
+                ...workout
+            };
+        }
+
+        return {
+            day,
+            type: 'cross-training',
+            name: `Long ${equipment.label} Session`,
+            description: `Extended cross-training session on ${equipment.label}`,
+            crossTrainingType: equipment.key,
+            equipmentLabel: equipment.label,
+            focus: 'Endurance',
+            duration: `${durationMinutes}-${durationMinutes + 15} minutes`,
+            intensity: 'Easy to Moderate'
+        };
+    }
+
+    generateWalkingWeek({ weekNumber, profile, weekMath, phaseName, restDays, availableDays, longRunDay }) {
+        const workouts = [];
+        const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+        allDays.forEach(day => {
+            if (restDays.includes(day)) {
+                workouts.push(this.createRestDay(day));
+            } else if (day === longRunDay) {
+                workouts.push({
+                    day,
+                    type: 'walking',
+                    name: 'Long Walk',
+                    description: 'Extended easy walk for aerobic base building',
+                    focus: 'Aerobic Base',
+                    duration: '60-90 minutes',
+                    intensity: 'Easy'
+                });
+            } else if (availableDays.includes(day)) {
+                workouts.push({
+                    day,
+                    type: 'walking',
+                    name: 'Easy Walk',
+                    description: 'Easy walk for recovery and base building',
+                    focus: 'Recovery',
+                    duration: '30-45 minutes',
+                    intensity: 'Easy'
+                });
+            } else {
+                workouts.push(this.createRestDay(day));
+            }
+        });
+
+        return workouts;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // LIBRARY SELECTION HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    selectFromLibrary(workoutType, phase, weekNumber, paces, options = {}) {
+        const libraryType = this.mapWorkoutTypeToLibrary(workoutType);
+
+        // Get workout names for this type
+        const library = LibraryCatalog.running[libraryType];
+        if (!library || !library.workoutLibrary) {
+            return { name: `${workoutType} Workout`, description: 'Complete as prescribed' };
+        }
+
+        // Collect all workout names from all categories
+        const allWorkouts = [];
+        for (const [category, workouts] of Object.entries(library.workoutLibrary)) {
+            if (Array.isArray(workouts)) {
+                workouts.forEach(w => allWorkouts.push({ ...w, category }));
+            }
+        }
+
+        if (allWorkouts.length === 0) {
+            return { name: `${workoutType} Workout`, description: 'Complete as prescribed' };
+        }
+
+        // Select workout avoiding recent repeats
+        const history = this.workoutHistory[libraryType] || [];
+        const available = allWorkouts.filter(w => !history.includes(w.name));
+        const selected = available.length > 0
+            ? available[weekNumber % available.length]
+            : allWorkouts[weekNumber % allWorkouts.length];
+
+        // Track history
+        if (!this.workoutHistory[libraryType]) this.workoutHistory[libraryType] = [];
+        this.workoutHistory[libraryType].push(selected.name);
+        if (this.workoutHistory[libraryType].length > 4) {
+            this.workoutHistory[libraryType].shift();
+        }
+
+        // Get full workout with pace injection
+        try {
+            const fullWorkout = LibraryCatalog.getRunningWorkout(libraryType, selected.name, {
+                paces: paces?.paces,
+                weekNumber,
+                ...options
+            });
+
+            if (fullWorkout) {
+                return fullWorkout;
+            }
+        } catch (error) {
+            logger.warn(`Could not get full workout for ${selected.name}:`, error.message);
+        }
+
+        return selected;
+    }
+
+    mapWorkoutTypeToLibrary(workoutType) {
+        const mapping = {
+            'tempo': 'tempo',
+            'intervals': 'intervals',
+            'hills': 'hills',
+            'longRun': 'longRun',
+            'long-run': 'longRun'
+        };
+        return mapping[workoutType] || workoutType;
+    }
+
+    getHardWorkoutRotation(phase) {
+        // Different workout mix based on training phase
+        switch (phase) {
+            case 'base':
+                return ['tempo', 'hills', 'tempo'];
+            case 'build':
+                return ['tempo', 'intervals', 'hills'];
+            case 'peak':
+                return ['intervals', 'tempo', 'intervals'];
+            case 'taper':
+                return ['tempo', 'intervals'];
+            default:
+                return ['tempo', 'intervals', 'hills'];
         }
     }
 
-    /**
-     * Get workout type display name
-     */
-    getWorkoutTypeName(type) {
-        const names = {
-            tempo: 'Tempo Run',
-            intervals: 'Interval Run',
-            hills: 'Hill Repeats',
-            easy: 'Easy Run'
+    // ═══════════════════════════════════════════════════════════════════════════
+    // UTILITY METHODS (kept from original)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    resetWorkoutHistory() {
+        this.workoutHistory = {
+            tempo: [],
+            intervals: [],
+            hills: [],
+            longRun: [],
+            crossTraining: {}
         };
-        return names[type] || 'Run';
     }
 
-    /**
-     * Get workout focus
-     */
     getWorkoutFocus(type) {
-        const focuses = {
+        const focusMap = {
             tempo: 'Lactate Threshold',
-            intervals: 'Speed & VO2 Max',
-            hills: 'Strength & Power',
+            intervals: 'VO2 Max & Speed',
+            hills: 'Power & Strength',
+            longRun: 'Endurance',
             easy: 'Aerobic Base'
         };
-        return focuses[type] || 'Aerobic Base';
+        return focusMap[type] || 'General Fitness';
     }
 
-    /**
-     * Get weekly focus based on phase
-     */
     getWeeklyFocus(phase) {
-        const focuses = {
-            base: 'Aerobic foundation & durability',
-            build: 'Strength & speed development',
+        const focusMap = {
+            base: 'Building aerobic foundation',
+            build: 'Increasing training load',
             peak: 'Race-specific sharpening',
-            taper: 'Freshen up & execute'
+            taper: 'Recovery and freshness'
         };
-        return focuses[phase] || 'Training';
+        return focusMap[phase] || 'Consistent training';
     }
 
-    /**
-     * Get motivation message
-     */
     getMotivation(phase, weekNumber, totalWeeks) {
-        if (weekNumber === totalWeeks) {
-            return 'Visualize success - you\'ve earned this 💫';
-        }
-        const messages = {
-            base: 'Consistency right now builds race-day confidence 💪',
-            build: 'This phase teaches you to love the grind 🔁',
-            peak: 'Trust your legs - they know what to do 👣',
-            taper: 'Nothing new. Stay sharp, stay calm 🎯'
-        };
-        return messages[phase] || 'Keep showing up 🏃';
+        const remaining = totalWeeks - weekNumber;
+        if (remaining <= 1) return 'Race week! Trust your training.';
+        if (remaining <= 3) return 'Almost there! Stay focused.';
+        if (phase === 'base') return 'Building your foundation. Every mile counts.';
+        if (phase === 'build') return 'Getting stronger each week!';
+        if (phase === 'peak') return 'Fine-tuning for race day.';
+        return 'Keep up the great work!';
     }
 
-    /**
-     * Calculate total weeks between start and race date
-     */
     calculateTotalWeeks(startDate, raceDate) {
         const start = new Date(startDate);
         const race = new Date(raceDate);
         const diffTime = race - start;
         const diffWeeks = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 7));
-        return Math.max(8, diffWeeks); // Minimum 8 weeks
+        return Math.max(8, diffWeeks);
     }
 
-    /**
-     * Calculate week dates
-     */
     calculateWeekDates(weekNumber, startDate) {
         const start = new Date(startDate);
         const weekStart = new Date(start);
         weekStart.setDate(start.getDate() + (weekNumber - 1) * 7);
-        
+
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 6);
-        
+
         const formatDate = (date) => {
             const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             return `${months[date.getMonth()]} ${date.getDate()}`;
         };
-        
+
         return {
             start: weekStart.toISOString().split('T')[0],
             end: weekEnd.toISOString().split('T')[0],
@@ -771,20 +721,13 @@ class TrainingPlanService {
         };
     }
 
-    /**
-     * Calculate paces from profile
-     */
     calculatePaces(profile) {
-        // Use PaceCalculator to get paces from recent race time
         if (profile.recentRaceTime && profile.recentRaceDistance) {
             try {
-                // Use getPaceData to get paces from race time
                 const paceData = this.paceCalculator.getPaceData(
                     profile.recentRaceDistance,
                     profile.recentRaceTime
                 );
-                
-                // Format for workout library consumption
                 return {
                     paces: paceData.paces,
                     trackIntervals: paceData.trackIntervals,
@@ -796,18 +739,12 @@ class TrainingPlanService {
                 logger.warn('Could not calculate paces from race time:', error.message);
             }
         }
-        
-        // Fallback if no recent race - estimate from current fitness
-        if (profile.currentWeeklyMileage && profile.currentLongRun) {
+
+        if (profile.currentWeeklyMileage && profile.currentLongRun && profile.raceTime) {
             try {
-                const estimatedVDOT = this.paceCalculator.estimateCurrentVDOT(
-                    profile.currentLongRun,
-                    profile.currentWeeklyMileage
-                );
-                // Use goal race distance for pace calculation
                 const goalPaceData = this.paceCalculator.getPaceData(
                     profile.raceDistance,
-                    profile.raceTime || '2:00:00' // Fallback goal time
+                    profile.raceTime
                 );
                 return {
                     paces: goalPaceData.paces,
@@ -817,11 +754,10 @@ class TrainingPlanService {
                     interval: `${goalPaceData.paces.interval.pace}/mile`
                 };
             } catch (error) {
-                logger.warn('Could not estimate paces:', error.message);
+                logger.warn('Could not calculate paces from goal:', error.message);
             }
         }
-        
-        // Final fallback - generic paces
+
         return {
             easy: '11:30-12:30/mile',
             tempo: '9:50-10:10/mile',
@@ -830,17 +766,10 @@ class TrainingPlanService {
                 easy: { min: '11:30', max: '12:30' },
                 threshold: { pace: '9:50' },
                 interval: { pace: '9:00' }
-            },
-            trackIntervals: {
-                threshold: {},
-                interval: {}
             }
         };
     }
 
-    /**
-     * Get race distance in miles
-     */
     getRaceDistance(raceDistance) {
         const distances = {
             '5K': 3.1,
@@ -852,13 +781,9 @@ class TrainingPlanService {
         return distances[raceDistance] || 13.1;
     }
 
-    /**
-     * Validate profile - NO DEFAULTS
-     */
     validateProfile(profile) {
         const required = [
             'raceDistance',
-            'raceTime',
             'raceDate',
             'startDate',
             'currentWeeklyMileage',
@@ -866,7 +791,7 @@ class TrainingPlanService {
             'availableDays',
             'longRunDay'
         ];
-        
+
         const missing = required.filter(field => !profile[field]);
         if (missing.length > 0) {
             throw new Error(`Missing required fields: ${missing.join(', ')}`);
@@ -875,4 +800,3 @@ class TrainingPlanService {
 }
 
 export default new TrainingPlanService();
-

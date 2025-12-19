@@ -13,7 +13,7 @@ import { formatPhase } from '../utils/typography';
 import FirestoreService from '../services/FirestoreService';
 import logger from '../utils/logger';
 import useStrava from '../hooks/useStrava';
-import StravaService from '../services/stravaService';
+import StravaService from '../services/StravaService';
 
 export default function DashboardHeader({
   currentWeek,
@@ -25,7 +25,6 @@ export default function DashboardHeader({
   userProfile,
   setShowManagePlanModal,
   setShowInjuryRecoveryModal,
-  setShowDebugTool,
   clearAllData,
   toast
 }) {
@@ -355,19 +354,6 @@ export default function DashboardHeader({
             title="Adjust training schedule, days, and preferences"
           >
             ⚙️ Manage Plan
-          </button>
-
-          <button
-            className="dashboard-nav-button"
-            onClick={() => setShowDebugTool(true)}
-            title="Debug tool - test plan components without re-onboarding"
-            style={{
-              background: 'rgba(139, 92, 246, 0.1)',
-              border: '1px solid rgba(139, 92, 246, 0.3)',
-              color: '#8b5cf6'
-            }}
-          >
-            🔧 Debug
           </button>
 
           {/* Show either Report Injury or Cancel Recovery based on status */}

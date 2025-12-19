@@ -97,6 +97,7 @@ export default function useWorkoutActions({
   const handleWorkoutReplacement = useCallback((newWorkout) => {
     const mode = somethingElseModal.mode || 'replace';
     const dayKey = `${currentWeek}-${newWorkout.day}`;
+    let workoutIndex = 0;
 
     if (mode === 'add') {
       // Find the next available index for this day
@@ -110,6 +111,7 @@ export default function useWorkoutActions({
         nextIndex = 1;
       }
 
+      workoutIndex = nextIndex;
       const workoutKey = `${dayKey}-${nextIndex}`;
       const updatedWorkouts = {
         ...modifiedWorkouts,
@@ -121,6 +123,7 @@ export default function useWorkoutActions({
       logger.log('💾 Added second workout:', workoutKey, newWorkout.workout?.name);
     } else {
       // Replace mode - use index 0
+      workoutIndex = 0;
       const workoutKey = `${dayKey}-0`;
       const updatedWorkouts = {
         ...modifiedWorkouts,
@@ -132,13 +135,14 @@ export default function useWorkoutActions({
       logger.log('💾 Replaced workout:', workoutKey, newWorkout.workout?.name);
     }
 
-    // Save to Firestore
+    // Save to Firestore with matching key format (weekNumber-day-index)
     if (auth.currentUser) {
       FirestoreService.saveModifiedWorkout(
         auth.currentUser.uid,
         currentWeek,
         newWorkout.day,
-        newWorkout
+        newWorkout,
+        workoutIndex  // Pass the index to match localStorage key format
       ).catch(error => {
         logger.error('Error saving workout to Firestore:', error);
       });

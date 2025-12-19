@@ -256,6 +256,77 @@ export class LongRunWorkoutLibrary {
     }
 
     /**
+     * Safely extract easy pace from paces object regardless of format
+     * Handles: { min: "9:20", max: "9:50" }, { pace: "9:30" }, or string "9:30-9:50"
+     * Always strips any existing "/mile" suffix to prevent doubling
+     */
+    getEasyPace(paces, preferMax = true) {
+        if (!paces?.easy) return null;
+
+        // Helper to strip /mile suffix if present
+        const stripMileSuffix = (pace) => pace ? pace.replace(/\/mile$/i, '').trim() : null;
+
+        // If it's an object with min/max
+        if (paces.easy.max) return stripMileSuffix(preferMax ? paces.easy.max : paces.easy.min);
+        if (paces.easy.min) return stripMileSuffix(paces.easy.min);
+
+        // If it has a single pace property
+        if (paces.easy.pace) {
+            // Strip /mile first, then split on dash
+            const cleanPace = stripMileSuffix(paces.easy.pace);
+            const parts = cleanPace.split('-');
+            if (parts.length === 2) {
+                return preferMax ? parts[1].trim() : parts[0].trim();
+            }
+            return cleanPace;
+        }
+
+        // If it's a string like "9:30" or "9:30-9:50" or "9:30-9:50/mile"
+        if (typeof paces.easy === 'string') {
+            const cleanPace = stripMileSuffix(paces.easy);
+            const parts = cleanPace.split('-');
+            return preferMax ? parts[parts.length - 1].trim() : parts[0].trim();
+        }
+
+        return null;
+    }
+
+    /**
+     * Generic pace extractor for marathon, threshold, interval, etc.
+     * Handles: { pace: "8:45" }, { min: "8:30", max: "9:00" }, or string "8:45"
+     * Always strips any existing "/mile" suffix
+     */
+    getPace(paceObj, preferMax = true) {
+        if (!paceObj) return null;
+
+        // Helper to strip /mile suffix if present
+        const stripMileSuffix = (pace) => pace ? pace.replace(/\/mile$/i, '').trim() : null;
+
+        // If it has a single pace property
+        if (paceObj.pace) {
+            const cleanPace = stripMileSuffix(paceObj.pace);
+            const parts = cleanPace.split('-');
+            if (parts.length === 2) {
+                return preferMax ? parts[1].trim() : parts[0].trim();
+            }
+            return cleanPace;
+        }
+
+        // If it's an object with min/max
+        if (paceObj.max) return stripMileSuffix(preferMax ? paceObj.max : paceObj.min);
+        if (paceObj.min) return stripMileSuffix(paceObj.min);
+
+        // If it's a string like "8:45" or "8:30-9:00"
+        if (typeof paceObj === 'string') {
+            const cleanPace = stripMileSuffix(paceObj);
+            const parts = cleanPace.split('-');
+            return preferMax ? parts[parts.length - 1].trim() : parts[0].trim();
+        }
+
+        return null;
+    }
+
+    /**
      * Get long run workout prescription with RunEq adaptations and USER-SPECIFIC PACES
      */
     prescribeLongRunWorkout(workoutName, options = {}) {
@@ -349,6 +420,10 @@ export class LongRunWorkoutLibrary {
         let paceDisplay = null;
         const nameLower = name.toLowerCase();
 
+        // Get easy paces safely using helper
+        const easyPaceMin = this.getEasyPace(paces, false);
+        const easyPaceMax = this.getEasyPace(paces, true);
+
         // PROGRESSION RUNS: Show easy pace as the starting pace
         // These are identified by their names - they START easy and END fast
         const isProgressionRun = nameLower.includes('dropdown') ||
@@ -368,28 +443,34 @@ export class LongRunWorkoutLibrary {
 
         // FAST FINISH WORKOUTS: Show both easy pace AND fast finish pace
         const isFastFinish = nameLower.includes('fast finish') || nameLower.includes('super fast');
-        
-        if (isFastFinish && paces.easy && paces.interval) {
+
+        // Safely extract paces using helper
+        const intervalPace = this.getPace(paces?.interval);
+        const marathonPace = this.getPace(paces?.marathon);
+        const thresholdPace = this.getPace(paces?.threshold);
+        const racePace = this.getPace(paces?.racePace);
+
+        if (isFastFinish && easyPaceMin && easyPaceMax && intervalPace) {
             // Fast finish workouts show both starting easy pace AND fast finish pace (5K/interval effort)
-            paceDisplay = `${paces.easy.min}-${paces.easy.max}/mi → ${paces.interval.pace}/mi`;
-        } else if (isProgressionRun && paces.easy) {
+            paceDisplay = `${easyPaceMin}-${easyPaceMax}/mi → ${intervalPace}/mi`;
+        } else if (isProgressionRun && easyPaceMax) {
             // Other progression runs show easy pace (where they START)
-            paceDisplay = `${paces.easy.max}/mi start`;
-        } else if (isSandwichWorkout && (paces.racePace || paces.marathon)) {
+            paceDisplay = `${easyPaceMax}/mi start`;
+        } else if (isSandwichWorkout && (racePace || marathonPace)) {
             // Sandwich workouts show ACTUAL RACE PACE (not marathon training pace)
             // For half marathon: 9:09/mi for 2:00 goal, NOT marathon pace 9:27/mi
-            const goalPace = paces.racePace?.pace || paces.marathon?.pace;
+            const goalPace = racePace || marathonPace;
             paceDisplay = `${goalPace}/mi goal`;
-        } else if (intensity && intensity === 'marathonPace' && paces.marathon) {
+        } else if (intensity && intensity === 'marathonPace' && marathonPace) {
             // Pure marathon pace workouts (e.g., "Marathon Pace Long Run")
             // Only match exact "marathonPace", not "easy to marathonPace"
-            paceDisplay = `${paces.marathon.pace}/mi`;
-        } else if (intensity && intensity.includes('threshold') && paces.threshold) {
+            paceDisplay = `${marathonPace}/mi`;
+        } else if (intensity && intensity.includes('threshold') && thresholdPace) {
             // Threshold/tempo pace workouts
-            paceDisplay = `${paces.threshold.pace}/mi`;
-        } else if (paces.easy) {
+            paceDisplay = `${thresholdPace}/mi`;
+        } else if (easyPaceMin && easyPaceMax) {
             // Default to easy pace for pure easy long runs
-            paceDisplay = `${paces.easy.min}-${paces.easy.max}/mi`;
+            paceDisplay = `${easyPaceMin}-${easyPaceMax}/mi`;
         }
 
         // Build the name with distance and pace
@@ -410,24 +491,35 @@ export class LongRunWorkoutLibrary {
     injectPacesIntoStructure(structure, paces) {
         let updated = structure;
 
+        // Use helper to safely get easy paces
+        const easyPaceMin = this.getEasyPace(paces, false);
+        const easyPaceMax = this.getEasyPace(paces, true);
+
         // Replace pace references with actual paces
-        if (paces.easy) {
-            updated = updated.replace(/easy pace/g, `easy pace (${paces.easy.min}-${paces.easy.max}/mile)`);
-            updated = updated.replace(/easy warmup/g, `easy warmup (${paces.easy.min}-${paces.easy.max}/mile)`);
-            updated = updated.replace(/\bmin easy/g, `min easy (${paces.easy.min}-${paces.easy.max}/mile)`);
-            updated = updated.replace(/easy cooldown/g, `easy cooldown (${paces.easy.min}-${paces.easy.max}/mile)`);
-            updated = updated.replace(/\bmiles easy/g, `miles easy (${paces.easy.min}-${paces.easy.max}/mile)`);
+        // Use negative lookahead (?!\s*\() to avoid matching text that already has paces
+        if (easyPaceMin && easyPaceMax) {
+            const easyRange = `${easyPaceMin}-${easyPaceMax}/mile`;
+            updated = updated.replace(/easy pace(?!\s*\()/gi, `easy pace (${easyRange})`);
+            updated = updated.replace(/easy warmup(?!\s*\()/gi, `easy warmup (${easyRange})`);
+            updated = updated.replace(/\bmin easy(?!\s*\()/gi, `min easy (${easyRange})`);
+            updated = updated.replace(/easy cooldown(?!\s*\()/gi, `easy cooldown (${easyRange})`);
+            updated = updated.replace(/\bmiles easy(?!\s*\()/gi, `miles easy (${easyRange})`);
+            updated = updated.replace(/Very easy pace(?!\s*\()/gi, `Very easy pace (${easyRange})`);
         }
 
-        if (paces.marathon) {
-            updated = updated.replace(/@ marathon pace/g, `@ ${paces.marathon.pace}/mile marathon pace`);
-            updated = updated.replace(/@ MP/g, `@ ${paces.marathon.pace}/mile`);
-            updated = updated.replace(/@ half pace/g, `@ ${paces.marathon.pace}/mile pace`);
+        // Safely extract paces using helper
+        const marathonPace = this.getPace(paces?.marathon);
+        const thresholdPace = this.getPace(paces?.threshold);
+
+        if (marathonPace) {
+            updated = updated.replace(/@ marathon pace(?!\s*\()/gi, `@ ${marathonPace}/mile marathon pace`);
+            updated = updated.replace(/@ MP(?!\s*\()/g, `@ ${marathonPace}/mile`);
+            updated = updated.replace(/@ half pace(?!\s*\()/gi, `@ ${marathonPace}/mile pace`);
         }
 
-        if (paces.threshold) {
-            updated = updated.replace(/steady state/g, `steady state (${paces.threshold.pace}/mile)`);
-            updated = updated.replace(/strong pace/g, `strong pace (${paces.threshold.pace}/mile)`);
+        if (thresholdPace) {
+            updated = updated.replace(/steady state(?!\s*\()/gi, `steady state (${thresholdPace}/mile)`);
+            updated = updated.replace(/strong pace(?!\s*\()/gi, `strong pace (${thresholdPace}/mile)`);
         }
 
         return updated;
@@ -439,14 +531,22 @@ export class LongRunWorkoutLibrary {
     injectPacesIntoDescription(description, paces) {
         let updated = description;
 
-        if (paces.easy) {
-            updated = updated.replace(/easy pace/g, `easy pace (${paces.easy.min}-${paces.easy.max}/mile)`);
-            updated = updated.replace(/conversational pace/g, `conversational pace (${paces.easy.min}-${paces.easy.max}/mile)`);
+        // Use helper to safely get easy paces
+        const easyPaceMin = this.getEasyPace(paces, false);
+        const easyPaceMax = this.getEasyPace(paces, true);
+
+        // Use negative lookahead to avoid matching text that already has paces
+        if (easyPaceMin && easyPaceMax) {
+            const easyRange = `${easyPaceMin}-${easyPaceMax}/mile`;
+            updated = updated.replace(/easy pace(?!\s*\()/gi, `easy pace (${easyRange})`);
+            updated = updated.replace(/conversational pace(?!\s*\()/gi, `conversational pace (${easyRange})`);
         }
 
-        if (paces.marathon) {
-            updated = updated.replace(/marathon pace/g, `marathon pace (${paces.marathon.pace}/mile)`);
-            updated = updated.replace(/goal pace/g, `goal pace (${paces.marathon.pace}/mile)`);
+        // Safely extract marathon pace using helper
+        const marathonPace = this.getPace(paces?.marathon);
+        if (marathonPace) {
+            updated = updated.replace(/marathon pace(?!\s*\()/gi, `marathon pace (${marathonPace}/mile)`);
+            updated = updated.replace(/goal pace(?!\s*\()/gi, `goal pace (${marathonPace}/mile)`);
         }
 
         return updated;
@@ -503,8 +603,9 @@ export class LongRunWorkoutLibrary {
         if (!distance || !paces?.easy) return null;
 
         const name = workoutName.toLowerCase();
-        const easyPace = paces.easy.max; // Slowest easy pace
-        const moderatePace = paces.easy.min; // Faster easy pace
+        const easyPace = this.getEasyPace(paces, true); // Slowest easy pace
+        const moderatePace = this.getEasyPace(paces, false); // Faster easy pace
+        if (!easyPace) return null; // Can't generate pacing without easy pace
         const strongPace = paces.marathon?.pace || paces.threshold?.pace || moderatePace;
 
         // Helper to format mile ranges
@@ -601,7 +702,8 @@ export class LongRunWorkoutLibrary {
         if (!goalPace) return null;
 
         const name = workoutName.toLowerCase();
-        const easyPace = paces.easy.max; // Slowest easy pace
+        const easyPace = this.getEasyPace(paces, true); // Slowest easy pace
+        if (!easyPace) return null; // Can't generate pacing without easy pace
 
         // Helper to format mile ranges
         const formatMileRange = (start, end, pace, label = '') => {
@@ -682,13 +784,20 @@ export class LongRunWorkoutLibrary {
             adaptForTime: {}
         };
 
+        // Use helper to safely get paces
+        const easyPaceMin = this.getEasyPace(paces, false);
+        const easyPaceMax = this.getEasyPace(paces, true);
+        const easyRange = (easyPaceMin && easyPaceMax) ? `${easyPaceMin}-${easyPaceMax}/mile` : null;
+        const thresholdPace = this.getPace(paces?.threshold);
+        const marathonPace = this.getPace(paces?.marathon);
+
         // Provide specific adaptations based on workout type
         if (workout.name.includes('Progression') || workout.name.includes('Progressive')) {
-            if (paces && paces.easy && paces.threshold) {
+            if (easyRange && thresholdPace) {
                 customization.adaptForDistance = {
-                    "6-8 miles": `2-3 miles easy (${paces.easy.min}-${paces.easy.max}/mile), 2-3 miles moderate, 2 miles strong (${paces.threshold.pace}/mile)`,
-                    "10-12 miles": `4 miles easy (${paces.easy.min}-${paces.easy.max}/mile), 4 miles moderate, 4 miles strong (${paces.threshold.pace}/mile)`,
-                    "16-18 miles": `6 miles easy (${paces.easy.min}-${paces.easy.max}/mile), 6 miles moderate, 6 miles strong (${paces.threshold.pace}/mile)`
+                    "6-8 miles": `2-3 miles easy (${easyRange}), 2-3 miles moderate, 2 miles strong (${thresholdPace}/mile)`,
+                    "10-12 miles": `4 miles easy (${easyRange}), 4 miles moderate, 4 miles strong (${thresholdPace}/mile)`,
+                    "16-18 miles": `6 miles easy (${easyRange}), 6 miles moderate, 6 miles strong (${thresholdPace}/mile)`
                 };
             } else {
                 customization.adaptForDistance = {
@@ -700,11 +809,11 @@ export class LongRunWorkoutLibrary {
         }
 
         if (workout.name.includes('Marathon Pace')) {
-            if (paces && paces.easy && paces.marathon) {
+            if (easyRange && marathonPace) {
                 customization.adaptForDistance = {
-                    "10-12 miles": `3 miles easy (${paces.easy.min}-${paces.easy.max}/mile) + 6 miles @ ${paces.marathon.pace}/mile + 2 miles easy`,
-                    "14-16 miles": `3 miles easy (${paces.easy.min}-${paces.easy.max}/mile) + 10 miles @ ${paces.marathon.pace}/mile + 3 miles easy`,
-                    "18-20 miles": `3 miles easy (${paces.easy.min}-${paces.easy.max}/mile) + 13 miles @ ${paces.marathon.pace}/mile + 4 miles easy`
+                    "10-12 miles": `3 miles easy (${easyRange}) + 6 miles @ ${marathonPace}/mile + 2 miles easy`,
+                    "14-16 miles": `3 miles easy (${easyRange}) + 10 miles @ ${marathonPace}/mile + 3 miles easy`,
+                    "18-20 miles": `3 miles easy (${easyRange}) + 13 miles @ ${marathonPace}/mile + 4 miles easy`
                 };
             } else {
                 customization.adaptForDistance = {

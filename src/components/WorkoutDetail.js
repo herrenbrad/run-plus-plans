@@ -1198,6 +1198,32 @@ function WorkoutDetail({ userProfile, trainingPlan }) {
           </div>
         )}
 
+        {/* RUNNING EQUIVALENT - Cross-Training Workouts */}
+        {currentWorkout.runningEquivalent && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%)',
+            border: '2px solid rgba(34, 197, 94, 0.3)',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px'
+          }}>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              color: '#22c55e',
+              fontSize: '1.3rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>🏃</span> Running Equivalent
+            </h3>
+            <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.7', color: '#ddd' }}>
+              This cross-training workout provides similar training benefits to: <strong style={{ color: '#22c55e' }}>{currentWorkout.runningEquivalent}</strong>
+            </p>
+          </div>
+        )}
+
 
         {/* Climate Adaptation */}
         {userProfile?.climate === 'hot_humid' && (

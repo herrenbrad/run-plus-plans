@@ -5,11 +5,10 @@ import { auth, db } from '../firebase/config';
 import FirestoreService from '../services/FirestoreService';
 import { PaceCalculator } from '../lib/pace-calculator.js';
 import WorkoutOptionsService from '../services/WorkoutOptionsService.js';
-import { generateWeekWorkouts } from '../utils/workoutGeneration.js';
+// generateWeekWorkouts removed - TrainingPlanService now handles all workout generation
 import SomethingElseModal from './SomethingElseModal';
 import ManagePlanModal from './ManagePlanModal';
 import InjuryRecoveryModal from './InjuryRecoveryModal';
-import PlanDebugTool from './PlanDebugTool';
 import WorkoutCard from './WorkoutCard';
 import DashboardHeader from './DashboardHeader';
 import DashboardCoaching from './DashboardCoaching';
@@ -30,7 +29,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
   const toast = useToast();
   const [showManagePlanModal, setShowManagePlanModal] = useState(false);
   const [showInjuryRecoveryModal, setShowInjuryRecoveryModal] = useState(false);
-  const [showDebugTool, setShowDebugTool] = useState(false);
   
   // Week calculation functions now imported from utils/weekCalculations.js
   // Using wrapper functions to maintain same API within component
@@ -294,14 +292,23 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
       // The fallback workouts will be used instead
     }
 
-    // Fallback to generated workouts if training plan is empty/missing
-    logger.log('⚠️ Falling back to generated workouts for week', currentWeek, '- these may not match your AI-generated plan!');
+    // No valid week data - show error state prompting plan regeneration
+    logger.error('❌ No workout data for week', currentWeek, '- plan may need regeneration');
     return {
       week: currentWeek,
       weekDates: { displayText: `Week ${currentWeek}` },
-      phase: 'base',
-      totalMileage: 15,
-      workouts: generateWeekWorkouts(currentWeek, userProfile)
+      phase: 'unknown',
+      totalMileage: 0,
+      workouts: [{
+        day: 'Notice',
+        type: 'preparation',
+        workout: {
+          name: 'Plan Data Missing',
+          description: 'Your training plan needs to be regenerated. Please go to Settings → Manage Plan to create a new plan.'
+        },
+        focus: 'Setup Required',
+        completed: false
+      }]
     };
   };
 
@@ -517,7 +524,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
           userProfile={userProfile}
           setShowManagePlanModal={setShowManagePlanModal}
           setShowInjuryRecoveryModal={setShowInjuryRecoveryModal}
-          setShowDebugTool={setShowDebugTool}
           clearAllData={clearAllData}
           toast={toast}
         />
@@ -709,15 +715,6 @@ function Dashboard({ userProfile, trainingPlan, completedWorkouts, clearAllData 
         trainingPlan={trainingPlan}
         currentWeek={currentWeek}
       />
-
-      {/* Plan Debug Tool */}
-      {showDebugTool && (
-        <PlanDebugTool
-          userProfile={userProfile}
-          trainingPlan={trainingPlan}
-          onClose={() => setShowDebugTool(false)}
-        />
-      )}
 
       {/* Workout Completion Modal */}
       {completionModal.isOpen && (

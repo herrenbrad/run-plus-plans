@@ -21,6 +21,7 @@ import AdminApproval from './components/AdminApproval';
 import PhaseMigrationAdmin from './components/PhaseMigrationAdmin';
 import StravaCallback from './components/StravaCallback';
 import DevMode from './components/DevMode';
+import WorkoutTestZone from './components/WorkoutTestZone';
 import { ToastProvider, useToast } from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -434,6 +435,10 @@ function AppContent() {
           <Route
             path="/dev"
             element={<DevMode />}
+          />
+          <Route
+            path="/test-zone"
+            element={<WorkoutTestZone />}
           />
           <Route
             path="/auth/strava/callback"

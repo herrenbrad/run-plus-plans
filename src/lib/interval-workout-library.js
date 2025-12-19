@@ -5,6 +5,40 @@
  */
 import { convertVagueStructureToSpecific } from './workout-structure-converter.js';
 
+/**
+ * Safely extract pace from paces object regardless of format
+ * Handles: { min: "9:20", max: "9:50" }, { pace: "9:30" }, or string "9:30-9:50"
+ */
+const getPace = (paceObj, preferMax = true) => {
+    if (!paceObj) return null;
+
+    // Strip /mile suffix if present
+    const stripMileSuffix = (pace) => pace ? pace.replace(/\/mile$/i, '').trim() : null;
+
+    // If it's an object with min/max
+    if (paceObj.max) return stripMileSuffix(preferMax ? paceObj.max : paceObj.min);
+    if (paceObj.min) return stripMileSuffix(paceObj.min);
+
+    // If it has a single pace property
+    if (paceObj.pace) {
+        const cleanPace = stripMileSuffix(paceObj.pace);
+        const parts = cleanPace.split('-');
+        if (parts.length === 2) {
+            return preferMax ? parts[1].trim() : parts[0].trim();
+        }
+        return cleanPace;
+    }
+
+    // If it's a string like "9:30" or "9:30-9:50"
+    if (typeof paceObj === 'string') {
+        const cleanPace = stripMileSuffix(paceObj);
+        const parts = cleanPace.split('-');
+        return preferMax ? parts[parts.length - 1].trim() : parts[0].trim();
+    }
+
+    return null;
+};
+
 export class IntervalWorkoutLibrary {
     constructor() {
         this.intervalIntensityGuidelines = {
@@ -414,16 +448,19 @@ export class IntervalWorkoutLibrary {
     injectPacesIntoName(name, repetitions, paces, trackIntervals) {
         let updatedName = name;
 
+        // Safely extract interval pace
+        const intervalPace = getPace(paces?.interval);
+
         // Add interval pace to the name
-        if (paces.interval && trackIntervals && trackIntervals.interval) {
+        if (intervalPace && trackIntervals?.interval) {
             // For track workouts, show the specific interval time AND equivalent per-mile pace
             if (repetitions.includes('400m') && trackIntervals.interval['400m']) {
                 const milePace = this.convertToMilePace(trackIntervals.interval['400m'], 400);
                 updatedName = `${name} (${trackIntervals.interval['400m']}/400m = ${milePace})`;
-            } else if (repetitions.includes('800m') && trackIntervals.threshold && trackIntervals.threshold['800m']) {
+            } else if (repetitions.includes('800m') && trackIntervals.threshold?.['800m']) {
                 const milePace = this.convertToMilePace(trackIntervals.threshold['800m'], 800);
                 updatedName = `${name} (${trackIntervals.threshold['800m']}/800m = ${milePace})`;
-            } else if (repetitions.includes('1200m') && trackIntervals.threshold && trackIntervals.threshold['1200m']) {
+            } else if (repetitions.includes('1200m') && trackIntervals.threshold?.['1200m']) {
                 const milePace = this.convertToMilePace(trackIntervals.threshold['1200m'], 1200);
                 updatedName = `${name} (${trackIntervals.threshold['1200m']}/1200m = ${milePace})`;
             } else if (repetitions.includes('200m') && trackIntervals.interval['200m']) {
@@ -431,10 +468,10 @@ export class IntervalWorkoutLibrary {
                 updatedName = `${name} (${trackIntervals.interval['200m']}/200m = ${milePace})`;
             } else {
                 // Fallback to mile pace
-                updatedName = `${name} (${paces.interval.pace}/mi)`;
+                updatedName = `${name} (${intervalPace}/mi)`;
             }
-        } else if (paces.interval) {
-            updatedName = `${name} (${paces.interval.pace}/mi)`;
+        } else if (intervalPace) {
+            updatedName = `${name} (${intervalPace}/mi)`;
         }
 
         return updatedName;
@@ -446,15 +483,19 @@ export class IntervalWorkoutLibrary {
     injectPacesIntoReps(repetitions, paces, trackIntervals) {
         let updated = repetitions;
 
+        // Safely extract paces using helper
+        const intervalPace = getPace(paces?.interval);
+        const thresholdPace = getPace(paces?.threshold);
+
         // Handle track interval distances with specific times
-        if (trackIntervals && trackIntervals.interval) {
+        if (trackIntervals?.interval) {
             if (updated.includes('400m') && trackIntervals.interval['400m']) {
                 updated = updated.replace(/(\d+)\s*x\s*400m/g, `$1 x 400m (${trackIntervals.interval['400m']} each)`);
             }
-            if (updated.includes('800m') && trackIntervals.threshold && trackIntervals.threshold['800m']) {
+            if (updated.includes('800m') && trackIntervals.threshold?.['800m']) {
                 updated = updated.replace(/(\d+)\s*x\s*800m/g, `$1 x 800m (${trackIntervals.threshold['800m']} each)`);
             }
-            if (updated.includes('1200m') && trackIntervals.threshold && trackIntervals.threshold['1200m']) {
+            if (updated.includes('1200m') && trackIntervals.threshold?.['1200m']) {
                 updated = updated.replace(/(\d+)\s*x\s*1200m/g, `$1 x 1200m (${trackIntervals.threshold['1200m']} each)`);
             }
             if (updated.includes('200m') && trackIntervals.interval['200m']) {
@@ -463,27 +504,24 @@ export class IntervalWorkoutLibrary {
         }
 
         // Handle 2K pace (threshold/10K pace)
-        if (trackIntervals && trackIntervals.threshold) {
-            // 2K at 10K pace - use threshold
-            if (updated.includes('2K')) {
-                updated = updated.replace(/2K\s*@\s*10K pace/g, `2K @ ${paces.threshold?.pace || '10K pace'}/mile`);
-            }
+        if (thresholdPace && updated.includes('2K')) {
+            updated = updated.replace(/2K\s*@\s*10K pace/g, `2K @ ${thresholdPace}/mile`);
         }
 
         // Replace "@ 5K pace" with actual pace
-        if (paces.interval) {
-            updated = updated.replace(/@\s*5K pace/g, `@ ${paces.interval.pace}/mile`);
+        if (intervalPace) {
+            updated = updated.replace(/@\s*5K pace/g, `@ ${intervalPace}/mile`);
         }
 
         // Replace "@ 10K pace" with actual pace
-        if (paces.threshold) {
-            updated = updated.replace(/@\s*10K pace/g, `@ ${paces.threshold.pace}/mile`);
+        if (thresholdPace) {
+            updated = updated.replace(/@\s*10K pace/g, `@ ${thresholdPace}/mile`);
         }
 
         // Handle mile pace
-        if (paces.interval) {
-            updated = updated.replace(/(\d+)\s*x\s*1\s*mile/g, `$1 x 1 mile @ ${paces.interval.pace}/mile`);
-            updated = updated.replace(/(\d+)\s*x\s*2\s*mile/g, `$1 x 2 miles @ ${paces.interval.pace}/mile`);
+        if (intervalPace) {
+            updated = updated.replace(/(\d+)\s*x\s*1\s*mile(?!\s*@)/g, `$1 x 1 mile @ ${intervalPace}/mile`);
+            updated = updated.replace(/(\d+)\s*x\s*2\s*mile(?!\s*@)/g, `$1 x 2 miles @ ${intervalPace}/mile`);
         }
 
         return updated;
@@ -495,15 +533,19 @@ export class IntervalWorkoutLibrary {
     injectPacesIntoDescription(description, genericPace, paces) {
         let updated = description;
 
+        // Safely extract paces
+        const intervalPace = getPace(paces?.interval);
+        const thresholdPace = getPace(paces?.threshold);
+
         // Map generic pace descriptions to actual paces
-        if (paces.interval && (genericPace.includes('5K') || genericPace.includes('VO2'))) {
-            updated = updated.replace(/5K race pace/g, `${paces.interval.pace}/mile (5K race pace)`);
-            updated = updated.replace(/5K pace/g, `${paces.interval.pace}/mile`);
+        if (intervalPace && (genericPace.includes('5K') || genericPace.includes('VO2'))) {
+            updated = updated.replace(/5K race pace/g, `${intervalPace}/mile (5K race pace)`);
+            updated = updated.replace(/5K pace/g, `${intervalPace}/mile`);
         }
 
-        if (paces.threshold && (genericPace.includes('10K') || genericPace.includes('threshold'))) {
-            updated = updated.replace(/10K race pace/g, `${paces.threshold.pace}/mile (10K/threshold pace)`);
-            updated = updated.replace(/10K pace/g, `${paces.threshold.pace}/mile`);
+        if (thresholdPace && (genericPace.includes('10K') || genericPace.includes('threshold'))) {
+            updated = updated.replace(/10K race pace/g, `${thresholdPace}/mile (10K/threshold pace)`);
+            updated = updated.replace(/10K pace/g, `${thresholdPace}/mile`);
         }
 
         return updated;
@@ -517,11 +559,15 @@ export class IntervalWorkoutLibrary {
         warmup = convertVagueStructureToSpecific(warmup, weekNumber, totalWeeks);
         cooldown = convertVagueStructureToSpecific(cooldown, weekNumber, totalWeeks);
 
-        if (paces && paces.easy) {
+        // Use helper to safely extract easy pace
+        const easyPaceMin = getPace(paces?.easy, false);
+        const easyPaceMax = getPace(paces?.easy, true);
+
+        if (easyPaceMin && easyPaceMax) {
             const warmupTime = warmup.match(/\d+ minutes/)?.[0] || '15 minutes';
             const cooldownTime = cooldown.match(/\d+ minutes/)?.[0] || '15 minutes';
-            warmup = `${warmupTime} easy (${paces.easy.min}-${paces.easy.max}/mile) + dynamic warmup + 3-4 strides`;
-            cooldown = `${cooldownTime} easy (${paces.easy.min}-${paces.easy.max}/mile)`;
+            warmup = `${warmupTime} easy (${easyPaceMin}-${easyPaceMax}/mile) + dynamic warmup + 3-4 strides`;
+            cooldown = `${cooldownTime} easy (${easyPaceMin}-${easyPaceMax}/mile)`;
         }
 
         // Use specific reps if provided, otherwise use original workout reps
@@ -585,31 +631,38 @@ export class IntervalWorkoutLibrary {
     }
 
     getWarmupCooldown(intensity, paces = null, weekNumber = null, totalWeeks = null) {
-        const base = {
-            warmup: "15-20 minutes easy running + 5 minutes dynamic exercises + 3-4 x 20-second strides",
-            cooldown: "15-20 minutes easy running + stretching"
-        };
+        // Use helper to safely extract easy pace
+        const easyPaceMin = getPace(paces?.easy, false);
+        const easyPaceMax = getPace(paces?.easy, true);
+        const hasPaces = easyPaceMin && easyPaceMax;
+        const paceStr = hasPaces ? ` (${easyPaceMin}-${easyPaceMax}/mile)` : '';
 
-        // Convert vague ranges to specific values
-        base.warmup = convertVagueStructureToSpecific(base.warmup, weekNumber, totalWeeks);
-        base.cooldown = convertVagueStructureToSpecific(base.cooldown, weekNumber, totalWeeks);
+        // Get specific time from week progression
+        let warmupMinutes = 18; // default
+        let cooldownMinutes = 15;
 
-        if (paces && paces.easy) {
-            base.warmup = `${base.warmup.replace(/15-20 minutes|20-25 minutes/, base.warmup.match(/\d+ minutes/)?.[0] || '15 minutes')} (${paces.easy.min}-${paces.easy.max}/mile) + 5 minutes dynamic exercises + 3-4 x 20-second strides`;
-            base.cooldown = `${base.cooldown.replace(/15-20 minutes/, base.cooldown.match(/\d+ minutes/)?.[0] || '15 minutes')} (${paces.easy.min}-${paces.easy.max}/mile) + stretching`;
+        // Convert a sample string to get the specific time for this week
+        const sampleConverted = convertVagueStructureToSpecific("15-20 minutes", weekNumber, totalWeeks);
+        const timeMatch = sampleConverted.match(/(\d+)/);
+        if (timeMatch) {
+            warmupMinutes = parseInt(timeMatch[1], 10);
+            cooldownMinutes = Math.max(12, warmupMinutes - 3);
         }
+
+        let warmup, cooldown;
 
         if (intensity === "shortSpeed") {
-            const warmupTime = base.warmup.match(/\d+ minutes/)?.[0] || '20 minutes';
-            if (paces && paces.easy) {
-                base.warmup = `${warmupTime} easy running (${paces.easy.min}-${paces.easy.max}/mile) + 10 minutes dynamic warmup + 4-6 progressive strides`;
-            } else {
-                base.warmup = `${warmupTime} easy running + 10 minutes dynamic warmup + 4-6 progressive strides`;
-            }
-            base.notes = "Extra warmup time crucial for speed work";
+            // Extra warmup for speed work
+            warmup = `${warmupMinutes + 2} minutes easy running${paceStr} + 10 minutes dynamic warmup + 4-6 progressive strides`;
+            cooldown = `${cooldownMinutes} minutes easy running${paceStr} + stretching`;
+            return { warmup, cooldown, notes: "Extra warmup time crucial for speed work" };
         }
 
-        return base;
+        // Standard warmup/cooldown
+        warmup = `${warmupMinutes} minutes easy running${paceStr} + 5 minutes dynamic exercises + 3-4 x 20-second strides`;
+        cooldown = `${cooldownMinutes} minutes easy running${paceStr} + stretching`;
+
+        return { warmup, cooldown };
     }
 
     getIntervalAlternatives(workout) {

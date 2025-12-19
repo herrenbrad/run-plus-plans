@@ -52,6 +52,35 @@ export default function useWorkoutDetailData({ day, userProfile, trainingPlan, l
   const currentWeekNumber = locationState.currentWeek || 1;
   const weekDataFromState = locationState.weekData;
 
+  // Load saved modified workout from localStorage on mount
+  useEffect(() => {
+    if (!day) return;
+
+    const workoutKey = `${currentWeekNumber}-${day}-0`;
+    const savedWorkouts = JSON.parse(localStorage.getItem('runeq_modifiedWorkouts') || '{}');
+    const savedWorkout = savedWorkouts[workoutKey];
+
+    if (savedWorkout) {
+      // Transform the saved workout to match display format
+      // Cross-training fields should be preserved at the top level
+      setModifiedWorkout({
+        ...savedWorkout,
+        name: savedWorkout.name || savedWorkout.workout?.name,
+        description: savedWorkout.description || savedWorkout.workout?.description,
+        structure: savedWorkout.structure || savedWorkout.workout?.structure,
+        duration: savedWorkout.duration || savedWorkout.workout?.duration,
+        intensity: savedWorkout.intensity || savedWorkout.workout?.intensity,
+        benefits: savedWorkout.benefits || savedWorkout.workout?.benefits,
+        // Cross-training specific fields
+        settings: savedWorkout.settings || savedWorkout.workout?.settings,
+        technique: savedWorkout.technique || savedWorkout.workout?.technique,
+        coachingTips: savedWorkout.coachingTips || savedWorkout.workout?.coachingTips,
+        effort: savedWorkout.effort || savedWorkout.workout?.effort,
+        runningEquivalent: savedWorkout.runningEquivalent || savedWorkout.workout?.runningEquivalent
+      });
+    }
+  }, [day, currentWeekNumber]);
+
   const vdotPaces = useMemo(() => {
     const goalTime = trainingPlan?.planOverview?.goalTime || userProfileFromState?.raceTime || userProfile?.raceTime;
     const raceDistance = trainingPlan?.planOverview?.raceDistance || userProfileFromState?.raceDistance || userProfile?.raceDistance;
@@ -286,31 +315,61 @@ export default function useWorkoutDetailData({ day, userProfile, trainingPlan, l
   const handleWorkoutReplacement = async (newWorkout) => {
     if (!baseWorkout) return;
 
+    // Preserve ALL fields from newWorkout, especially cross-training specific fields
     const updatedWorkout = {
       ...baseWorkout,
       workout: {
         ...newWorkout.workout
       },
-      name: newWorkout.workout.name,
-      description: newWorkout.workout.description,
+      // Basic workout info
+      name: newWorkout.name || newWorkout.workout?.name,
+      description: newWorkout.description || newWorkout.workout?.description,
+      structure: newWorkout.structure || newWorkout.workout?.structure,
+      duration: newWorkout.duration || newWorkout.workout?.duration,
+      intensity: newWorkout.intensity || newWorkout.workout?.intensity,
+      benefits: newWorkout.benefits || newWorkout.workout?.benefits,
       type: newWorkout.type,
       focus: newWorkout.focus,
       equipmentSpecific: newWorkout.equipmentSpecific,
-      replacementReason: newWorkout.replacementReason
+      replacementReason: newWorkout.replacementReason,
+      // Cross-training specific fields - essential for WorkoutDetail display
+      crossTrainingType: newWorkout.crossTrainingType,
+      equipmentType: newWorkout.equipmentType,
+      settings: newWorkout.settings || newWorkout.workout?.settings,
+      technique: newWorkout.technique || newWorkout.workout?.technique,
+      coachingTips: newWorkout.coachingTips || newWorkout.workout?.coachingTips,
+      effort: newWorkout.effort || newWorkout.workout?.effort,
+      runningEquivalent: newWorkout.runningEquivalent || newWorkout.workout?.runningEquivalent
     };
 
     setModifiedWorkout(updatedWorkout);
 
-    const workoutKey = `${currentWeekNumber}-${day}`;
+    // Key format must include index: weekNumber-day-index (0 for primary workout)
+    const workoutKey = `${currentWeekNumber}-${day}-0`;
     const workoutToSave = {
       day: day.charAt(0).toUpperCase() + day.slice(1),
       workout: {
         ...newWorkout.workout
       },
+      // Basic workout info
+      name: newWorkout.name || newWorkout.workout?.name,
+      description: newWorkout.description || newWorkout.workout?.description,
+      structure: newWorkout.structure || newWorkout.workout?.structure,
+      duration: newWorkout.duration || newWorkout.workout?.duration,
+      intensity: newWorkout.intensity || newWorkout.workout?.intensity,
+      benefits: newWorkout.benefits || newWorkout.workout?.benefits,
       focus: newWorkout.focus,
       type: newWorkout.type,
       equipmentSpecific: newWorkout.equipmentSpecific,
-      replacementReason: newWorkout.replacementReason
+      replacementReason: newWorkout.replacementReason,
+      // Cross-training specific fields - must be saved for restoration
+      crossTrainingType: newWorkout.crossTrainingType,
+      equipmentType: newWorkout.equipmentType,
+      settings: newWorkout.settings || newWorkout.workout?.settings,
+      technique: newWorkout.technique || newWorkout.workout?.technique,
+      coachingTips: newWorkout.coachingTips || newWorkout.workout?.coachingTips,
+      effort: newWorkout.effort || newWorkout.workout?.effort,
+      runningEquivalent: newWorkout.runningEquivalent || newWorkout.workout?.runningEquivalent
     };
 
     const savedWorkouts = JSON.parse(localStorage.getItem('runeq_modifiedWorkouts') || '{}');
@@ -322,7 +381,8 @@ export default function useWorkoutDetailData({ day, userProfile, trainingPlan, l
         auth.currentUser.uid,
         currentWeekNumber,
         day,
-        workoutToSave
+        workoutToSave,
+        0  // Primary workout index
       );
     }
 

@@ -1,15 +1,49 @@
-import { IntervalWorkoutLibrary } from '../lib/interval-workout-library';
-import { TempoWorkoutLibrary } from '../lib/tempo-workout-library';
-import { HillWorkoutLibrary } from '../lib/hill-workout-library';
-import { LongRunWorkoutLibrary } from '../lib/long-run-workout-library';
+import { LibraryCatalog } from '../lib/LibraryCatalog';
 import { formatEquipmentName } from './typography';
 
-const intervalLibrary = new IntervalWorkoutLibrary();
-const tempoLibrary = new TempoWorkoutLibrary();
-const hillLibrary = new HillWorkoutLibrary();
-const longRunLibrary = new LongRunWorkoutLibrary();
+/**
+ * Safely extract easy pace from paces object regardless of format
+ * Handles: { min: "9:20", max: "9:50" }, { pace: "9:30" }, or string "9:30-9:50"
+ * Always strips any existing "/mile" suffix to prevent doubling
+ */
+const getEasyPace = (paces, preferMax = true) => {
+  if (!paces?.easy) return null;
 
-const structuredWorkoutTypes = ['longRun', 'long-run', 'tempo', 'interval', 'intervals', 'hill', 'hills'];
+  // Helper to strip /mile suffix if present
+  const stripMileSuffix = (pace) => pace ? pace.replace(/\/mile$/i, '').trim() : null;
+
+  // If it's an object with min/max
+  if (paces.easy.max) return stripMileSuffix(preferMax ? paces.easy.max : paces.easy.min);
+  if (paces.easy.min) return stripMileSuffix(paces.easy.min);
+
+  // If it has a single pace property
+  if (paces.easy.pace) {
+    // Strip /mile first, then split on dash
+    const cleanPace = stripMileSuffix(paces.easy.pace);
+    const parts = cleanPace.split('-');
+    if (parts.length === 2) {
+      return preferMax ? parts[1].trim() : parts[0].trim();
+    }
+    return cleanPace;
+  }
+
+  // If it's a string like "9:30" or "9:30-9:50" or "9:30-9:50/mile"
+  if (typeof paces.easy === 'string') {
+    const cleanPace = stripMileSuffix(paces.easy);
+    const parts = cleanPace.split('-');
+    return preferMax ? parts[parts.length - 1].trim() : parts[0].trim();
+  }
+
+  return null;
+};
+
+// Use LibraryCatalog for all library access
+const intervalLibrary = LibraryCatalog.running.intervals;
+const tempoLibrary = LibraryCatalog.running.tempo;
+const hillLibrary = LibraryCatalog.running.hills;
+const longRunLibrary = LibraryCatalog.running.longRun;
+
+const structuredWorkoutTypes = ['longRun', 'long-run', 'tempo', 'interval', 'intervals', 'hill', 'hills', 'cross-training', 'bike'];
 
 const generateBenefitsFallback = (workoutType, workoutName = '') => {
   const name = workoutName.toLowerCase();
@@ -33,22 +67,37 @@ const generateBenefitsFallback = (workoutType, workoutName = '') => {
   return 'Develops overall fitness and running ability';
 };
 
-const fetchFromLibrary = (workoutName, workoutType, options) => {
+const fetchFromLibrary = (workoutName, workoutType, options, crossTrainingType = null) => {
   if (!workoutName) return null;
 
+  // Strip pace suffix like "(9:17/mi)", distance prefix like "8-Mile", and emoji prefixes from workout name
+  // This allows matching "🚣 Sustained Tempo Row" or "8-Mile Half Marathon Simulation" to library workouts
+  const cleanName = workoutName
+    .replace(/\s*\([^)]*\/mi\)\s*$/i, '')  // Remove pace suffix
+    .replace(/^\d+(?:\.\d+)?[- ]?(?:mile|mi)\s+/i, '')  // Remove distance prefix like "8-Mile "
+    .replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/u, '')  // Remove emoji prefix like "🚣 "
+    .trim();
+
   try {
+    // Handle cross-training workouts
+    if (workoutType === 'cross-training' || workoutType === 'bike' || crossTrainingType) {
+      const equipmentType = crossTrainingType || 'standUpBike';
+      return LibraryCatalog.getCrossTrainingWorkout(equipmentType, cleanName, options);
+    }
+
+    // Handle running workouts
     switch (workoutType) {
       case 'interval':
       case 'intervals':
-        return intervalLibrary.prescribeIntervalWorkout(workoutName, options);
+        return intervalLibrary.prescribeIntervalWorkout(cleanName, options);
       case 'tempo':
-        return tempoLibrary.prescribeTempoWorkout(workoutName, options);
+        return tempoLibrary.prescribeTempoWorkout(cleanName, options);
       case 'hill':
       case 'hills':
-        return hillLibrary.prescribeHillWorkout(workoutName, options);
+        return hillLibrary.prescribeHillWorkout(cleanName, options);
       case 'longRun':
       case 'long-run':
-        return longRunLibrary.prescribeLongRunWorkout(workoutName, options);
+        return longRunLibrary.prescribeLongRunWorkout(cleanName, options);
       default:
         return null;
     }
@@ -115,7 +164,9 @@ export function transformWorkoutForDisplay({
   const normalizedProfile = userProfile || {};
 
   const isCrossTraining = workoutData.type === 'cross-training';
-  let workoutLib = isCrossTraining ? workoutData : (workoutData.workoutDetails || workoutData.workout);
+  // Check nested workout objects first, then fall back to workoutData itself
+  // (TrainingPlanService spreads workout properties at top level)
+  let workoutLib = isCrossTraining ? workoutData : (workoutData.fullWorkoutDetails || workoutData.workoutDetails || workoutData.workout || workoutData);
   const workoutType = workoutData.type;
 
   const workoutNameLower = (workoutLib?.name || workoutData.name || '').toLowerCase();
@@ -138,7 +189,22 @@ export function transformWorkoutForDisplay({
   const needsLibraryRefresh = !workoutLib?.intensityGuidance ||
     structuredWorkoutTypes.includes(effectiveWorkoutType);
 
-  if (workoutLib && needsLibraryRefresh && !isCrossTraining && effectiveWorkoutType !== 'easy') {
+  // Handle cross-training workouts - fetch from cross-training libraries
+  if (isCrossTraining || workoutData.crossTrainingType || workoutType === 'bike') {
+    const workoutName = workoutLib?.name || workoutData.name;
+    const crossTrainingType = workoutData.crossTrainingType || workoutData.equipmentType || 'standUpBike';
+
+    const libraryData = fetchFromLibrary(workoutName, workoutType, {
+      equipment: normalizedProfile.standUpBikeType,
+      runEqPreference,
+    }, crossTrainingType);
+
+    if (libraryData) {
+      workoutLib = { ...workoutLib, ...libraryData };
+    }
+  }
+  // Handle running workouts
+  else if (workoutLib && needsLibraryRefresh && effectiveWorkoutType !== 'easy') {
     const workoutName = workoutLib.name || workoutData.name;
     const trackIntervals = workoutLib.trackIntervals || trainingPlan?.trackIntervals || normalizedProfile.trackIntervals;
     let workoutDistance = workoutData.distance ||
@@ -203,13 +269,22 @@ export function transformWorkoutForDisplay({
     structure = workoutLib.structure;
   } else if (workoutData.workout?.structure) {
     structure = workoutData.workout.structure;
-  } else if (workoutLib?.workout) {
+  } else if (workoutLib?.workout?.warmup || workoutLib?.workout?.main) {
+    // Nested workout object structure (original library format)
     const parts = [];
     if (workoutLib.workout.warmup) parts.push(`**Warmup:** ${workoutLib.workout.warmup}`);
     if (workoutLib.workout.main) parts.push(`**Main Set:** ${workoutLib.workout.main}`);
     if (workoutLib.workout.recovery) parts.push(`**Recovery:** ${workoutLib.workout.recovery}`);
     if (workoutLib.workout.cooldown) parts.push(`**Cooldown:** ${workoutLib.workout.cooldown}`);
     structure = parts.length ? parts.join('\n\n') : workoutLib.workout;
+  } else if (workoutLib?.warmup || workoutLib?.main) {
+    // Flattened structure (after PlanTransformer processing)
+    const parts = [];
+    if (workoutLib.warmup) parts.push(`**Warmup:** ${workoutLib.warmup}`);
+    if (workoutLib.main) parts.push(`**Main Set:** ${workoutLib.main}`);
+    if (workoutLib.recovery) parts.push(`**Recovery:** ${workoutLib.recovery}`);
+    if (workoutLib.cooldown) parts.push(`**Cooldown:** ${workoutLib.cooldown}`);
+    structure = parts.length ? parts.join('\n\n') : null;
   } else if (workoutLib?.totalWorkout?.structure) {
     structure = workoutLib.totalWorkout.structure;
   } else if (workoutLib?.structure) {
@@ -279,23 +354,27 @@ export function transformWorkoutForDisplay({
       paceGuidance = `${formatEquipmentName(normalizedProfile.standUpBikeType)} specific: Focus on smooth motion and consistent effort`;
     }
   } else if (availablePaces) {
+    // Use helper to safely extract easy paces
+    const easyPaceMin = getEasyPace(availablePaces, false);
+    const easyPaceMax = getEasyPace(availablePaces, true);
+
     if (isSandwichWorkout && (availablePaces.racePace || availablePaces.marathon)) {
       const goalPace = availablePaces.racePace?.pace || availablePaces.marathon?.pace;
       paceGuidance = `${goalPace}/mile (goal pace)`;
-    } else if (isFastFinish && availablePaces.easy && availablePaces.interval) {
-      const easyPace = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile`;
+    } else if (isFastFinish && easyPaceMin && easyPaceMax && availablePaces.interval) {
+      const easyPace = `${easyPaceMin}-${easyPaceMax}/mile`;
       const fastFinishPace = availablePaces.interval.pace;
       paceGuidance = `${easyPace} → ${fastFinishPace}/mile (fast finish)`;
-    } else if (isProgressionRun && availablePaces.easy) {
-      paceGuidance = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile (starting pace)`;
+    } else if (isProgressionRun && easyPaceMin && easyPaceMax) {
+      paceGuidance = `${easyPaceMin}-${easyPaceMax}/mile (starting pace)`;
     } else if ((workoutType === 'intervals' || workoutType === 'interval') && availablePaces.interval) {
       paceGuidance = `${availablePaces.interval.pace}/mile`;
     } else if ((workoutType === 'tempo' || workoutType === 'threshold' || workoutNameForPace.includes('tempo')) && availablePaces.threshold) {
       paceGuidance = `${availablePaces.threshold.pace}/mile`;
-    } else if (workoutType === 'longRun' && availablePaces.easy) {
-      paceGuidance = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile`;
-    } else if (availablePaces.easy && (workoutType === 'easy' || workoutType === 'recovery')) {
-      paceGuidance = `${availablePaces.easy.min}-${availablePaces.easy.max}/mile`;
+    } else if (workoutType === 'longRun' && easyPaceMin && easyPaceMax) {
+      paceGuidance = `${easyPaceMin}-${easyPaceMax}/mile`;
+    } else if (easyPaceMin && easyPaceMax && (workoutType === 'easy' || workoutType === 'recovery')) {
+      paceGuidance = `${easyPaceMin}-${easyPaceMax}/mile`;
     } else if (workoutLib?.intensityGuidance?.pace) {
       paceGuidance = workoutLib.intensityGuidance.pace;
     }
@@ -402,7 +481,9 @@ export function transformWorkoutForDisplay({
     effort: workoutLib?.effort,
     coachingTips: workoutLib?.coachingTips,
     settings: workoutLib?.settings,
-    crossTrainingType: workoutData.crossTrainingType
+    runningEquivalent: workoutLib?.runningEquivalent,
+    crossTrainingType: workoutData.crossTrainingType || workoutData.equipmentType,
+    equipmentType: workoutData.equipmentType || workoutData.crossTrainingType
   };
 }
 
