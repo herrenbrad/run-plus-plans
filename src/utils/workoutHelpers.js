@@ -166,7 +166,8 @@ export const getWorkoutDistance = (workout) => {
 
   // Priority 1: Check workout.distance field
   if (workout.distance && workout.distance > 0) {
-    if (workout.type === 'bike' && (workout.name?.includes('RunEQ') || workout.workout?.name?.includes('RunEQ'))) {
+    // All bike workouts show RunEQ miles (since distance represents running-equivalent)
+    if (workout.type === 'bike' || workout.crossTrainingType === 'standUpBike') {
       return `📏 ${workout.distance} RunEQ`;
     }
     return `📏 ${workout.distance} ${workout.distance === 1 ? 'mile' : 'miles'}`;

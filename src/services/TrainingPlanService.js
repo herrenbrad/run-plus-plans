@@ -181,7 +181,8 @@ class TrainingPlanService {
                 workouts.push(this.createLongRun(day, longRunDistance, phaseName, paces, profile, weekNumber, totalWeeks));
             } else if (preferredBikeDays.includes(day) && standUpBikeType) {
                 const isHard = qualityDays.includes(day);
-                workouts.push(this.createBikeWorkout(day, standUpBikeType, isHard, phaseName, avgDistance, paces));
+                workouts.push(this.createBikeWorkout(day, standUpBikeType, isHard, phaseName, avgDistance, paces, isHard ? hardSessionIndex : null));
+                if (isHard) hardSessionIndex++; // Increment only for hard bike days
             } else if (qualityDays.includes(day)) {
                 workouts.push(this.createHardWorkout(day, phaseName, avgDistance, paces, hardSessionIndex, weekNumber));
                 hardSessionIndex++;
@@ -413,18 +414,55 @@ class TrainingPlanService {
         };
     }
 
-    createBikeWorkout(day, bikeType, isHard, phase, distance, paces) {
-        const workoutType = isHard ? 'TEMPO_BIKE' : 'EASY_BIKE';
-        const workout = LibraryCatalog.getCrossTrainingByDuration('standUpBike', workoutType, distance * 10);
+    createBikeWorkout(day, bikeType, isHard, phase, distance, paces, hardSessionIndex = null) {
+        const bikeLabel = bikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO';
+        const runEqMiles = Math.round(distance);
+
+        // EASY BIKE DAY: Simple "Ride X RunEQ miles" - replacement for easy run
+        if (!isHard) {
+            return {
+                day,
+                type: 'bike',
+                name: `Ride ${runEqMiles} RunEQ Miles`,
+                description: `Easy effort on your ${bikeLabel}. Ride until your Garmin shows ${runEqMiles} RunEQ miles.`,
+                structure: `Ride at conversational pace until you reach ${runEqMiles} RunEQ miles`,
+                equipmentSpecific: true,
+                standUpBikeType: bikeType,
+                crossTrainingType: 'standUpBike',
+                focus: 'Aerobic Base',
+                distance: runEqMiles,
+                intensity: 'Easy'
+            };
+        }
+
+        // HARD BIKE DAY: Pull structured workout from library (same type as running would have been)
+        // Map running workout rotation to bike categories
+        const workoutRotation = this.getHardWorkoutRotation(phase);
+        const runningWorkoutType = workoutRotation[hardSessionIndex % workoutRotation.length];
+
+        // Map running type → bike category (these match getWorkoutByDuration's typeMapping)
+        const bikeCategoryMap = {
+            'tempo': 'TEMPO',
+            'intervals': 'INTERVALS',
+            'hills': 'HILLS'
+        };
+        const bikeCategory = bikeCategoryMap[runningWorkoutType] || 'TEMPO';
+
+        // Get structured workout from library
+        const workout = LibraryCatalog.getCrossTrainingByDuration('standUpBike', bikeCategory, distance * 10);
 
         if (workout) {
             return {
                 day,
                 type: 'bike',
+                name: workout.name,
+                description: workout.description,
+                structure: workout.structure,
                 equipmentSpecific: true,
                 standUpBikeType: bikeType,
                 crossTrainingType: 'standUpBike',
-                focus: isHard ? 'Aerobic Power' : 'Aerobic Base',
+                focus: this.getBikeFocus(runningWorkoutType),
+                distance: runEqMiles,
                 ...workout
             };
         }
@@ -433,14 +471,24 @@ class TrainingPlanService {
         return {
             day,
             type: 'bike',
-            name: `${isHard ? 'Tempo' : 'Easy'} ${bikeType === 'cyclete' ? 'Cyclete' : 'ElliptiGO'} Ride`,
-            description: `${isHard ? 'Moderate-hard' : 'Easy'} effort on your ${bikeType}`,
+            name: `${runningWorkoutType === 'tempo' ? 'Tempo' : runningWorkoutType === 'intervals' ? 'Interval' : 'Power'} ${bikeLabel} Workout`,
+            description: `${this.getBikeFocus(runningWorkoutType)} workout on your ${bikeLabel}`,
             equipmentSpecific: true,
             standUpBikeType: bikeType,
             crossTrainingType: 'standUpBike',
-            focus: isHard ? 'Aerobic Power' : 'Aerobic Base',
+            focus: this.getBikeFocus(runningWorkoutType),
+            distance: runEqMiles,
             duration: `${Math.round(distance * 10)} minutes`
         };
+    }
+
+    getBikeFocus(runningWorkoutType) {
+        const focusMap = {
+            'tempo': 'Lactate Threshold',
+            'intervals': 'VO2 Max & Speed',
+            'hills': 'Power & Strength'
+        };
+        return focusMap[runningWorkoutType] || 'Aerobic Power';
     }
 
     createCrossTrainingEasy(day, equipment) {
@@ -503,6 +551,7 @@ class TrainingPlanService {
 
     createCrossTrainingLong(day, equipment, phase, targetDistance) {
         const durationMinutes = targetDistance * 10; // Approximate conversion
+        const runEqMiles = Math.round(targetDistance);
         const workout = LibraryCatalog.getCrossTrainingByDuration(equipment.key, 'LONG', durationMinutes);
 
         if (workout) {
@@ -512,6 +561,7 @@ class TrainingPlanService {
                 crossTrainingType: equipment.key,
                 equipmentLabel: equipment.label,
                 focus: 'Endurance',
+                distance: runEqMiles, // RunEQ miles for progressive training
                 ...workout
             };
         }
@@ -524,6 +574,7 @@ class TrainingPlanService {
             crossTrainingType: equipment.key,
             equipmentLabel: equipment.label,
             focus: 'Endurance',
+            distance: runEqMiles, // RunEQ miles for progressive training
             duration: `${durationMinutes}-${durationMinutes + 15} minutes`,
             intensity: 'Easy to Moderate'
         };
